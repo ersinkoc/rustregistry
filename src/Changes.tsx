@@ -21,6 +21,8 @@ export interface ChangePlan {
   originalValue: string;
   valueType: string;
   expiresAt: number;
+  scope: 'startup' | 'app_path';
+  preservedValues: number;
 }
 export interface ChangeResult {
   backupId: string;
@@ -34,6 +36,8 @@ interface Backup {
   createdAt: number;
   state: 'restore_available' | 'original_present' | 'conflict' | 'unverified';
   note: string;
+  scope: 'startup' | 'app_path';
+  registryPath: string;
 }
 interface Inventory {
   storagePath: string;
@@ -43,14 +47,20 @@ interface Inventory {
 
 export function canQuarantine(entry: RegistryEntry) {
   return (
-    entry.category === 'startup' &&
     entry.hive === 'HKCU' &&
     entry.view === 'shared' &&
-    entry.keyPath.toLowerCase() === 'software\\microsoft\\windows\\currentversion\\run' &&
     entry.assessment.status === 'review' &&
     entry.assessment.code === 'target_missing' &&
     ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
-    Boolean(entry.valueName)
+    ((entry.category === 'startup' &&
+      entry.keyPath.toLowerCase() === 'software\\microsoft\\windows\\currentversion\\run' &&
+      Boolean(entry.valueName)) ||
+      (entry.category === 'app_paths' &&
+        entry.appPathRepairable === true &&
+        entry.valueName === '' &&
+        /^software\\microsoft\\windows\\currentversion\\app paths\\[^\\/:*?"<>|]+\.exe$/i.test(
+          entry.keyPath,
+        )))
   );
 }
 
@@ -69,6 +79,7 @@ export function ChangeConfirmation({
   const [agreed, setAgreed] = useState(false);
   const [clock, setClock] = useState(Date.now());
   const restore = plan.action === 'restore';
+  const appPath = plan.scope === 'app_path';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -104,12 +115,22 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {restore ? 'Restore startup entry?' : 'Disable this startup entry?'}
+        {appPath
+          ? restore
+            ? 'Restore application path?'
+            : 'Repair broken application path?'
+          : restore
+            ? 'Restore startup entry?'
+            : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {restore
-          ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-          : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+        {appPath
+          ? restore
+            ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+            : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+          : restore
+            ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+            : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -122,17 +143,23 @@ export function ChangeConfirmation({
         </div>
         <div>
           <dt>Value name</dt>
-          <dd>{plan.valueName}</dd>
+          <dd>{plan.valueName || '(Default)'}</dd>
         </div>
         <div>
           <dt>Value type</dt>
           <dd className="mono">{plan.valueType}</dd>
         </div>
         <div className="full-field">
-          <dt>Exact original command</dt>
+          <dt>{appPath ? 'Exact original executable path' : 'Exact original command'}</dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
       </dl>
+      {appPath && (
+        <p className="change-intro">
+          The registry key and {plan.preservedValues} other value(s), including any Path metadata,
+          stay in place. Changed metadata or a newly populated default value blocks restore.
+        </p>
+      )}
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
@@ -148,7 +175,11 @@ export function ChangeConfirmation({
           disabled={busy || expired}
           onChange={(event) => setAgreed(event.target.checked)}
         />
-        <span>I reviewed this exact value and understand the startup change.</span>
+        <span>
+          {appPath
+            ? 'I reviewed this exact value and understand the application path change.'
+            : 'I reviewed this exact value and understand the startup change.'}
+        </span>
       </label>
       {expired && (
         <p role="alert" className="amber">
@@ -165,7 +196,13 @@ export function ChangeConfirmation({
           onClick={onConfirm}
         >
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
-          {busy ? 'Applying…' : restore ? 'Restore original value' : 'Back up & disable'}
+          {busy
+            ? 'Applying…'
+            : restore
+              ? 'Restore original value'
+              : appPath
+                ? 'Back up & repair'
+                : 'Back up & disable'}
         </button>
       </div>
     </dialog>
@@ -215,8 +252,8 @@ export function BackupsPanel({
         <div>
           <h2>A way back, before every change.</h2>
           <p>
-            Original registry bytes are saved locally before a startup value is disabled. Backups
-            survive app restarts. Restore checks the live value and never overwrites a conflict.
+            Original registry bytes are saved locally before a value is changed. Backups survive app
+            restarts. Restore checks the live value and never overwrites a conflict.
           </p>
         </div>
       </div>
@@ -238,7 +275,7 @@ export function BackupsPanel({
             <h2>
               Local backups <span className="count-chip">{inventory?.backups.length ?? 0}</span>
             </h2>
-            <p>State is checked against the current user’s live Run key.</p>
+            <p>State is checked against the original current-user Run or App Paths location.</p>
           </div>
           <button
             className="secondary-button"
@@ -254,10 +291,10 @@ export function BackupsPanel({
             <div className="empty-icon">
               <ArchiveRestore size={29} />
             </div>
-            <h3>{loading ? 'Checking local backups…' : 'No startup backups yet'}</h3>
+            <h3>{loading ? 'Checking local backups…' : 'No local backups yet'}</h3>
             <p>
-              Review an eligible missing-target startup entry to create your first verified backup.
-              A scan alone never creates a backup or changes the registry.
+              Review an eligible missing-target entry to create your first verified backup. A scan
+              alone never creates a backup or changes the registry.
             </p>
           </div>
         ) : (
@@ -273,9 +310,13 @@ export function BackupsPanel({
                   <small>
                     <Clock3 size={12} />
                     {new Date(backup.createdAt).toLocaleString('en-US')}
-                    <span>· {backup.valueName}</span>
+                    <span>
+                      · {backup.scope === 'app_path' ? 'Application path' : 'Startup'} ·{' '}
+                      {backup.valueName || '(Default)'}
+                    </span>
                   </small>
                   <code>{backup.id}</code>
+                  <p className="mono">{backup.registryPath}</p>
                 </div>
                 <button
                   className="secondary-button"
@@ -302,7 +343,8 @@ export function BackupsPanel({
           <br />
           <span className="mono">{inventory?.storagePath ?? 'Available in the desktop app.'}</span>
           <br />
-          Keep this folder intact. Backups contain original startup commands and local paths.
+          Keep this folder intact. Backups contain original commands, local paths, and guarded
+          registration metadata.
         </p>
       </div>
     </>

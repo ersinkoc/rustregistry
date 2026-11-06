@@ -11,6 +11,7 @@ export interface RegistryEntry {
   valueName: string;
   valueType: string;
   rawValue: string;
+  appPathRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {

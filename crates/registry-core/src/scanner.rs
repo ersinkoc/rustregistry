@@ -121,9 +121,11 @@ fn make_entry(
         .as_ref()
         .ok()
         .filter(|value| {
-            source.category == Category::Startup
-                && source.hive == "HKCU"
-                && source.path == crate::changes::STARTUP_KEY
+            source.hive == "HKCU"
+                && ((source.category == Category::Startup
+                    && source.path == crate::changes::STARTUP_KEY)
+                    || (source.category == Category::AppPaths
+                        && source.path == crate::changes::APP_PATHS_KEY))
                 && value.bytes.len() <= MAX_VALUE_BYTES
                 && matches!(value.vtype, REG_SZ | REG_EXPAND_SZ)
         })
@@ -186,6 +188,8 @@ fn make_entry(
         version: None,
         assessment: value_assessment,
         snapshot,
+        app_path_guard: None,
+        app_path_repairable: false,
     }
 }
 
@@ -270,15 +274,21 @@ fn scan_source(
                     continue;
                 }
             };
-            let child = match key.open_subkey_with_flags(&name, KEY_READ | source.flag) {
-                Ok(child) => child,
-                Err(error) => {
-                    scope
-                        .notes
-                        .push(format!("Could not open {name}: {}", read_error(&error)));
-                    continue;
-                }
+            let options = if source.category == Category::AppPaths {
+                REG_OPTION_OPEN_LINK
+            } else {
+                0
             };
+            let child =
+                match key.open_subkey_with_options_flags(&name, options, KEY_READ | source.flag) {
+                    Ok(child) => child,
+                    Err(error) => {
+                        scope
+                            .notes
+                            .push(format!("Could not open {name}: {}", read_error(&error)));
+                        continue;
+                    }
+                };
             let value_name = if source.category == Category::AppPaths {
                 ""
             } else {
@@ -298,6 +308,21 @@ fn scan_source(
                 } else { format!("The target value could not be read: {}", read_error(&error)) }
             });
             let mut entry = make_entry(source, &name, display_name, value_name, raw, environment);
+            if source.category == Category::AppPaths
+                && source.hive == "HKCU"
+                && entry.assessment.status == EntryStatus::Review
+                && entry.assessment.code == "target_missing"
+                && entry.snapshot.is_some()
+                && entry
+                    .assessment
+                    .target
+                    .as_deref()
+                    .is_some_and(|target| target.to_ascii_lowercase().ends_with(".exe"))
+                && crate::changes::validate_app_path_name(&name).is_ok()
+            {
+                entry.app_path_guard = crate::windows_changes::read_app_path_guard(&child).ok();
+                entry.app_path_repairable = entry.app_path_guard.is_some();
+            }
             if source.category == Category::Uninstall {
                 entry.publisher = read_optional(&child, "Publisher", &mut notes);
                 entry.version = read_optional(&child, "DisplayVersion", &mut notes);

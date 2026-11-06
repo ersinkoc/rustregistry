@@ -221,13 +221,22 @@ function DetailDialog({
       {canQuarantine(entry) && (
         <div className="remediation-card">
           <ShieldCheck size={19} />
-          <h3>Protected startup change</h3>
+          <h3>
+            {entry.category === 'app_paths'
+              ? 'Protected application path repair'
+              : 'Protected startup change'}
+          </h3>
           <p>
-            This missing-target entry belongs to your startup list. Review its exact value before
-            creating a backup and disabling it.
+            {entry.category === 'app_paths'
+              ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+              : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
-            {busy ? 'Preparing review…' : 'Review disable'}
+            {busy
+              ? 'Preparing review…'
+              : entry.category === 'app_paths'
+                ? 'Review repair'
+                : 'Review disable'}
           </button>
         </div>
       )}
@@ -1125,16 +1134,16 @@ export default function App() {
                   <ShieldCheck size={19} />
                   <span>
                     <strong>Read-only scanning</strong>Scans use KEY_READ. Separately reviewed
-                    changes can disable only missing-target HKCU Run values, with a verified backup
-                    and protected Windows transaction.
+                    changes support missing-target HKCU Run values and guarded App Paths default
+                    mappings, with verified backups and Windows transactions.
                   </span>
                 </div>
                 <div className="about-fact">
                   <Monitor size={19} />
                   <span>
                     <strong>Local by design</strong>Scan data is not sent anywhere. Results stay in
-                    memory; confirmed startup changes keep their original values in your local
-                    backup folder.
+                    memory; confirmed changes keep their original values in your local backup
+                    folder.
                   </span>
                 </div>
                 <div className="about-fact">

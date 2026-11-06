@@ -42,6 +42,9 @@ pub struct RegistryEntry {
     pub assessment: Assessment,
     #[serde(skip)]
     pub snapshot: Option<crate::changes::StoredValue>,
+    #[serde(skip)]
+    pub app_path_guard: Option<crate::changes::AppPathGuard>,
+    pub app_path_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

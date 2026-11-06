@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.2 — 2026-11-07
+
+- Add backed-up repair and exact-value restore for confirmed missing executable mappings in the current user's `App Paths` entries.
+- Repair removes only the `(Default)` mapping. The key, `Path`, and other metadata stay in place and must still match before repair or restore.
+- Restrict repairs to flat, bounded `.exe` registrations with explicit missing local `.exe` targets; nested registrations, extensionless fallback targets, HKLM, and uncertain paths remain excluded.
+- Introduce integrity-protected App Paths backups while retaining unchanged support for `0.1.1` startup backups.
+- Add English App Paths review/restore dialogs and scope-aware backup listings.
+- Add isolated native transaction, metadata-conflict, legacy-backup, and packaged desktop repair/restore checks using an owned temporary registration.
+
 ## 0.1.1 — 2026-11-06
 
 - Add separately reviewed disable/restore actions for confirmed missing-target values in the current user's `Run` key.

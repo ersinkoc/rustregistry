@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Local registry scanning and explicitly reviewed changes to a fixed current-user startup scope. No shell or unrestricted filesystem plugins.",
+  "description": "Local scanning and explicitly reviewed changes to fixed current-user Run and App Paths scopes. No shell or unrestricted filesystem plugins.",
   "windows": ["main"],
   "permissions": []
 }

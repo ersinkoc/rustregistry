@@ -22,6 +22,17 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers repair review for a guarded, missing-target HKCU App Paths default value', () => {
+    const appPath = {
+      ...entry,
+      category: 'app_paths' as const,
+      name: 'broken.exe',
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\broken.exe',
+      valueName: '',
+      appPathRepairable: true,
+    };
+    expect(canQuarantine(appPath)).toBe(true);
+  });
   it('offers review for a named, missing-target HKCU Run value', () => {
     expect(canQuarantine(entry)).toBe(true);
     expect(canQuarantine({ ...entry, valueType: 'REG_EXPAND_SZ' })).toBe(true);
@@ -35,6 +46,24 @@ describe('protected change availability', () => {
       { ...entry, valueType: 'REG_BINARY' },
       { ...entry, assessment: { ...entry.assessment, status: 'found' as const } },
       { ...entry, assessment: { ...entry.assessment, code: 'path_inaccessible' } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
+  it('requires verified App Paths evidence and rejects machine or nested entries', () => {
+    const app = {
+      ...entry,
+      category: 'app_paths' as const,
+      name: 'broken.exe',
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\broken.exe',
+      valueName: '',
+      appPathRepairable: true,
+    };
+    for (const changed of [
+      { ...app, appPathRepairable: false },
+      { ...app, hive: 'HKLM' },
+      { ...app, keyPath: `${app.keyPath}\\child.exe` },
+      { ...app, valueName: 'Path' },
+      { ...app, view: '32' },
     ])
       expect(canQuarantine(changed)).toBe(false);
   });
