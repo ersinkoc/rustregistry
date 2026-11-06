@@ -117,6 +117,20 @@ fn make_entry(
     raw: Result<RegValue<'_>, String>,
     environment: &Environment,
 ) -> RegistryEntry {
+    let snapshot = raw
+        .as_ref()
+        .ok()
+        .filter(|value| {
+            source.category == Category::Startup
+                && source.hive == "HKCU"
+                && source.path == crate::changes::STARTUP_KEY
+                && value.bytes.len() <= MAX_VALUE_BYTES
+                && matches!(value.vtype, REG_SZ | REG_EXPAND_SZ)
+        })
+        .map(|value| crate::changes::StoredValue {
+            kind: value.vtype.clone() as u32,
+            bytes: value.bytes.to_vec(),
+        });
     let path = if subkey.is_empty() {
         source.path.into()
     } else {
@@ -171,6 +185,7 @@ fn make_entry(
         publisher: None,
         version: None,
         assessment: value_assessment,
+        snapshot,
     }
 }
 
@@ -195,7 +210,7 @@ fn scan_source(
     } else {
         HKEY_LOCAL_MACHINE
     });
-    // All registry handles are explicitly opened with KEY_READ. No write API is used.
+    // Scanning opens handles only with KEY_READ; protected mutations live in windows_changes.
     let key = match hive.open_subkey_with_flags(source.path, KEY_READ | source.flag) {
         Ok(key) => key,
         Err(error) => {
@@ -399,5 +414,18 @@ mod tests {
         assert!(result.read_only);
         assert!(result.entries.is_empty());
         assert!(result.scopes.is_empty());
+    }
+
+    #[test]
+    fn cancellation_at_the_first_progress_event_stops_before_enumerating_values() {
+        let cancel = AtomicBool::new(false);
+        let result = scan(&cancel, |_| cancel.store(true, Ordering::Release)).unwrap();
+        assert!(result.cancelled);
+        assert!(result.entries.is_empty());
+        assert_eq!(result.scopes.len(), 1);
+        assert!(matches!(
+            result.scopes[0].status.as_str(),
+            "cancelled" | "missing"
+        ));
     }
 }

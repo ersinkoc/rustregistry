@@ -1,9 +1,14 @@
 mod analysis;
+pub mod changes;
 mod model;
 #[cfg(windows)]
 mod scanner;
+#[cfg(windows)]
+pub mod windows_changes;
 
-pub use analysis::{analyze_target, Environment, PathProbe, ProbeResult, TargetKind};
+pub use analysis::{
+    analyze_target, Environment, LocalPathProbe, PathProbe, ProbeResult, TargetKind,
+};
 pub use model::*;
 #[cfg(windows)]
 pub use scanner::scan;

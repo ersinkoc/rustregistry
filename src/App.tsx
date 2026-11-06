@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
 import {
   Activity,
+  ArchiveRestore,
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
@@ -38,6 +39,9 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import packageInfo from '../package.json';
+import { BackupsPanel, canQuarantine, ChangeConfirmation } from './Changes';
+import type { ChangePlan, ChangeResult } from './Changes';
 import type { Category, EntryStatus, RegistryEntry, ScanProgress, ScanReport } from './model';
 import {
   categories,
@@ -51,12 +55,13 @@ import {
   viewLabel,
 } from './model';
 
-type Page = 'overview' | 'results' | 'coverage' | 'history' | 'about';
+type Page = 'overview' | 'results' | 'coverage' | 'history' | 'backups' | 'about';
 const pageNames: Record<Page, string> = {
   overview: 'Overview',
   results: 'Scan results',
   coverage: 'Scan coverage',
   history: 'Session history',
+  backups: 'Backups & restore',
   about: 'About RustRegistry',
 };
 const categoryIcons: Record<Category, LucideIcon> = {
@@ -103,7 +108,17 @@ function RegistryArt({ scanning }: { scanning: boolean }) {
   );
 }
 
-function DetailDialog({ entry, close }: { entry: RegistryEntry; close: () => void }) {
+function DetailDialog({
+  entry,
+  close,
+  review,
+  busy,
+}: {
+  entry: RegistryEntry;
+  close: () => void;
+  review: (entry: RegistryEntry) => void;
+  busy: boolean;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const [copyState, setCopyState] = useState('');
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -203,12 +218,25 @@ function DetailDialog({ entry, close }: { entry: RegistryEntry; close: () => voi
           <dd className="mono">{entry.assessment.code}</dd>
         </div>
       </dl>
+      {canQuarantine(entry) && (
+        <div className="remediation-card">
+          <ShieldCheck size={19} />
+          <h3>Protected startup change</h3>
+          <p>
+            This missing-target entry belongs to your startup list. Review its exact value before
+            creating a backup and disabling it.
+          </p>
+          <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
+            {busy ? 'Preparing review…' : 'Review disable'}
+          </button>
+        </div>
+      )}
       <div className="detail-footer">
         <LockKeyhole size={17} />
         <p>
           This entry was only read.
           <br />
-          <span>This release does not modify registry entries.</span>
+          <span>Changes require explicit review and a verified backup.</span>
         </p>
       </div>
       <p className="copy-feedback" role="status">
@@ -239,6 +267,10 @@ export default function App() {
   const [status, setStatus] = useState<EntryStatus | 'all'>('all');
   const [tablePage, setTablePage] = useState(0);
   const [selected, setSelected] = useState<RegistryEntry | null>(null);
+  const [plan, setPlan] = useState<ChangePlan | null>(null);
+  const [changing, setChanging] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [backupRevision, setBackupRevision] = useState(0);
   const scanLock = useRef(false);
   const desktop = isTauri();
 
@@ -299,6 +331,55 @@ export default function App() {
     }
   };
 
+  const reviewChange = async (entry?: RegistryEntry, backupId?: string) => {
+    if (scanning || changing) return;
+    setChanging(true);
+    setError('');
+    setSuccess('');
+    setSelected(null);
+    try {
+      const prepared = entry
+        ? await invoke<ChangePlan>('prepare_quarantine', { entryId: entry.id })
+        : await invoke<ChangePlan>('prepare_restore', { backupId });
+      setPlan(prepared);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setChanging(false);
+    }
+  };
+  const cancelChange = async () => {
+    try {
+      await invoke('cancel_change');
+    } catch (cause) {
+      setError(String(cause));
+    }
+    setPlan(null);
+  };
+  const confirmChange = async () => {
+    if (!plan || changing) return;
+    setChanging(true);
+    setError('');
+    setSuccess('');
+    let failure = '';
+    try {
+      const result = await invoke<ChangeResult>('apply_change', {
+        token: plan.token,
+        confirmed: true,
+      });
+      setSuccess(result.message);
+      setPage('backups');
+    } catch (cause) {
+      failure = String(cause);
+    } finally {
+      setPlan(null);
+      setBackupRevision((value) => value + 1);
+      await startScan();
+      if (failure) setError(failure);
+      setChanging(false);
+    }
+  };
+
   const chooseCategory = (next: Category | 'all') => {
     setCategory(next);
     setTablePage(0);
@@ -306,7 +387,11 @@ export default function App() {
   };
 
   const scanButton = (
-    <button className="primary-button" disabled={scanning} onClick={startScan}>
+    <button
+      className="primary-button"
+      disabled={scanning || changing || Boolean(plan)}
+      onClick={startScan}
+    >
       {scanning ? (
         <RotateCw className="spin" size={16} />
       ) : report ? (
@@ -530,6 +615,7 @@ export default function App() {
               ['results', FileSearch],
               ['coverage', SlidersHorizontal],
               ['history', History],
+              ['backups', ArchiveRestore],
             ] as [Page, LucideIcon][]
           ).map(([key, Icon]) => (
             <button
@@ -558,7 +644,7 @@ export default function App() {
               You stay in control.
             </p>
             <span>
-              <span className="live-dot" /> No registry write access
+              <span className="live-dot" /> Backups before changes
             </span>
           </div>
           <button
@@ -570,7 +656,7 @@ export default function App() {
             <ArrowUpRight size={14} />
           </button>
           <div className="sidebar-version">
-            <span>v0.1.0</span>
+            <span>v{packageInfo.version}</span>
             <span className="preview-pill">EARLY ACCESS</span>
           </div>
         </div>
@@ -586,7 +672,7 @@ export default function App() {
           </div>
           <div className="topbar-actions">
             <span className="readonly-pill">
-              <LockKeyhole size={13} /> Read-only
+              <LockKeyhole size={13} /> Protected changes
             </span>
             <span className="topbar-divider" />
             <button
@@ -611,9 +697,11 @@ export default function App() {
                     ? 'Search your entries, filter findings, and understand every result.'
                     : page === 'coverage'
                       ? 'See exactly where we looked and what could be read.'
-                      : page === 'history'
-                        ? 'Your most recent scans from this session.'
-                        : 'Built to help you understand your Windows registry.'}
+                      : page === 'backups'
+                        ? 'Review local backups and restore without overwriting existing values.'
+                        : page === 'history'
+                          ? 'Your most recent scans from this session.'
+                          : 'Built to help you understand your Windows registry.'}
               </p>
             </div>
             {page !== 'overview' && page !== 'about' && scanButton}
@@ -648,6 +736,19 @@ export default function App() {
             </div>
           )}
 
+          {success && (
+            <div className="notice success-notice" role="status">
+              <ShieldCheck size={18} />
+              <p>{success}</p>
+              <button
+                className="icon-button"
+                aria-label="Dismiss success"
+                onClick={() => setSuccess('')}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
           {scanning && (
             <div className="scan-progress" role="status" aria-live="polite">
               <div className="progress-main">
@@ -705,7 +806,7 @@ export default function App() {
                   <div className="hero-actions">
                     {scanButton}
                     <span>
-                      <ShieldCheck size={14} /> No entries are modified
+                      <ShieldCheck size={14} /> Scanning never changes entries
                     </span>
                   </div>
                 </div>
@@ -997,13 +1098,20 @@ export default function App() {
             </section>
           )}
 
+          {page === 'backups' && (
+            <BackupsPanel
+              revision={backupRevision}
+              busy={changing || scanning}
+              onRestore={(id) => reviewChange(undefined, id)}
+            />
+          )}
           {page === 'about' && (
             <div className="about-grid">
               <section className="panel about-panel">
                 <div className="about-logo">
                   <Boxes size={32} />
                 </div>
-                <span className="eyebrow">RUSTREGISTRY · V0.1.0</span>
+                <span className="eyebrow">RUSTREGISTRY · V{packageInfo.version} · MIT LICENSE</span>
                 <h2>
                   Understand first.
                   <br />
@@ -1016,15 +1124,17 @@ export default function App() {
                 <div className="about-fact">
                   <ShieldCheck size={19} />
                   <span>
-                    <strong>Read access only</strong>Registry keys are opened with KEY_READ. There
-                    are no registry write, delete, repair, or command execution features.
+                    <strong>Read-only scanning</strong>Scans use KEY_READ. Separately reviewed
+                    changes can disable only missing-target HKCU Run values, with a verified backup
+                    and protected Windows transaction.
                   </span>
                 </div>
                 <div className="about-fact">
                   <Monitor size={19} />
                   <span>
                     <strong>Local by design</strong>Scan data is not sent anywhere. Results stay in
-                    memory for this session.
+                    memory; confirmed startup changes keep their original values in your local
+                    backup folder.
                   </span>
                 </div>
                 <div className="about-fact">
@@ -1089,7 +1199,22 @@ export default function App() {
         </main>
       </div>
       {selected && (
-        <DetailDialog key={selected.id} entry={selected} close={() => setSelected(null)} />
+        <DetailDialog
+          key={selected.id}
+          entry={selected}
+          close={() => setSelected(null)}
+          review={(entry) => reviewChange(entry)}
+          busy={scanning || changing}
+        />
+      )}
+      {plan && (
+        <ChangeConfirmation
+          key={plan.token}
+          plan={plan}
+          busy={changing}
+          onCancel={cancelChange}
+          onConfirm={confirmChange}
+        />
       )}
     </div>
   );

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Local read-only registry interface. No shell, filesystem or registry write plugins.",
+  "description": "Local registry scanning and explicitly reviewed changes to a fixed current-user startup scope. No shell or unrestricted filesystem plugins.",
   "windows": ["main"],
   "permissions": []
 }

@@ -40,6 +40,8 @@ pub struct RegistryEntry {
     pub publisher: Option<String>,
     pub version: Option<String>,
     pub assessment: Assessment,
+    #[serde(skip)]
+    pub snapshot: Option<crate::changes::StoredValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

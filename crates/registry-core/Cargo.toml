@@ -4,14 +4,19 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Read-only Windows registry inventory and conservative path diagnostics"
+description = "Windows registry inventory, conservative diagnostics, and protected startup recovery"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+uuid.workspace = true
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
-winreg = { version = "0.56", default-features = false }
+winreg = { version = "0.56", default-features = false, features = ["transactions"] }
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [[bin]]

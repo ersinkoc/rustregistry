@@ -1539,6 +1539,148 @@ tr:hover td {
     transform: rotate(360deg);
   }
 }
+
+.success-notice {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+.remediation-card {
+  margin-top: 25px;
+  padding: 18px;
+  border: 1px solid var(--amber-border);
+  border-radius: 8px;
+  background: var(--amber-soft);
+}
+.remediation-card > svg {
+  color: var(--amber);
+}
+.remediation-card h3 {
+  margin: 10px 0 8px;
+  font-size: 13px;
+  font-weight: 550;
+}
+.remediation-card p {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.remediation-card button {
+  margin-top: 13px;
+}
+.change-dialog {
+  width: 570px;
+  max-width: 90vw;
+  max-height: 92dvh;
+  overflow-y: auto;
+  padding: 28px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 20px 100px #0006;
+}
+.change-dialog::backdrop {
+  background: #0008;
+  backdrop-filter: blur(3px);
+}
+.change-dialog h2 {
+  font-size: 25px;
+  font-weight: 550;
+  letter-spacing: -0.6px;
+}
+.change-intro {
+  margin: 15px 0 24px;
+  font-size: 12px;
+  line-height: 1.85;
+  color: var(--muted);
+}
+.change-guarantee {
+  display: flex;
+  align-items: start;
+  gap: 11px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  padding: 13px;
+  margin-top: 22px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.change-guarantee svg {
+  flex-shrink: 0;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.confirmation-check {
+  display: flex;
+  align-items: start;
+  gap: 11px;
+  margin: 20px 0;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.confirmation-check input {
+  accent-color: var(--accent);
+  margin-top: 5px;
+}
+.change-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 19px;
+}
+.backup-list {
+  display: grid;
+}
+.backup-item {
+  display: flex;
+  align-items: start;
+  gap: 16px;
+  padding: 22px;
+  border-top: 1px solid var(--border);
+}
+.backup-description {
+  flex: 1;
+  min-width: 0;
+}
+.backup-description h3 {
+  font-size: 13px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.backup-description p {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin: 7px 0;
+}
+.backup-description small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--faint);
+  font-size: 10px;
+}
+.backup-description code {
+  color: var(--faint);
+  font-size: 9px;
+  display: block;
+  margin-top: 9px;
+  overflow-wrap: anywhere;
+}
+.backup-location {
+  margin-top: 20px;
+}
+.backup-location .mono {
+  overflow-wrap: anywhere;
+  font-size: 10px;
+}
 @keyframes pulse {
   50% {
     opacity: 0.2;

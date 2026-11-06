@@ -2,6 +2,16 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.1 — 2026-11-06
+
+- Add separately reviewed disable/restore actions for confirmed missing-target values in the current user's `Run` key.
+- Require a flushed, read-back-verified backup of the original registry type and bytes before disabling a value.
+- Add backup integrity checks, persistent local backup discovery, and conflict-safe restore without overwrites.
+- Use Windows registry transactions for conditional changes; reject stale scans, expired plans, uncertain paths, and unsupported scopes.
+- Add English confirmation dialogs and a Backups & restore page. Scans remain read-only; no automatic cleanup or administrator elevation is introduced.
+- Add isolated Windows registry round-trip tests and policy/error-path tests.
+- Keep version labels synchronized with the application manifest.
+
 ## 0.1.0 — 2026-11-06
 
 - First public release under the MIT license.
