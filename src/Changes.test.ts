@@ -22,6 +22,30 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only verified current-user orphaned Open with suggestions', () => {
+    const association = {
+      ...entry,
+      category: 'file_associations' as const,
+      keyPath: 'Software\\Classes\\.rrtest\\OpenWithProgids',
+      valueName: 'Example.Document',
+      valueType: 'REG_NONE',
+      associationRepairable: true,
+      assessment: { ...entry.assessment, code: 'progid_missing' },
+    };
+    expect(canQuarantine(association)).toBe(true);
+    expect(canQuarantine({ ...association, valueType: 'REG_SZ' })).toBe(true);
+    for (const changed of [
+      { ...association, hive: 'HKLM' },
+      { ...association, view: '32' },
+      { ...association, associationRepairable: false },
+      { ...association, valueType: 'REG_EXPAND_SZ' },
+      { ...association, keyPath: 'Software\\Classes\\.rrtest' },
+      { ...association, keyPath: 'Software\\Classes\\.rrtest\\UserChoice' },
+      { ...association, valueName: '' },
+      { ...association, assessment: { ...entry.assessment, code: 'progid_registered' } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers backed-up repair for a verified orphaned current-user uninstall entry', () => {
     const uninstall = {
       ...entry,

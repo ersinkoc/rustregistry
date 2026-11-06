@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { once } from 'node:events';
 import { verifyAppPathRecovery } from './app-path-smoke.mjs';
 import { verifyUninstallRecovery } from './uninstall-smoke.mjs';
+import { verifyAssociationRecovery } from './association-smoke.mjs';
 
 if (process.platform !== 'win32')
   throw new Error('Desktop smoke verification requires Windows x64.');
@@ -154,10 +155,10 @@ try {
   checked('Search empty state is honest and clearing filters restores real entries');
 
   await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-  await expect(page.locator('.scope-item')).toHaveCount(12);
+  await expect(page.locator('.scope-item')).toHaveCount(14);
   await page.locator('.scope-item summary').first().click();
   await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-  checked('Coverage lists all 12 actual registry locations with expandable read results');
+  checked('Coverage lists all 14 actual registry locations with expandable read results');
 
   await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
   await expect(page.locator('.history-item')).toHaveCount(1);
@@ -213,6 +214,7 @@ try {
   checked('Review cancellation leaves the backup inventory unchanged');
   await verifyAppPathRecovery(page, output, checked, summary);
   await verifyUninstallRecovery(page, output, checked, summary);
+  await verifyAssociationRecovery(page, output, checked, summary);
 
   await page.getByRole('link', { name: 'RustRegistry overview', exact: true }).click();
   await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();

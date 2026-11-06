@@ -1,4 +1,5 @@
 mod analysis;
+pub mod associations;
 pub mod changes;
 mod model;
 #[cfg(windows)]

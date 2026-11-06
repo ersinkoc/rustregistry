@@ -68,6 +68,7 @@ const categoryIcons: Record<Category, LucideIcon> = {
   startup: Radio,
   app_paths: FolderOpen,
   uninstall: Boxes,
+  file_associations: FileSearch,
 };
 const PAGE_SIZE = 25;
 
@@ -196,7 +197,9 @@ function DetailDialog({
           </dd>
         </div>
         <div className="full-field">
-          <dt>Resolved target</dt>
+          <dt>
+            {entry.category === 'file_associations' ? 'Suggested registration' : 'Resolved target'}
+          </dt>
           <dd className="code-field">
             {entry.assessment.target || 'A reliable local target could not be resolved.'}
           </dd>
@@ -222,18 +225,22 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'uninstall'
-              ? 'Protected uninstall listing repair'
-              : entry.category === 'app_paths'
-                ? 'Protected application path repair'
-                : 'Protected startup change'}
+            {entry.category === 'file_associations'
+              ? 'Protected Open with repair'
+              : entry.category === 'uninstall'
+                ? 'Protected uninstall listing repair'
+                : entry.category === 'app_paths'
+                  ? 'Protected application path repair'
+                  : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'uninstall'
-              ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
-              : entry.category === 'app_paths'
-                ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-                : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'file_associations'
+              ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
+              : entry.category === 'uninstall'
+                ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+                : entry.category === 'app_paths'
+                  ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                  : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy
@@ -276,7 +283,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 12,
+    total: 14,
     entries: 0,
     current: '',
   });
@@ -323,7 +330,7 @@ export default function App() {
     setScanning(true);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 12, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 14, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -554,7 +561,7 @@ export default function App() {
           <p>
             {report
               ? 'Try a different search or clear your filters to see other entries.'
-              : 'Your startup entries, application paths, and uninstall records will appear here.'}
+              : 'Your startup entries, application paths, uninstall records, and Open with suggestions will appear here.'}
           </p>
           {report && (
             <button
@@ -1007,8 +1014,9 @@ export default function App() {
                 <div>
                   <h2>Focused scope. Transparent results.</h2>
                   <p>
-                    HKCU locations are read once in the shared view. HKLM locations are read in both
-                    32-bit and 64-bit views. This release checks 12 locations in total.
+                    This release checks 14 locations. File association Classes roots are shared and
+                    read once per hive. Other HKCU locations use the shared view; other HKLM
+                    locations use both 32-bit and 64-bit views.
                   </p>
                 </div>
               </div>
@@ -1102,7 +1110,7 @@ export default function App() {
                         </strong>
                         <small>
                           {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/12 locations
+                          {formatDuration(item.durationMs)} · {item.scopes.length}/14 locations
                         </small>
                       </span>
                       <span className="readonly-pill">
@@ -1145,8 +1153,8 @@ export default function App() {
                   <span>
                     <strong>Read-only scanning</strong>Scans use KEY_READ. Separately reviewed
                     changes support missing-target HKCU Run values, guarded App Paths mappings, and
-                    orphaned uninstall listing visibility, with verified backups and Windows
-                    transactions.
+                    orphaned uninstall listing visibility, and orphaned Open with suggestions, with
+                    verified backups and Windows transactions.
                   </span>
                 </div>
                 <div className="about-fact">
@@ -1169,8 +1177,9 @@ export default function App() {
                 <span className="eyebrow">SCOPE & LIMITATIONS</span>
                 <h3>Make sense of your results.</h3>
                 <p>
-                  “Target found” only indicates that the file or folder exists. It does not prove
-                  that the application works or that every part of its registry entry is valid.
+                  “Target found” indicates that the file, folder, or suggested file-type
+                  registration exists. It does not prove that the application works or that every
+                  part of its registry entry is valid.
                 </p>
                 <ul className="limits-list">
                   <li>
@@ -1184,12 +1193,13 @@ export default function App() {
                   </li>
                   <li>
                     <ArrowDownLeft size={17} />
-                    For uninstall records, only the InstallLocation folder is checked.
+                    Uninstall scans check InstallLocation; repair also verifies local uninstall
+                    executables.
                   </li>
                   <li>
                     <ArrowDownLeft size={17} />
-                    File associations, COM registrations, and system hives are outside this
-                    release’s scan scope.
+                    File association checks cover Open with registration references only. Default
+                    handlers, COM registrations, and system hives are outside scan scope.
                   </li>
                   <li>
                     <ArrowDownLeft size={17} />

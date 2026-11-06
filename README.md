@@ -1,6 +1,6 @@
 # RustRegistry
 
-A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup, application path, and orphaned uninstall-listing changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
+A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup, application path, orphaned uninstall-listing, and Open with suggestion changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
 
 Open source under the [MIT license](LICENSE). See the [changelog](CHANGELOG.md) and [GitHub releases](https://github.com/ersinkoc/rustregistry/releases) for version history and Windows downloads.
 
@@ -26,7 +26,7 @@ The executable requires WebView2 on the target computer. This first release does
 
 ## What it reads
 
-The scanner has a fixed scope of 12 registry locations:
+The scanner has a fixed scope of 14 registry locations:
 
 | Category          | Location under `Software\Microsoft\Windows\CurrentVersion` | Check                                    |
 | ----------------- | ---------------------------------------------------------- | ---------------------------------------- |
@@ -34,9 +34,9 @@ The scanner has a fixed scope of 12 registry locations:
 | Application paths | `App Paths`                                                | Default executable path                  |
 | Uninstall records | `Uninstall`                                                | `InstallLocation` folder, when provided  |
 
-Each location is read once under HKCU (shared view) and twice under HKLM (32-bit and 64-bit views). Uninstall records also show their reported display name, publisher, and version when available.
+The four locations above are each read once under HKCU (shared view) and twice under HKLM (32-bit and 64-bit views), giving 12 scopes. Two additional scopes read `Software\Classes\.extension\OpenWithProgids` under HKCU and HKLM once each: these extension/ProgID keys are shared on supported Windows. See [Microsoft’s registry view table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Uninstall records also show their reported display name, publisher, and version when available.
 
-- **Found:** the expected local file or directory existed at scan time.
+- **Found:** the expected local file, directory, or suggested file-type registration existed at scan time.
 - **Review:** an unambiguously resolved local target was not found. A disconnected drive or uninstalled application may explain this; this is not a recommendation to delete the record.
 - **Unverified:** the target is absent, ambiguous, inaccessible, unsupported, or could not be resolved reliably.
 
@@ -72,7 +72,7 @@ Scanning runs in a blocking worker outside the UI thread. Commands found in regi
 
 Scan results remain in memory. Confirmed changes save their backups locally, and the theme is saved in WebView local storage. No telemetry or remote content is used by the production frontend. Developer package installation and the development server naturally require their normal build-time connections.
 
-The engine checks up to 5,000 entries per location and interprets string values up to 32 KiB. Limits are reported in coverage. The scan is a point-in-time inventory rather than an atomic registry snapshot. It does not inspect all registry hives, COM registrations, file associations, application functionality, malware, or overall Windows performance.
+The engine checks up to 5,000 entries per location (and at most 20,000 direct Classes child keys while discovering file extensions) and interprets string values up to 32 KiB. Limits are reported in coverage. The scan is a point-in-time inventory rather than an atomic registry snapshot. It does not inspect all registry hives, COM registrations, default application handlers, application functionality, malware, or overall Windows performance.
 
 ## Uninstall listing repair in 0.1.3
 
@@ -83,6 +83,16 @@ For flat entries under **HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uni
 **Backups & restore → Review restore** restores the original absent or DWORD-zero visibility flag only when the entire live value snapshot matches the backed-up hidden state. Changed names, paths, commands, versions, custom values, added child keys, or a missing key block restoration. Existing keys are never recreated. Windows-managed key write timestamps naturally change; the backup covers original value contents, while key permissions stay untouched throughout.
 
 Uninstall snapshots are limited to 64 values and 32 KiB of raw data; the complete backup must also fit the existing backup-file limit. The new integrity-protected backup format coexists with unchanged startup and App Paths formats in the local backup folder. Older backups are not migrated or rewritten.
+
+## File association repair in 0.1.4
+
+This patch inventories **Open with suggestions**, not every file association or default handler. An empty `REG_NONE` or `REG_SZ` value under `HKCU\Software\Classes\.extension\OpenWithProgids` names a suggested file-type registration (ProgID). A registration absent from both HKCU and HKLM Classes roots is marked for review. An existing registration only proves the key exists; its handler or application is not executed or tested. See [Microsoft’s Open with registration documentation](https://learn.microsoft.com/en-us/windows/win32/shell/how-to-include-an-application-on-the-open-with-dialog-box).
+
+**Review repair → Back up & remove suggestion** saves the exact original value type and bytes plus guarded metadata, then conditionally removes only that named optional suggestion. It does not guess another application, fix missing executables, delete keys, change permissions, or modify an extension’s default value or protected `UserChoice` selection. Suggestions selected by either user/machine extension defaults or `UserChoice` are excluded. A same-named HKLM suggestion is also excluded because it would remain effective after removing the user value. Machine registrations remain read-only.
+
+**Backups & restore → Review restore** puts the exact original suggestion back only when its value is absent, both application registrations are still absent, and all guarded metadata matches. The guard includes every other suggestion, user/machine extension values, and any read-only `UserChoice` value snapshot. A new registration, changed selection or metadata, nested suggestion key, unreadable location, malformed value, or missing existing key blocks the action. No key is recreated. All reads are repeated before the conditional transaction; scans are point-in-time inventories, not atomic snapshots of the whole registry.
+
+The initial repair scope accepts ASCII extensions of 2–64 bytes (letters, digits, `_`, `-`, `+` after the dot) and single ASCII ProgIDs of at most 128 bytes with a leading letter and at least one dot. Unsupported names remain unverified or appear in coverage notes. Each guarded value collection is limited to 64 values/32 KiB and excludes registry links and ambiguous metadata. The complete backup must fit the existing 256 KiB limit. New association backups retain unchanged support for all three earlier backup formats; older files are never rewritten.
 
 ## Verify
 
@@ -99,9 +109,11 @@ npm run test:desktop
 
 `test:desktop` launches the **built release app** with a temporary local WebView2 debugging connection and verifies real native IPC scanning, filters, search, pagination, details, coverage, history, themes, the minimum desktop layout, cancellation, backup discovery, and review/cancel controls. It never confirms changes to the user's actual startup entries. For App Paths it creates one uniquely named, owned `RustRegistry-E2E-<uuid>.exe` test registration, runs repair and restore through the real UI, independently reads the resulting registry state, then removes only its own registration and test backup. Existing user registrations and backups are not edited. The helper requires an existing current-user App Paths root and does not change PowerShell execution policy. The debugging connection is enabled only for that test process. Results and screenshots are written to the ignored `.temp_files/` directory; an interactive Windows desktop is required.
 
-Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and fixed `0.1.1`/`0.1.2` backup fixtures. Four Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. Uninstall tests cover both an originally absent flag and an originally zero flag, including exact raw metadata preservation. They never modify the user's real startup list.
+Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and fixed `0.1.1`/`0.1.2`/`0.1.3` backup fixtures. Seven Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. Uninstall tests cover both an originally absent flag and an originally zero flag, including exact raw metadata preservation. They never modify the user's real startup list.
 
 The desktop suite also creates one uniquely named `RustRegistry-E2E-Uninstall-<uuid>` registration in the existing current-user Uninstall root. It verifies review/cancel, full-backup hide, hidden-state diagnostics, reload and restore through the packaged UI. A separate PowerShell reader checks all fixture values, types, and owner/group/DACL permissions before and after. The suite cleans only its own registration and matching backup; existing entries and user backups are not edited. No Windows Settings/Control Panel list UI assertion is made.
+
+The desktop suite additionally creates a uniquely named `.rr<uuid>` extension with two owned Open with suggestions and an owned default metadata value. It tests review/cancel, one-suggestion repair, exclusion of the default-selected suggestion, UI reload, and exact restore. An independent registry reader checks the original value types, other suggestions, extension defaults, permissions, and absence of UserChoice throughout. Only its owned extension and matching backup are removed afterward. The suite never creates or changes a protected UserChoice selection and does not assert Explorer’s cached Open with menu presentation.
 
 For a real read-only scan without the GUI:
 

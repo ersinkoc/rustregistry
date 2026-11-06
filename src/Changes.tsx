@@ -21,7 +21,7 @@ export interface ChangePlan {
   originalValue: string;
   valueType: string;
   expiresAt: number;
-  scope: 'startup' | 'app_path' | 'uninstall';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -38,7 +38,7 @@ interface Backup {
   createdAt: number;
   state: 'restore_available' | 'original_present' | 'conflict' | 'unverified';
   note: string;
-  scope: 'startup' | 'app_path' | 'uninstall';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association';
   registryPath: string;
 }
 interface Inventory {
@@ -48,6 +48,18 @@ interface Inventory {
 }
 
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'file_associations')
+    return (
+      entry.hive === 'HKCU' &&
+      entry.view === 'shared' &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'progid_missing' &&
+      entry.associationRepairable === true &&
+      ['REG_NONE', 'REG_SZ'].includes(entry.valueType) &&
+      /^software\\classes\\\.[a-z0-9_+-]+\\openwithprogids$/i.test(entry.keyPath) &&
+      /^[a-z][a-z0-9._-]*\.[a-z0-9_-]+$/i.test(entry.valueName)
+    );
+
   return (
     entry.hive === 'HKCU' &&
     entry.view === 'shared' &&
@@ -90,6 +102,7 @@ export function ChangeConfirmation({
   const restore = plan.action === 'restore';
   const appPath = plan.scope === 'app_path';
   const uninstall = plan.scope === 'uninstall';
+  const association = plan.scope === 'association';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -125,30 +138,38 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {uninstall
+        {association
           ? restore
-            ? 'Restore uninstall entry visibility?'
-            : 'Repair orphaned uninstall entry?'
-          : appPath
+            ? 'Restore Open with suggestion?'
+            : 'Repair orphaned file association?'
+          : uninstall
             ? restore
-              ? 'Restore application path?'
-              : 'Repair broken application path?'
-            : restore
-              ? 'Restore startup entry?'
-              : 'Disable this startup entry?'}
+              ? 'Restore uninstall entry visibility?'
+              : 'Repair orphaned uninstall entry?'
+            : appPath
+              ? restore
+                ? 'Restore application path?'
+                : 'Repair broken application path?'
+              : restore
+                ? 'Restore startup entry?'
+                : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {uninstall
+        {association
           ? restore
-            ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
-            : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
-          : appPath
+            ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
+            : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
+          : uninstall
             ? restore
-              ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
-              : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
-            : restore
-              ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-              : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+              ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
+              : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
+            : appPath
+              ? restore
+                ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+                : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+              : restore
+                ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+                : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -169,11 +190,13 @@ export function ChangeConfirmation({
         </div>
         <div className="full-field">
           <dt>
-            {uninstall
-              ? 'Original installation folder'
-              : appPath
-                ? 'Exact original executable path'
-                : 'Exact original command'}
+            {association
+              ? 'Original suggestion data'
+              : uninstall
+                ? 'Original installation folder'
+                : appPath
+                  ? 'Exact original executable path'
+                  : 'Exact original command'}
           </dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
@@ -201,6 +224,13 @@ export function ChangeConfirmation({
           </p>
         </>
       )}
+      {association && (
+        <p className="change-intro">
+          The extension key, {plan.preservedValues} other suggestion(s), and all default selections
+          stay in place. A changed selection, new application registration, or changed metadata
+          blocks the operation.
+        </p>
+      )}
       {appPath && (
         <p className="change-intro">
           The registry key and {plan.preservedValues} other value(s), including any Path metadata,
@@ -210,11 +240,13 @@ export function ChangeConfirmation({
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
-          {uninstall
-            ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
-            : restore
-              ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
-              : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
+          {association
+            ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
+            : uninstall
+              ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
+              : restore
+                ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
+                : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
         </p>
       </div>
       <label className="confirmation-check">
@@ -225,11 +257,13 @@ export function ChangeConfirmation({
           onChange={(event) => setAgreed(event.target.checked)}
         />
         <span>
-          {uninstall
-            ? 'I reviewed this entry and understand this only changes listing visibility.'
-            : appPath
-              ? 'I reviewed this exact value and understand the application path change.'
-              : 'I reviewed this exact value and understand the startup change.'}
+          {association
+            ? 'I reviewed this exact suggestion and understand the file association change.'
+            : uninstall
+              ? 'I reviewed this entry and understand this only changes listing visibility.'
+              : appPath
+                ? 'I reviewed this exact value and understand the application path change.'
+                : 'I reviewed this exact value and understand the startup change.'}
         </span>
       </label>
       {expired && (
@@ -249,15 +283,19 @@ export function ChangeConfirmation({
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
           {busy
             ? 'Applying…'
-            : uninstall
+            : association
               ? restore
-                ? 'Restore original visibility'
-                : 'Back up & hide entry'
-              : restore
                 ? 'Restore original value'
-                : appPath
-                  ? 'Back up & repair'
-                  : 'Back up & disable'}
+                : 'Back up & remove suggestion'
+              : uninstall
+                ? restore
+                  ? 'Restore original visibility'
+                  : 'Back up & hide entry'
+                : restore
+                  ? 'Restore original value'
+                  : appPath
+                    ? 'Back up & repair'
+                    : 'Back up & disable'}
         </button>
       </div>
     </dialog>
@@ -331,8 +369,8 @@ export function BackupsPanel({
               Local backups <span className="count-chip">{inventory?.backups.length ?? 0}</span>
             </h2>
             <p>
-              State is checked against the original current-user Run, App Paths, or Uninstall
-              location.
+              State is checked against the original current-user Run, App Paths, Uninstall, or Open
+              with location.
             </p>
           </div>
           <button
@@ -370,11 +408,13 @@ export function BackupsPanel({
                     {new Date(backup.createdAt).toLocaleString('en-US')}
                     <span>
                       ·{' '}
-                      {backup.scope === 'uninstall'
-                        ? 'Uninstall'
-                        : backup.scope === 'app_path'
-                          ? 'Application path'
-                          : 'Startup'}{' '}
+                      {backup.scope === 'association'
+                        ? 'File association'
+                        : backup.scope === 'uninstall'
+                          ? 'Uninstall'
+                          : backup.scope === 'app_path'
+                            ? 'Application path'
+                            : 'Startup'}{' '}
                       · {backup.valueName || '(Default)'}
                     </span>
                   </small>

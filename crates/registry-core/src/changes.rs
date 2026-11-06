@@ -1,3 +1,7 @@
+use crate::associations::{
+    validate_extension, validate_suggestion, AssociationBackup, AssociationState, CLASSES_KEY,
+    OPEN_WITH,
+};
 use crate::uninstall::{
     validate_uninstall_name, verify_orphan, UninstallBackup, UninstallSnapshot, COMPONENT,
     UNINSTALL_KEY,
@@ -134,6 +138,23 @@ struct AppPathBackup {
 }
 
 pub trait RegistryStore {
+    fn read_association(
+        &self,
+        _extension: &str,
+        _progid: &str,
+    ) -> Result<AssociationState, String> {
+        Err("File association recovery is unavailable in this registry store.".into())
+    }
+    fn compare_exchange_association(
+        &self,
+        _extension: &str,
+        _progid: &str,
+        _expected: &AssociationState,
+        _replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        Err("File association recovery is unavailable in this registry store.".into())
+    }
+
     fn read_uninstall(&self, _key_name: &str) -> Result<UninstallSnapshot, String> {
         Err("Uninstall recovery is unavailable in this registry store.".into())
     }
@@ -197,6 +218,8 @@ struct BackupRecord {
     app_path: Option<AppPathBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     uninstall: Option<UninstallBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    association: Option<AssociationBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -290,13 +313,18 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         if record.name.len() > 65_536 {
             return Err("Unsupported backup format.".into());
         }
-        match (&record.app_path, &record.uninstall, record.schema_version) {
-            (None, None, 1) => validate_value_name(&record.value_name)?,
-            (Some(app), None, 2) if record.value_name.is_empty() => {
+        match (
+            &record.app_path,
+            &record.uninstall,
+            &record.association,
+            record.schema_version,
+        ) {
+            (None, None, None, 1) => validate_value_name(&record.value_name)?,
+            (Some(app), None, None, 2) if record.value_name.is_empty() => {
                 validate_app_path_name(&app.executable)?;
                 app.guard.validate()?;
             }
-            (None, Some(uninstall), 3) if record.value_name == COMPONENT => {
+            (None, Some(uninstall), None, 3) if record.value_name == COMPONENT => {
                 validate_uninstall_name(&uninstall.key_name)?;
                 uninstall.snapshot.validate_original()?;
                 if uninstall.snapshot.get("InstallLocation") != Some(&record.original) {
@@ -305,9 +333,16 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     );
                 }
             }
+            (None, None, Some(association), 4) => {
+                validate_extension(&association.extension)?;
+                association.guard.validate(&record.value_name)?;
+                validate_suggestion(&record.original)?;
+            }
             _ => return Err("Unsupported backup format or registry scope.".into()),
         }
-        record.original.text()?;
+        if record.association.is_none() {
+            record.original.text()?;
+        }
         if record.integrity_sha256 != Self::checksum(record)? {
             return Err("The backup integrity checksum does not match. Restore is blocked.".into());
         }
@@ -328,6 +363,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             serde_json::to_vec(&(bytes, &record.app_path)).map_err(|e| e.to_string())?
         } else if record.schema_version == 3 {
             serde_json::to_vec(&(bytes, &record.uninstall)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 4 {
+            serde_json::to_vec(&(bytes, &record.association)).map_err(|e| e.to_string())?
         } else {
             bytes
         };
@@ -425,12 +462,16 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         if entry.hive != "HKCU"
             || entry.view != "shared"
             || entry.assessment.status != EntryStatus::Review
-            || entry.assessment.code != "target_missing"
+            || (entry.category != Category::FileAssociations
+                && entry.assessment.code != "target_missing")
         {
             return Err(
                 "Only confirmed missing-target entries in supported current-user locations are eligible."
                     .into(),
             );
+        }
+        if entry.category == Category::FileAssociations {
+            return self.prepare_association(entry);
         }
         if entry.category == Category::Uninstall {
             return self.prepare_uninstall(entry);
@@ -497,6 +538,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             integrity_sha256: String::new(),
             app_path,
             uninstall: None,
+            association: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -545,6 +587,51 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 key_name: key_name.into(),
                 snapshot,
             }),
+            association: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_association(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        if entry.assessment.code != "progid_missing" {
+            return Err("The association is not confirmed orphaned.".into());
+        }
+        let prefix = format!("{CLASSES_KEY}\\");
+        let suffix = format!("\\{OPEN_WITH}");
+        let extension = entry
+            .key_path
+            .strip_prefix(&prefix)
+            .and_then(|p| p.strip_suffix(&suffix))
+            .ok_or("Unsupported file association location.")?;
+        validate_extension(extension)?;
+        let state = entry
+            .association_state
+            .clone()
+            .ok_or("File association evidence is unavailable. Scan again.")?;
+        state.guard.validate(&entry.value_name)?;
+        let original = state
+            .value
+            .clone()
+            .ok_or("The suggestion no longer exists.")?;
+        validate_suggestion(&original)?;
+        if self.store.read_association(extension, &entry.value_name)? != state {
+            return Err("The file association changed after the scan. Scan again.".into());
+        }
+        let mut record = BackupRecord {
+            schema_version: 4,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: entry.value_name.clone(),
+            created_at: now()?,
+            original,
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: None,
+            association: Some(AssociationBackup {
+                extension: extension.into(),
+                guard: state.guard,
+            }),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -566,8 +653,14 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             name: record.name.clone(),
             value_name: record.value_name.clone(),
             registry_path: Self::registry_path(&record),
-            original_value: record.original.text()?,
-            value_type: if record.uninstall.is_some() {
+            original_value: if record.association.is_some() {
+                "(empty)".into()
+            } else {
+                record.original.text()?
+            },
+            value_type: if record.association.is_some() && record.original.kind == 0 {
+                "REG_NONE"
+            } else if record.uninstall.is_some() {
                 "REG_DWORD"
             } else if record.original.kind == 1 {
                 "REG_SZ"
@@ -576,7 +669,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.uninstall.is_some() {
+            scope: if record.association.is_some() {
+                "association"
+            } else if record.uninstall.is_some() {
                 "uninstall"
             } else if record.app_path.is_some() {
                 "app_path"
@@ -584,7 +679,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "startup"
             }
             .into(),
-            preserved_values: if let Some(uninstall) = &record.uninstall {
+            preserved_values: if let Some(association) = &record.association {
+                association.guard.suggestions.len()
+            } else if let Some(uninstall) = &record.uninstall {
                 uninstall.snapshot.values.len()
             } else {
                 record
@@ -618,6 +715,12 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if let Some(association) = &record.association {
+            return format!(
+                "HKCU\\{CLASSES_KEY}\\{}\\{OPEN_WITH}",
+                association.extension
+            );
+        }
         if let Some(uninstall) = &record.uninstall {
             return format!("HKCU\\{UNINSTALL_KEY}\\{}", uninstall.key_name);
         }
@@ -628,6 +731,15 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
+        if let Some(association) = &record.association {
+            let state = self
+                .store
+                .read_association(&association.extension, &record.value_name)?;
+            if state.guard != association.guard {
+                return Err("The association metadata or application selection changed. Repair or restore is blocked.".into());
+            }
+            return Ok(state.value);
+        }
         if let Some(uninstall) = &record.uninstall {
             let actual = self.store.read_uninstall(&uninstall.key_name)?;
             if actual == uninstall.snapshot {
@@ -655,6 +767,17 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         expected: Option<StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if let Some(association) = &record.association {
+            return self.store.compare_exchange_association(
+                &association.extension,
+                &record.value_name,
+                &AssociationState {
+                    value: expected,
+                    guard: association.guard.clone(),
+                },
+                replacement,
+            );
+        }
         if let Some(uninstall) = &record.uninstall {
             return self.store.set_uninstall_hidden(
                 &uninstall.key_name,
@@ -700,7 +823,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         } else {
             if let Some(uninstall) = &record.uninstall {
                 verify_orphan(&uninstall.snapshot, &self.probe)?;
-            } else {
+            } else if record.association.is_none() {
                 self.verify_missing(&record.original, record.app_path.is_some())?;
             }
             if self.read_record(&record)?.as_ref() != Some(&record.original) {
@@ -723,7 +846,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.uninstall.is_some() {
+            message: if record.association.is_some() {
+                if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
+            } else if record.uninstall.is_some() {
                 if restore { "Original uninstall metadata and visibility restored and verified." } else { "Orphaned uninstall entry hidden after a full verified backup. No uninstall command was executed." }
             } else if restore {
                 "Original registry value restored and verified."
@@ -789,7 +914,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.uninstall.is_some() {
+            let scope = if record.association.is_some() {
+                "association"
+            } else if record.uninstall.is_some() {
                 "uninstall"
             } else if record.app_path.is_some() {
                 "app_path"
@@ -942,6 +1069,8 @@ mod tests {
             uninstall_snapshot: None,
             uninstall_repairable: false,
             uninstall_hidden: false,
+            association_state: None,
+            association_repairable: false,
         }
     }
     fn setup(path: &Path) -> (Memory, Rc<Cell<ProbeResult>>, ChangeManager<Memory, Probe>) {
@@ -1460,6 +1589,25 @@ mod tests {
             store.read_app_path("broken.exe").unwrap().value,
             Some(original())
         );
+        assert_eq!(fs::read_to_string(path).unwrap(), legacy);
+    }
+    #[test]
+    fn restores_unchanged_v013_uninstall_backup_without_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(dir.path());
+        let original = crate::uninstall::fixture_snapshot(None);
+        store
+            .2
+            .borrow_mut()
+            .insert("ExampleUninstall".into(), original.hidden().unwrap());
+        let id = "33333333-3333-4333-8333-333333333333";
+        let legacy = include_str!("../tests/fixtures/uninstall-backup-v3.json");
+        let path = dir.path().join(format!("{id}.json"));
+        fs::write(&path, legacy).unwrap();
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "uninstall");
+        manager.apply(&plan.token).unwrap();
+        assert_eq!(store.read_uninstall("ExampleUninstall").unwrap(), original);
         assert_eq!(fs::read_to_string(path).unwrap(), legacy);
     }
 }

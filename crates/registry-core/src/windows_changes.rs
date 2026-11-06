@@ -1,3 +1,5 @@
+#[path = "windows_associations.rs"]
+mod associations;
 use crate::changes::{
     validate_app_path_name, validate_value_name, AppPathGuard, AppPathState, NamedValue,
     RegistryStore, StoredValue, APP_PATHS_KEY, STARTUP_KEY,
@@ -10,6 +12,9 @@ pub struct WindowsRegistryStore {
     path: String,
     app_paths_path: String,
     uninstall_path: String,
+    classes_path: String,
+    machine_classes_path: String,
+    file_exts_path: String,
 }
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
@@ -17,6 +22,9 @@ impl Default for WindowsRegistryStore {
             path: STARTUP_KEY.into(),
             app_paths_path: APP_PATHS_KEY.into(),
             uninstall_path: UNINSTALL_KEY.into(),
+            classes_path: crate::associations::CLASSES_KEY.into(),
+            machine_classes_path: crate::associations::CLASSES_KEY.into(),
+            file_exts_path: crate::associations::FILE_EXTS_KEY.into(),
         }
     }
 }
@@ -118,6 +126,23 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_association(
+        &self,
+        extension: &str,
+        progid: &str,
+    ) -> Result<crate::associations::AssociationState, String> {
+        self.association_state(extension, progid)
+    }
+    fn compare_exchange_association(
+        &self,
+        extension: &str,
+        progid: &str,
+        expected: &crate::associations::AssociationState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_association(extension, progid, expected, replacement)
+    }
+
     fn read_uninstall(&self, key_name: &str) -> Result<UninstallSnapshot, String> {
         validate_uninstall_name(key_name)?;
         let path = format!("{}\\{}", self.uninstall_path, key_name);
@@ -353,6 +378,7 @@ mod tests {
             path: fixture.path.clone(),
             app_paths_path: format!("{}\\App Paths", fixture.path),
             uninstall_path: format!("{}\\Uninstall", fixture.path),
+            ..Default::default()
         };
         assert_eq!(store.read("Fixture").unwrap(), Some(original.clone()));
         store
@@ -433,12 +459,15 @@ mod tests {
             uninstall_snapshot: None,
             uninstall_repairable: false,
             uninstall_hidden: false,
+            association_state: None,
+            association_repairable: false,
         };
         let mut manager = ChangeManager::new(
             WindowsRegistryStore {
                 path: fixture.path.clone(),
                 app_paths_path: format!("{}\\App Paths", fixture.path),
                 uninstall_path: format!("{}\\Uninstall", fixture.path),
+                ..Default::default()
             },
             directory.path().join("backups"),
             LocalPathProbe,
@@ -455,6 +484,7 @@ mod tests {
                 path: fixture.path.clone(),
                 app_paths_path: format!("{}\\App Paths", fixture.path),
                 uninstall_path: format!("{}\\Uninstall", fixture.path),
+                ..Default::default()
             },
             directory.path().join("backups"),
             LocalPathProbe,
@@ -465,6 +495,7 @@ mod tests {
             path: fixture.path.clone(),
             app_paths_path: format!("{}\\App Paths", fixture.path),
             uninstall_path: format!("{}\\Uninstall", fixture.path),
+            ..Default::default()
         };
         assert_eq!(reader.read("Fixture").unwrap(), Some(original));
     }
@@ -507,6 +538,7 @@ mod tests {
             path: format!("{}\\Run", fixture.path),
             app_paths_path: app_paths.clone(),
             uninstall_path: format!("{}\\Uninstall", fixture.path),
+            ..Default::default()
         };
         let entry = RegistryEntry {
             id: "fixture".into(),
@@ -532,6 +564,8 @@ mod tests {
             uninstall_snapshot: None,
             uninstall_repairable: false,
             uninstall_hidden: false,
+            association_state: None,
+            association_repairable: false,
         };
         let mut manager =
             ChangeManager::new(store(), directory.path().join("backups"), LocalPathProbe);
@@ -656,6 +690,7 @@ mod tests {
                 path: format!("{}\\Run", fixture.path),
                 app_paths_path: format!("{}\\App Paths", fixture.path),
                 uninstall_path: uninstall_path.clone(),
+                ..Default::default()
             };
             assert_eq!(
                 store().read_uninstall("ExampleUninstall").unwrap(),
@@ -685,6 +720,8 @@ mod tests {
                 uninstall_snapshot: Some(original.clone()),
                 uninstall_repairable: true,
                 uninstall_hidden: false,
+                association_state: None,
+                association_repairable: false,
             };
             let mut manager =
                 ChangeManager::new(store(), directory.path().join("backups"), LocalPathProbe);

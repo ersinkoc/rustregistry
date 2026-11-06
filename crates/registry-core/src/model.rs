@@ -6,6 +6,7 @@ pub enum Category {
     Startup,
     AppPaths,
     Uninstall,
+    FileAssociations,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +50,9 @@ pub struct RegistryEntry {
     pub uninstall_snapshot: Option<crate::uninstall::UninstallSnapshot>,
     pub uninstall_repairable: bool,
     pub uninstall_hidden: bool,
+    #[serde(skip)]
+    pub association_state: Option<crate::associations::AssociationState>,
+    pub association_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

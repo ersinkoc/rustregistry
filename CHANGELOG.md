@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.4 — 2026-11-07
+
+- Add read-only Open with suggestion inventory under shared current-user and machine Classes roots, bringing coverage to 14 scopes.
+- Add backed-up, reversible removal of a current-user suggestion only when its referenced file-type registration is absent from both user and machine roots.
+- Preserve extension defaults, protected UserChoice selections, other suggestions, keys, permissions, and application files. Default-selected or machine-duplicated suggestions remain read-only.
+- Recheck guarded metadata and registrations before conditional Windows transactions; block stale scans, new registrations, changed selections, conflicts, and missing keys.
+- Restore the exact original empty REG_NONE/REG_SZ type and bytes from persistent integrity-checked backups. Preserve all earlier backup formats, including a fixed v0.1.3 fixture.
+- Add English association review/restore screens, native Windows conflict and restart tests, and a packaged desktop round trip with an independently inspected owned fixture.
+
 ## 0.1.3 — 2026-11-07
 
 - Add backed-up, reversible visibility repair for verified orphaned current-user uninstall entries.

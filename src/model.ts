@@ -1,4 +1,4 @@
-export type Category = 'startup' | 'app_paths' | 'uninstall';
+export type Category = 'startup' | 'app_paths' | 'uninstall' | 'file_associations';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -14,6 +14,7 @@ export interface RegistryEntry {
   appPathRepairable?: boolean;
   uninstallRepairable?: boolean;
   uninstallHidden?: boolean;
+  associationRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -63,6 +64,11 @@ export const categories: Record<Category, { label: string; description: string; 
     label: 'Application paths',
     description: 'Executables registered under App Paths',
     short: 'App path',
+  },
+  file_associations: {
+    label: 'File associations',
+    description: 'Open with suggestions and their registrations',
+    short: 'File type',
   },
   uninstall: {
     label: 'Uninstall records',

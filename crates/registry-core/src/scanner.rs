@@ -54,6 +54,15 @@ fn sources() -> Vec<Source> {
             });
         }
     }
+    for hive in ["HKCU", "HKLM"] {
+        result.push(Source {
+            category: Category::FileAssociations,
+            hive,
+            path: crate::associations::CLASSES_KEY,
+            flag: 0,
+            view: "shared",
+        });
+    }
     result
 }
 
@@ -147,6 +156,7 @@ fn make_entry(
                         Category::Startup => TargetKind::Command,
                         Category::AppPaths => TargetKind::File,
                         Category::Uninstall => TargetKind::Directory,
+                        Category::FileAssociations => TargetKind::File,
                     };
                     let assessment = analyze_target(&raw, kind, environment, &LocalPathProbe);
                     (raw, value_type, assessment)
@@ -193,8 +203,14 @@ fn make_entry(
         uninstall_snapshot: None,
         uninstall_repairable: false,
         uninstall_hidden: false,
+        association_state: None,
+        association_repairable: false,
     }
 }
+
+#[path = "association_scan.rs"]
+mod association_scan;
+use association_scan::scan_associations;
 
 fn scan_source(
     source: &Source,
@@ -232,7 +248,9 @@ fn scan_source(
         }
     };
     let start_count = entries.len();
-    if source.category == Category::Startup {
+    if source.category == Category::FileAssociations {
+        scan_associations(source, &key, cancel, entries, &mut scope);
+    } else if source.category == Category::Startup {
         for (index, result) in key.enum_values().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 scope.status = "cancelled".into();
