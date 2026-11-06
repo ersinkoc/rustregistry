@@ -3,6 +3,7 @@ pub mod changes;
 mod model;
 #[cfg(windows)]
 mod scanner;
+pub mod uninstall;
 #[cfg(windows)]
 pub mod windows_changes;
 

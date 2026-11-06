@@ -1584,6 +1584,9 @@ tr:hover td {
   background: #0008;
   backdrop-filter: blur(3px);
 }
+.uninstall-evidence {
+  margin-top: 23px;
+}
 .change-dialog h2 {
   font-size: 25px;
   font-weight: 550;

@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.3 — 2026-11-07
+
+- Add backed-up, reversible visibility repair for verified orphaned current-user uninstall entries.
+- Require both a missing installation folder and missing explicit local uninstall executables; existing/uncertain uninstallers, MSI, system components, protected entries, updates, grouped entries, and nested keys remain read-only.
+- Back up every original value and byte type before setting only `SystemComponent=1`. Keep the key, permissions, application files, and all other metadata intact. No uninstall command is executed.
+- Restore the exact original absent/zero visibility flag only when the full live record matches its backed-up hidden state.
+- Preserve `0.1.1` startup and `0.1.2` App Paths backup compatibility, verified using fixed legacy-format fixtures.
+- Add English full-backup confirmation and restore screens, hidden-entry diagnostics, native Windows transaction tests, and an owned-fixture desktop round trip.
+
 ## 0.1.2 — 2026-11-07
 
 - Add backed-up repair and exact-value restore for confirmed missing executable mappings in the current user's `App Paths` entries.

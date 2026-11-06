@@ -5,6 +5,7 @@ import { createServer } from 'node:net';
 import { resolve } from 'node:path';
 import { once } from 'node:events';
 import { verifyAppPathRecovery } from './app-path-smoke.mjs';
+import { verifyUninstallRecovery } from './uninstall-smoke.mjs';
 
 if (process.platform !== 'win32')
   throw new Error('Desktop smoke verification requires Windows x64.');
@@ -211,6 +212,7 @@ try {
   await expect(page.locator('.count-chip')).toHaveText(String(backupCount));
   checked('Review cancellation leaves the backup inventory unchanged');
   await verifyAppPathRecovery(page, output, checked, summary);
+  await verifyUninstallRecovery(page, output, checked, summary);
 
   await page.getByRole('link', { name: 'RustRegistry overview', exact: true }).click();
   await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();

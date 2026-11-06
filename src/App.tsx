@@ -222,19 +222,23 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'app_paths'
-              ? 'Protected application path repair'
-              : 'Protected startup change'}
+            {entry.category === 'uninstall'
+              ? 'Protected uninstall listing repair'
+              : entry.category === 'app_paths'
+                ? 'Protected application path repair'
+                : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'app_paths'
-              ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-              : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'uninstall'
+              ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+              : entry.category === 'app_paths'
+                ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy
               ? 'Preparing review…'
-              : entry.category === 'app_paths'
+              : entry.category !== 'startup'
                 ? 'Review repair'
                 : 'Review disable'}
           </button>
@@ -249,6 +253,12 @@ function DetailDialog({
         </p>
       </div>
       <p className="copy-feedback" role="status">
+        {entry.uninstallHidden && (
+          <span>
+            This entry is marked hidden/system component. Use a matching backup to review restoring
+            visibility.
+          </span>
+        )}
         {copyState}
       </p>
     </dialog>
@@ -1134,8 +1144,9 @@ export default function App() {
                   <ShieldCheck size={19} />
                   <span>
                     <strong>Read-only scanning</strong>Scans use KEY_READ. Separately reviewed
-                    changes support missing-target HKCU Run values and guarded App Paths default
-                    mappings, with verified backups and Windows transactions.
+                    changes support missing-target HKCU Run values, guarded App Paths mappings, and
+                    orphaned uninstall listing visibility, with verified backups and Windows
+                    transactions.
                   </span>
                 </div>
                 <div className="about-fact">

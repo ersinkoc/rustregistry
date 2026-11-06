@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 2,
+  "id": "22222222-2222-4222-8222-222222222222",
+  "name": "broken.exe",
+  "valueName": "",
+  "createdAt": 2,
+  "original": {
+    "kind": 2,
+    "bytes": [
+      67, 0, 58, 0, 92, 0, 77, 0, 105, 0, 115, 0, 115, 0, 105, 0, 110, 0, 103, 0, 92, 0, 97, 0, 112,
+      0, 112, 0, 46, 0, 101, 0, 120, 0, 101, 0, 0, 0
+    ]
+  },
+  "appPath": {
+    "executable": "broken.exe",
+    "guard": {
+      "values": [
+        {
+          "name": "Path",
+          "value": {
+            "kind": 2,
+            "bytes": [65, 0, 0, 0]
+          }
+        }
+      ]
+    }
+  },
+  "integritySha256": "9a50ed40f7bf02af37eee1e87b1992b05d780247fa43e5595b5ea11e3bd18433"
+}

@@ -21,8 +21,10 @@ export interface ChangePlan {
   originalValue: string;
   valueType: string;
   expiresAt: number;
-  scope: 'startup' | 'app_path';
+  scope: 'startup' | 'app_path' | 'uninstall';
   preservedValues: number;
+  uninstallCommand?: string | null;
+  componentWasPresent: boolean;
 }
 export interface ChangeResult {
   backupId: string;
@@ -36,7 +38,7 @@ interface Backup {
   createdAt: number;
   state: 'restore_available' | 'original_present' | 'conflict' | 'unverified';
   note: string;
-  scope: 'startup' | 'app_path';
+  scope: 'startup' | 'app_path' | 'uninstall';
   registryPath: string;
 }
 interface Inventory {
@@ -60,6 +62,13 @@ export function canQuarantine(entry: RegistryEntry) {
         entry.valueName === '' &&
         /^software\\microsoft\\windows\\currentversion\\app paths\\[^\\/:*?"<>|]+\.exe$/i.test(
           entry.keyPath,
+        )) ||
+      (entry.category === 'uninstall' &&
+        entry.uninstallRepairable === true &&
+        entry.uninstallHidden !== true &&
+        entry.valueName === 'InstallLocation' &&
+        /^software\\microsoft\\windows\\currentversion\\uninstall\\[^\\/:*?"<>|]+$/i.test(
+          entry.keyPath,
         )))
   );
 }
@@ -80,6 +89,7 @@ export function ChangeConfirmation({
   const [clock, setClock] = useState(Date.now());
   const restore = plan.action === 'restore';
   const appPath = plan.scope === 'app_path';
+  const uninstall = plan.scope === 'uninstall';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -115,22 +125,30 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {appPath
+        {uninstall
           ? restore
-            ? 'Restore application path?'
-            : 'Repair broken application path?'
-          : restore
-            ? 'Restore startup entry?'
-            : 'Disable this startup entry?'}
+            ? 'Restore uninstall entry visibility?'
+            : 'Repair orphaned uninstall entry?'
+          : appPath
+            ? restore
+              ? 'Restore application path?'
+              : 'Repair broken application path?'
+            : restore
+              ? 'Restore startup entry?'
+              : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {appPath
+        {uninstall
           ? restore
-            ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
-            : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
-          : restore
-            ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-            : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+            ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
+            : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
+          : appPath
+            ? restore
+              ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+              : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+            : restore
+              ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+              : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -150,10 +168,39 @@ export function ChangeConfirmation({
           <dd className="mono">{plan.valueType}</dd>
         </div>
         <div className="full-field">
-          <dt>{appPath ? 'Exact original executable path' : 'Exact original command'}</dt>
+          <dt>
+            {uninstall
+              ? 'Original installation folder'
+              : appPath
+                ? 'Exact original executable path'
+                : 'Exact original command'}
+          </dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
       </dl>
+      {uninstall && (
+        <>
+          <dl className="detail-fields uninstall-evidence">
+            <div className="full-field">
+              <dt>Original uninstall command · never executed</dt>
+              <dd className="code-field">{plan.uninstallCommand}</dd>
+            </div>
+            <div className="full-field">
+              <dt>SystemComponent change</dt>
+              <dd>
+                {restore
+                  ? `1 → ${plan.componentWasPresent ? '0' : 'absent'}`
+                  : `${plan.componentWasPresent ? '0' : 'absent'} → 1`}
+              </dd>
+            </div>
+          </dl>
+          <p className="change-intro">
+            All {plan.preservedValues} original registry values are included in the backup. Only the
+            visibility flag changes. The record stays in the registry and in RustRegistry’s
+            inventory.
+          </p>
+        </>
+      )}
       {appPath && (
         <p className="change-intro">
           The registry key and {plan.preservedValues} other value(s), including any Path metadata,
@@ -163,9 +210,11 @@ export function ChangeConfirmation({
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
-          {restore
-            ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
-            : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
+          {uninstall
+            ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
+            : restore
+              ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
+              : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
         </p>
       </div>
       <label className="confirmation-check">
@@ -176,9 +225,11 @@ export function ChangeConfirmation({
           onChange={(event) => setAgreed(event.target.checked)}
         />
         <span>
-          {appPath
-            ? 'I reviewed this exact value and understand the application path change.'
-            : 'I reviewed this exact value and understand the startup change.'}
+          {uninstall
+            ? 'I reviewed this entry and understand this only changes listing visibility.'
+            : appPath
+              ? 'I reviewed this exact value and understand the application path change.'
+              : 'I reviewed this exact value and understand the startup change.'}
         </span>
       </label>
       {expired && (
@@ -198,11 +249,15 @@ export function ChangeConfirmation({
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
           {busy
             ? 'Applying…'
-            : restore
-              ? 'Restore original value'
-              : appPath
-                ? 'Back up & repair'
-                : 'Back up & disable'}
+            : uninstall
+              ? restore
+                ? 'Restore original visibility'
+                : 'Back up & hide entry'
+              : restore
+                ? 'Restore original value'
+                : appPath
+                  ? 'Back up & repair'
+                  : 'Back up & disable'}
         </button>
       </div>
     </dialog>
@@ -275,7 +330,10 @@ export function BackupsPanel({
             <h2>
               Local backups <span className="count-chip">{inventory?.backups.length ?? 0}</span>
             </h2>
-            <p>State is checked against the original current-user Run or App Paths location.</p>
+            <p>
+              State is checked against the original current-user Run, App Paths, or Uninstall
+              location.
+            </p>
           </div>
           <button
             className="secondary-button"
@@ -311,8 +369,13 @@ export function BackupsPanel({
                     <Clock3 size={12} />
                     {new Date(backup.createdAt).toLocaleString('en-US')}
                     <span>
-                      · {backup.scope === 'app_path' ? 'Application path' : 'Startup'} ·{' '}
-                      {backup.valueName || '(Default)'}
+                      ·{' '}
+                      {backup.scope === 'uninstall'
+                        ? 'Uninstall'
+                        : backup.scope === 'app_path'
+                          ? 'Application path'
+                          : 'Startup'}{' '}
+                      · {backup.valueName || '(Default)'}
                     </span>
                   </small>
                   <code>{backup.id}</code>

@@ -190,6 +190,9 @@ fn make_entry(
         snapshot,
         app_path_guard: None,
         app_path_repairable: false,
+        uninstall_snapshot: None,
+        uninstall_repairable: false,
+        uninstall_hidden: false,
     }
 }
 
@@ -274,7 +277,7 @@ fn scan_source(
                     continue;
                 }
             };
-            let options = if source.category == Category::AppPaths {
+            let options = if matches!(source.category, Category::AppPaths | Category::Uninstall) {
                 REG_OPTION_OPEN_LINK
             } else {
                 0
@@ -326,6 +329,22 @@ fn scan_source(
             if source.category == Category::Uninstall {
                 entry.publisher = read_optional(&child, "Publisher", &mut notes);
                 entry.version = read_optional(&child, "DisplayVersion", &mut notes);
+                if source.hive == "HKCU" && crate::uninstall::validate_uninstall_name(&name).is_ok()
+                {
+                    if let Ok(snapshot) = crate::windows_changes::read_uninstall_snapshot(&child) {
+                        entry.uninstall_hidden = snapshot.is_hidden();
+                        entry.uninstall_repairable = entry.assessment.status == EntryStatus::Review
+                            && entry.assessment.code == "target_missing"
+                            && crate::uninstall::verify_orphan(&snapshot, &LocalPathProbe).is_ok();
+                        if entry.uninstall_hidden && entry.assessment.status == EntryStatus::Review
+                        {
+                            entry.assessment.status = EntryStatus::Unknown;
+                            entry.assessment.code = "uninstall_hidden".into();
+                            entry.assessment.explanation = "This entry is marked as hidden or a system component. It remains in the registry inventory and is outside repair scope. Use a matching backup to review restoring visibility.".into();
+                        }
+                        entry.uninstall_snapshot = Some(snapshot);
+                    }
+                }
             }
             scope
                 .notes

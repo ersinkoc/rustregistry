@@ -12,6 +12,8 @@ export interface RegistryEntry {
   valueType: string;
   rawValue: string;
   appPathRepairable?: boolean;
+  uninstallRepairable?: boolean;
+  uninstallHidden?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {

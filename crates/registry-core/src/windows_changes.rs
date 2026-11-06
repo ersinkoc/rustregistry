@@ -2,20 +2,68 @@ use crate::changes::{
     validate_app_path_name, validate_value_name, AppPathGuard, AppPathState, NamedValue,
     RegistryStore, StoredValue, APP_PATHS_KEY, STARTUP_KEY,
 };
+use crate::uninstall::{validate_uninstall_name, UninstallSnapshot, COMPONENT, UNINSTALL_KEY};
 use std::borrow::Cow;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
 pub struct WindowsRegistryStore {
     path: String,
     app_paths_path: String,
+    uninstall_path: String,
 }
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
         Self {
             path: STARTUP_KEY.into(),
             app_paths_path: APP_PATHS_KEY.into(),
+            uninstall_path: UNINSTALL_KEY.into(),
         }
     }
+}
+
+pub(crate) fn read_uninstall_snapshot(key: &RegKey) -> Result<UninstallSnapshot, String> {
+    if key.enum_keys().next().is_some() {
+        return Err(
+            "Uninstall entries with child keys or unreadable metadata cannot be repaired.".into(),
+        );
+    }
+    let mut values = Vec::new();
+    let mut size = 0;
+    for item in key.enum_values() {
+        let (name, value) =
+            item.map_err(|_| "Uninstall metadata could not be read completely.".to_string())?;
+        size += value.bytes.len();
+        if values.len() >= 64 || size > 32_768 {
+            return Err("Uninstall metadata exceeds the supported backup limits.".into());
+        }
+        values.push(NamedValue {
+            name,
+            value: StoredValue {
+                kind: value.vtype as u32,
+                bytes: value.bytes.into_owned(),
+            },
+        });
+    }
+    values.sort_by_key(|item| item.name.to_lowercase());
+    let snapshot = UninstallSnapshot { values };
+    snapshot.validate()?;
+    for name in [
+        COMPONENT,
+        "WindowsInstaller",
+        "NoRemove",
+        "ParentKeyName",
+        "ParentDisplayName",
+        "ReleaseType",
+        "DisplayName",
+        "InstallLocation",
+        "UninstallString",
+        "QuietUninstallString",
+    ] {
+        if read_value(key, name)?.as_ref() != snapshot.get(name) {
+            return Err("Uninstall field aliases are ambiguous. Repair is blocked.".into());
+        }
+    }
+    Ok(snapshot)
 }
 
 pub(crate) fn read_app_path_guard(key: &RegKey) -> Result<AppPathGuard, String> {
@@ -64,12 +112,73 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
         })),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(format!(
-            "Cannot read the startup value (Windows error {}).",
+            "Cannot read the registry value (Windows error {}).",
             error.raw_os_error().unwrap_or(0)
         )),
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_uninstall(&self, key_name: &str) -> Result<UninstallSnapshot, String> {
+        validate_uninstall_name(key_name)?;
+        let path = format!("{}\\{}", self.uninstall_path, key_name);
+        let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_options_flags(path, REG_OPTION_OPEN_LINK, KEY_READ).map_err(|error| format!("Cannot read the existing current-user uninstall entry (Windows error {}). Its key is never recreated automatically.", error.raw_os_error().unwrap_or(0)))?;
+        read_uninstall_snapshot(&key)
+    }
+    fn set_uninstall_hidden(
+        &self,
+        key_name: &str,
+        original: &UninstallSnapshot,
+        hide: bool,
+    ) -> Result<(), String> {
+        validate_uninstall_name(key_name)?;
+        original.validate_original()?;
+        let hidden = original.hidden()?;
+        let expected = if hide { original } else { &hidden };
+        if self.read_uninstall(key_name)? != *expected {
+            return Err("The uninstall entry changed. Its visibility was not changed.".into());
+        }
+        let transaction = Transaction::new().map_err(|_| {
+            "Windows registry transactions are unavailable. Nothing was changed.".to_string()
+        })?;
+        let path = format!("{}\\{}", self.uninstall_path, key_name);
+        let key = RegKey::predef(HKEY_CURRENT_USER).open_subkey_transacted_with_flags(path, &transaction, KEY_READ | KEY_SET_VALUE).map_err(|error| format!("Cannot open the existing uninstall entry for a protected change (Windows error {}).", error.raw_os_error().unwrap_or(0)))?;
+        if read_uninstall_snapshot(&key)? != *expected {
+            return Err(
+                "The uninstall entry changed before its transaction. Nothing was overwritten."
+                    .into(),
+            );
+        }
+        let component_name = original
+            .values
+            .iter()
+            .find(|item| item.name.eq_ignore_ascii_case(COMPONENT))
+            .map_or(COMPONENT, |item| item.name.as_str());
+        let value = if hide {
+            Some(StoredValue {
+                kind: 4,
+                bytes: vec![1, 0, 0, 0],
+            })
+        } else {
+            original.get(COMPONENT).cloned()
+        };
+        match value {
+            Some(value) => key.set_raw_value(
+                component_name,
+                &RegValue {
+                    bytes: Cow::Borrowed(&value.bytes),
+                    vtype: REG_DWORD,
+                },
+            ),
+            None => key.delete_value(COMPONENT),
+        }
+        .map_err(|error| {
+            format!(
+                "The uninstall visibility change failed (Windows error {}).",
+                error.raw_os_error().unwrap_or(0)
+            )
+        })?;
+        transaction.commit().map_err(|error| format!("Windows did not commit the uninstall change (Windows error {}). The backup is preserved.", error.raw_os_error().unwrap_or(0)))
+    }
     fn read_app_path(&self, executable: &str) -> Result<AppPathState, String> {
         validate_app_path_name(executable)?;
         let path = format!("{}\\{}", self.app_paths_path, executable);
@@ -243,6 +352,7 @@ mod tests {
         let store = WindowsRegistryStore {
             path: fixture.path.clone(),
             app_paths_path: format!("{}\\App Paths", fixture.path),
+            uninstall_path: format!("{}\\Uninstall", fixture.path),
         };
         assert_eq!(store.read("Fixture").unwrap(), Some(original.clone()));
         store
@@ -320,11 +430,15 @@ mod tests {
             snapshot: Some(original.clone()),
             app_path_guard: None,
             app_path_repairable: false,
+            uninstall_snapshot: None,
+            uninstall_repairable: false,
+            uninstall_hidden: false,
         };
         let mut manager = ChangeManager::new(
             WindowsRegistryStore {
                 path: fixture.path.clone(),
                 app_paths_path: format!("{}\\App Paths", fixture.path),
+                uninstall_path: format!("{}\\Uninstall", fixture.path),
             },
             directory.path().join("backups"),
             LocalPathProbe,
@@ -340,6 +454,7 @@ mod tests {
             WindowsRegistryStore {
                 path: fixture.path.clone(),
                 app_paths_path: format!("{}\\App Paths", fixture.path),
+                uninstall_path: format!("{}\\Uninstall", fixture.path),
             },
             directory.path().join("backups"),
             LocalPathProbe,
@@ -349,6 +464,7 @@ mod tests {
         let reader = WindowsRegistryStore {
             path: fixture.path.clone(),
             app_paths_path: format!("{}\\App Paths", fixture.path),
+            uninstall_path: format!("{}\\Uninstall", fixture.path),
         };
         assert_eq!(reader.read("Fixture").unwrap(), Some(original));
     }
@@ -390,6 +506,7 @@ mod tests {
         let store = || WindowsRegistryStore {
             path: format!("{}\\Run", fixture.path),
             app_paths_path: app_paths.clone(),
+            uninstall_path: format!("{}\\Uninstall", fixture.path),
         };
         let entry = RegistryEntry {
             id: "fixture".into(),
@@ -412,6 +529,9 @@ mod tests {
             snapshot: Some(original.clone()),
             app_path_guard: Some(guard.clone()),
             app_path_repairable: true,
+            uninstall_snapshot: None,
+            uninstall_repairable: false,
+            uninstall_hidden: false,
         };
         let mut manager =
             ChangeManager::new(store(), directory.path().join("backups"), LocalPathProbe);
@@ -459,5 +579,153 @@ mod tests {
         assert!(store()
             .compare_exchange_app_path("broken.exe", &expected, None)
             .is_err());
+    }
+
+    #[test]
+    fn uninstall_transaction_full_backup_restart_restore_preserves_raw_values() {
+        use crate::{
+            changes::ChangeManager, Assessment, Category, EntryStatus, LocalPathProbe,
+            RegistryEntry,
+        };
+        for component in [None, Some(0)] {
+            let fixture = Fixture {
+                path: format!(r"Software\RustRegistryTests\{}", uuid::Uuid::new_v4()),
+            };
+            let directory = tempfile::tempdir().unwrap();
+            let mut original = crate::uninstall::fixture_snapshot(component);
+            for (field, text) in [
+                (
+                    "InstallLocation",
+                    directory
+                        .path()
+                        .join("missing-installation")
+                        .display()
+                        .to_string(),
+                ),
+                (
+                    "UninstallString",
+                    format!(
+                        "\"{}\" /remove",
+                        directory.path().join("missing-uninstall.exe").display()
+                    ),
+                ),
+                (
+                    "QuietUninstallString",
+                    format!(
+                        "\"{}\" /quiet",
+                        directory.path().join("missing-uninstall.exe").display()
+                    ),
+                ),
+            ] {
+                original
+                    .values
+                    .iter_mut()
+                    .find(|item| item.name == field)
+                    .unwrap()
+                    .value = StoredValue {
+                    kind: 1,
+                    bytes: format!("{text}\0\0")
+                        .encode_utf16()
+                        .flat_map(u16::to_le_bytes)
+                        .collect(),
+                };
+            }
+            let uninstall_path = format!("{}\\Uninstall", fixture.path);
+            let child_path = format!("{uninstall_path}\\ExampleUninstall");
+            let (key, _) = RegKey::predef(HKEY_CURRENT_USER)
+                .create_subkey(&child_path)
+                .unwrap();
+            for item in &original.values {
+                let kind = match item.value.kind {
+                    1 => REG_SZ,
+                    3 => REG_BINARY,
+                    4 => REG_DWORD,
+                    _ => unreachable!(),
+                };
+                key.set_raw_value(
+                    &item.name,
+                    &RegValue {
+                        bytes: Cow::Borrowed(&item.value.bytes),
+                        vtype: kind,
+                    },
+                )
+                .unwrap();
+            }
+            drop(key);
+            let store = || WindowsRegistryStore {
+                path: format!("{}\\Run", fixture.path),
+                app_paths_path: format!("{}\\App Paths", fixture.path),
+                uninstall_path: uninstall_path.clone(),
+            };
+            assert_eq!(
+                store().read_uninstall("ExampleUninstall").unwrap(),
+                original
+            );
+            let entry = RegistryEntry {
+                id: "fixture".into(),
+                name: original.text("DisplayName").unwrap(),
+                category: Category::Uninstall,
+                hive: "HKCU".into(),
+                key_path: format!("{UNINSTALL_KEY}\\ExampleUninstall"),
+                view: "shared".into(),
+                value_name: "InstallLocation".into(),
+                value_type: "REG_SZ".into(),
+                raw_value: original.text("InstallLocation").unwrap(),
+                publisher: None,
+                version: None,
+                assessment: Assessment {
+                    status: EntryStatus::Review,
+                    code: "target_missing".into(),
+                    explanation: "Missing fixture".into(),
+                    target: None,
+                },
+                snapshot: None,
+                app_path_guard: None,
+                app_path_repairable: false,
+                uninstall_snapshot: Some(original.clone()),
+                uninstall_repairable: true,
+                uninstall_hidden: false,
+            };
+            let mut manager =
+                ChangeManager::new(store(), directory.path().join("backups"), LocalPathProbe);
+            let plan = manager.prepare_quarantine(&entry).unwrap();
+            let result = manager.apply(&plan.token).unwrap();
+            assert_eq!(
+                store().read_uninstall("ExampleUninstall").unwrap(),
+                original.hidden().unwrap()
+            );
+            let restore = manager.prepare_restore(&result.backup_id).unwrap();
+            let key = RegKey::predef(HKEY_CURRENT_USER)
+                .open_subkey_with_flags(&child_path, KEY_READ | KEY_SET_VALUE)
+                .unwrap();
+            key.set_value("ExternalChange", &1u32).unwrap();
+            assert!(manager.apply(&restore.token).is_err());
+            assert!(store()
+                .read_uninstall("ExampleUninstall")
+                .unwrap()
+                .is_hidden());
+            key.delete_value("ExternalChange").unwrap();
+            drop(key);
+            drop(manager);
+            let mut reopened =
+                ChangeManager::new(store(), directory.path().join("backups"), LocalPathProbe);
+            let restore = reopened.prepare_restore(&result.backup_id).unwrap();
+            reopened.apply(&restore.token).unwrap();
+            assert_eq!(
+                store().read_uninstall("ExampleUninstall").unwrap(),
+                original
+            );
+            assert!(store()
+                .set_uninstall_hidden("ExampleUninstall", &original, false)
+                .is_err());
+            let (nested, _) = RegKey::predef(HKEY_CURRENT_USER)
+                .create_subkey(format!("{child_path}\\Nested"))
+                .unwrap();
+            drop(nested);
+            assert!(store().read_uninstall("ExampleUninstall").is_err());
+            assert!(store()
+                .set_uninstall_hidden("ExampleUninstall", &original, true)
+                .is_err());
+        }
     }
 }

@@ -22,6 +22,16 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers backed-up repair for a verified orphaned current-user uninstall entry', () => {
+    const uninstall = {
+      ...entry,
+      category: 'uninstall' as const,
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Example',
+      valueName: 'InstallLocation',
+      uninstallRepairable: true,
+    };
+    expect(canQuarantine(uninstall)).toBe(true);
+  });
   it('offers repair review for a guarded, missing-target HKCU App Paths default value', () => {
     const appPath = {
       ...entry,
@@ -64,6 +74,24 @@ describe('protected change availability', () => {
       { ...app, keyPath: `${app.keyPath}\\child.exe` },
       { ...app, valueName: 'Path' },
       { ...app, view: '32' },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
+  it('does not offer uninstall repair for hidden, unverified, machine-wide, or nested entries', () => {
+    const uninstall = {
+      ...entry,
+      category: 'uninstall' as const,
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Example',
+      valueName: 'InstallLocation',
+      uninstallRepairable: true,
+    };
+    for (const changed of [
+      { ...uninstall, uninstallRepairable: false },
+      { ...uninstall, uninstallHidden: true },
+      { ...uninstall, hive: 'HKLM' },
+      { ...uninstall, view: '32' },
+      { ...uninstall, keyPath: `${uninstall.keyPath}\\child` },
+      { ...uninstall, valueName: 'UninstallString' },
     ])
       expect(canQuarantine(changed)).toBe(false);
   });

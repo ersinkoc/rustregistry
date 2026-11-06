@@ -1,3 +1,7 @@
+use crate::uninstall::{
+    validate_uninstall_name, verify_orphan, UninstallBackup, UninstallSnapshot, COMPONENT,
+    UNINSTALL_KEY,
+};
 use crate::{
     analyze_target, Category, EntryStatus, Environment, PathProbe, RegistryEntry, TargetKind,
 };
@@ -130,6 +134,17 @@ struct AppPathBackup {
 }
 
 pub trait RegistryStore {
+    fn read_uninstall(&self, _key_name: &str) -> Result<UninstallSnapshot, String> {
+        Err("Uninstall recovery is unavailable in this registry store.".into())
+    }
+    fn set_uninstall_hidden(
+        &self,
+        _key_name: &str,
+        _original: &UninstallSnapshot,
+        _hide: bool,
+    ) -> Result<(), String> {
+        Err("Uninstall recovery is unavailable in this registry store.".into())
+    }
     fn read(&self, name: &str) -> Result<Option<StoredValue>, String>;
     /// Atomically enforce the expected value, mutate it, and commit, or change nothing.
     fn compare_exchange(
@@ -164,6 +179,8 @@ pub struct ChangePlan {
     pub expires_at: u64,
     pub scope: String,
     pub preserved_values: usize,
+    pub uninstall_command: Option<String>,
+    pub component_was_present: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,6 +195,8 @@ struct BackupRecord {
     integrity_sha256: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     app_path: Option<AppPathBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uninstall: Option<UninstallBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -271,11 +290,20 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         if record.name.len() > 65_536 {
             return Err("Unsupported backup format.".into());
         }
-        match (&record.app_path, record.schema_version) {
-            (None, 1) => validate_value_name(&record.value_name)?,
-            (Some(app), 2) if record.value_name.is_empty() => {
+        match (&record.app_path, &record.uninstall, record.schema_version) {
+            (None, None, 1) => validate_value_name(&record.value_name)?,
+            (Some(app), None, 2) if record.value_name.is_empty() => {
                 validate_app_path_name(&app.executable)?;
                 app.guard.validate()?;
+            }
+            (None, Some(uninstall), 3) if record.value_name == COMPONENT => {
+                validate_uninstall_name(&uninstall.key_name)?;
+                uninstall.snapshot.validate_original()?;
+                if uninstall.snapshot.get("InstallLocation") != Some(&record.original) {
+                    return Err(
+                        "Uninstall backup evidence does not match its original path.".into(),
+                    );
+                }
             }
             _ => return Err("Unsupported backup format or registry scope.".into()),
         }
@@ -298,6 +326,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         .map_err(|e| e.to_string())?;
         let bytes = if record.schema_version == 2 {
             serde_json::to_vec(&(bytes, &record.app_path)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 3 {
+            serde_json::to_vec(&(bytes, &record.uninstall)).map_err(|e| e.to_string())?
         } else {
             bytes
         };
@@ -402,6 +432,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     .into(),
             );
         }
+        if entry.category == Category::Uninstall {
+            return self.prepare_uninstall(entry);
+        }
         let app_path = match entry.category {
             Category::Startup if entry.key_path.eq_ignore_ascii_case(STARTUP_KEY) => {
                 validate_value_name(&entry.value_name)?;
@@ -463,6 +496,55 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             original,
             integrity_sha256: String::new(),
             app_path,
+            uninstall: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_uninstall(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        if entry.value_name != "InstallLocation" {
+            return Err("Unsupported uninstall scan evidence.".into());
+        }
+        let prefix = format!("{UNINSTALL_KEY}\\");
+        let key_name = entry
+            .key_path
+            .get(prefix.len()..)
+            .filter(|_| {
+                entry
+                    .key_path
+                    .get(..prefix.len())
+                    .is_some_and(|path| path.eq_ignore_ascii_case(&prefix))
+            })
+            .ok_or("Unsupported uninstall registry location.")?;
+        validate_uninstall_name(key_name)?;
+        let snapshot = entry
+            .uninstall_snapshot
+            .clone()
+            .ok_or("The uninstall entry could not be fully verified. Scan again.")?;
+        verify_orphan(&snapshot, &self.probe)?;
+        if snapshot.text("InstallLocation")? != entry.raw_value
+            || snapshot.text("DisplayName")? != entry.name
+            || self.store.read_uninstall(key_name)? != snapshot
+        {
+            return Err("The uninstall entry changed after the scan. Nothing was repaired.".into());
+        }
+        let mut record = BackupRecord {
+            schema_version: 3,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: COMPONENT.into(),
+            created_at: now()?,
+            original: snapshot
+                .get("InstallLocation")
+                .cloned()
+                .ok_or("Missing installation path evidence.")?,
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: Some(UninstallBackup {
+                key_name: key_name.into(),
+                snapshot,
+            }),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -485,23 +567,40 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             value_name: record.value_name.clone(),
             registry_path: Self::registry_path(&record),
             original_value: record.original.text()?,
-            value_type: if record.original.kind == 1 {
+            value_type: if record.uninstall.is_some() {
+                "REG_DWORD"
+            } else if record.original.kind == 1 {
                 "REG_SZ"
             } else {
                 "REG_EXPAND_SZ"
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.app_path.is_some() {
+            scope: if record.uninstall.is_some() {
+                "uninstall"
+            } else if record.app_path.is_some() {
                 "app_path"
             } else {
                 "startup"
             }
             .into(),
-            preserved_values: record
-                .app_path
+            preserved_values: if let Some(uninstall) = &record.uninstall {
+                uninstall.snapshot.values.len()
+            } else {
+                record
+                    .app_path
+                    .as_ref()
+                    .map_or(0, |app| app.guard.values.len())
+            },
+            uninstall_command: record
+                .uninstall
                 .as_ref()
-                .map_or(0, |app| app.guard.values.len()),
+                .map(|uninstall| uninstall.snapshot.text("UninstallString"))
+                .transpose()?,
+            component_was_present: record
+                .uninstall
+                .as_ref()
+                .is_some_and(|uninstall| uninstall.snapshot.get(COMPONENT).is_some()),
         };
         self.pending = Some(Pending {
             plan: plan.clone(),
@@ -519,6 +618,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if let Some(uninstall) = &record.uninstall {
+            return format!("HKCU\\{UNINSTALL_KEY}\\{}", uninstall.key_name);
+        }
         record.app_path.as_ref().map_or_else(
             || format!("HKCU\\{STARTUP_KEY}"),
             |app| format!("HKCU\\{APP_PATHS_KEY}\\{}", app.executable),
@@ -526,6 +628,16 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
+        if let Some(uninstall) = &record.uninstall {
+            let actual = self.store.read_uninstall(&uninstall.key_name)?;
+            if actual == uninstall.snapshot {
+                return Ok(Some(record.original.clone()));
+            }
+            if actual == uninstall.snapshot.hidden()? {
+                return Ok(None);
+            }
+            return Err("The uninstall record changed. Repair or restore is blocked; no existing value was overwritten.".into());
+        }
         if let Some(app) = &record.app_path {
             let state = self.store.read_app_path(&app.executable)?;
             if state.guard != app.guard {
@@ -543,6 +655,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         expected: Option<StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if let Some(uninstall) = &record.uninstall {
+            return self.store.set_uninstall_hidden(
+                &uninstall.key_name,
+                &uninstall.snapshot,
+                replacement.is_none(),
+            );
+        }
         if let Some(app) = &record.app_path {
             self.store.compare_exchange_app_path(
                 &app.executable,
@@ -579,7 +698,11 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             self.read_record(&record)?;
             self.exchange_record(&record, None, Some(&record.original))?;
         } else {
-            self.verify_missing(&record.original, record.app_path.is_some())?;
+            if let Some(uninstall) = &record.uninstall {
+                verify_orphan(&uninstall.snapshot, &self.probe)?;
+            } else {
+                self.verify_missing(&record.original, record.app_path.is_some())?;
+            }
             if self.read_record(&record)?.as_ref() != Some(&record.original) {
                 return Err(
                     "The registry value changed after review. Nothing was disabled.".into(),
@@ -600,7 +723,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if restore {
+            message: if record.uninstall.is_some() {
+                if restore { "Original uninstall metadata and visibility restored and verified." } else { "Orphaned uninstall entry hidden after a full verified backup. No uninstall command was executed." }
+            } else if restore {
                 "Original registry value restored and verified."
             } else {
                 "Broken mapping disabled. Its exact original bytes are saved in a verified backup."
@@ -652,7 +777,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             let (state, note) = match self.read_record(&record) {
                 Ok(None) => (
                     "restore_available",
-                    "The value is absent. Its original can be reviewed for restore.".into(),
+                    if record.uninstall.is_some() { "The uninstall entry matches its backed-up hidden state. Its original visibility can be restored." } else { "The value is absent. Its original can be reviewed for restore." }.into(),
                 ),
                 Ok(Some(value)) if value == record.original => (
                     "original_present",
@@ -664,7 +789,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.app_path.is_some() {
+            let scope = if record.uninstall.is_some() {
+                "uninstall"
+            } else if record.app_path.is_some() {
                 "app_path"
             } else {
                 "startup"
@@ -703,8 +830,31 @@ mod tests {
     struct Memory(
         Rc<RefCell<HashMap<String, StoredValue>>>,
         Rc<RefCell<HashMap<String, AppPathState>>>,
+        Rc<RefCell<HashMap<String, UninstallSnapshot>>>,
     );
     impl RegistryStore for Memory {
+        fn read_uninstall(&self, key_name: &str) -> Result<UninstallSnapshot, String> {
+            self.2
+                .borrow()
+                .get(key_name)
+                .cloned()
+                .ok_or("Uninstall key is absent".into())
+        }
+        fn set_uninstall_hidden(
+            &self,
+            key_name: &str,
+            original: &UninstallSnapshot,
+            hide: bool,
+        ) -> Result<(), String> {
+            let mut records = self.2.borrow_mut();
+            let current = records.get_mut(key_name).ok_or("Uninstall key is absent")?;
+            let hidden = original.hidden()?;
+            if current != if hide { original } else { &hidden } {
+                return Err("Uninstall conflict".into());
+            }
+            *current = if hide { hidden } else { original.clone() };
+            Ok(())
+        }
         fn read_app_path(&self, executable: &str) -> Result<AppPathState, String> {
             self.1
                 .borrow()
@@ -789,6 +939,9 @@ mod tests {
             snapshot: Some(original()),
             app_path_guard: None,
             app_path_repairable: false,
+            uninstall_snapshot: None,
+            uninstall_repairable: false,
+            uninstall_hidden: false,
         }
     }
     fn setup(path: &Path) -> (Memory, Rc<Cell<ProbeResult>>, ChangeManager<Memory, Probe>) {
@@ -1154,5 +1307,159 @@ mod tests {
         ] {
             assert!(AppPathGuard { values }.validate().is_err());
         }
+    }
+
+    fn uninstall_entry(snapshot: UninstallSnapshot) -> RegistryEntry {
+        let mut record = entry();
+        record.category = Category::Uninstall;
+        record.name = snapshot.text("DisplayName").unwrap();
+        record.key_path = format!("{UNINSTALL_KEY}\\ExampleUninstall");
+        record.value_name = "InstallLocation".into();
+        record.raw_value = snapshot.text("InstallLocation").unwrap();
+        record.snapshot = None;
+        record.uninstall_snapshot = Some(snapshot);
+        record.uninstall_repairable = true;
+        record
+    }
+
+    #[test]
+    fn uninstall_full_backup_hide_restart_and_restore_preserve_every_original_value() {
+        for component in [None, Some(0)] {
+            let dir = tempfile::tempdir().unwrap();
+            let (store, state, mut manager) = setup(dir.path());
+            let original = crate::uninstall::fixture_snapshot(component);
+            store
+                .2
+                .borrow_mut()
+                .insert("ExampleUninstall".into(), original.clone());
+            let plan = manager
+                .prepare_quarantine(&uninstall_entry(original.clone()))
+                .unwrap();
+            assert_eq!(plan.scope, "uninstall");
+            assert_eq!(plan.value_name, COMPONENT);
+            assert_eq!(plan.value_type, "REG_DWORD");
+            assert_eq!(plan.component_was_present, component.is_some());
+            assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+            assert_eq!(store.read_uninstall("ExampleUninstall").unwrap(), original);
+            let result = manager.apply(&plan.token).unwrap();
+            assert_eq!(
+                store.read_uninstall("ExampleUninstall").unwrap(),
+                original.hidden().unwrap()
+            );
+            let path = dir.path().join(format!("{}.json", result.backup_id));
+            let backup_text = fs::read_to_string(&path).unwrap();
+            let backup: serde_json::Value = serde_json::from_str(&backup_text).unwrap();
+            assert_eq!(backup["schemaVersion"], 3);
+            assert_eq!(
+                backup["uninstall"]["snapshot"],
+                serde_json::to_value(&original).unwrap()
+            );
+            let mut reopened = ChangeManager::new(store.clone(), dir.path().into(), Probe(state));
+            let restore = reopened.prepare_restore(&result.backup_id).unwrap();
+            reopened.apply(&restore.token).unwrap();
+            assert_eq!(store.read_uninstall("ExampleUninstall").unwrap(), original);
+            assert_eq!(fs::read_to_string(path).unwrap(), backup_text);
+        }
+    }
+    #[test]
+    fn uninstall_stale_metadata_target_reappearance_and_backup_failure_block_changes() {
+        for failure in 0..3 {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("backups");
+            let (store, state, mut manager) = setup(&path);
+            let original = crate::uninstall::fixture_snapshot(None);
+            store
+                .2
+                .borrow_mut()
+                .insert("ExampleUninstall".into(), original.clone());
+            let plan = manager
+                .prepare_quarantine(&uninstall_entry(original.clone()))
+                .unwrap();
+            if failure == 0 {
+                store
+                    .2
+                    .borrow_mut()
+                    .get_mut("ExampleUninstall")
+                    .unwrap()
+                    .values[0]
+                    .value
+                    .bytes
+                    .push(1);
+            }
+            if failure == 1 {
+                state.set(ProbeResult::Found);
+            }
+            if failure == 2 {
+                fs::write(&path, "occupied").unwrap();
+            }
+            assert!(manager.apply(&plan.token).is_err());
+            assert!(!store
+                .read_uninstall("ExampleUninstall")
+                .unwrap()
+                .is_hidden());
+        }
+    }
+    #[test]
+    fn uninstall_restore_blocks_metadata_changes_missing_keys_and_corrupted_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(dir.path());
+        let original = crate::uninstall::fixture_snapshot(None);
+        store
+            .2
+            .borrow_mut()
+            .insert("ExampleUninstall".into(), original.clone());
+        let plan = manager
+            .prepare_quarantine(&uninstall_entry(original.clone()))
+            .unwrap();
+        let result = manager.apply(&plan.token).unwrap();
+        let restore = manager.prepare_restore(&result.backup_id).unwrap();
+        store
+            .2
+            .borrow_mut()
+            .get_mut("ExampleUninstall")
+            .unwrap()
+            .values[0]
+            .value
+            .bytes
+            .push(1);
+        assert!(manager.apply(&restore.token).is_err());
+        store.2.borrow_mut().clear();
+        assert!(manager.prepare_restore(&result.backup_id).is_err());
+        store
+            .2
+            .borrow_mut()
+            .insert("ExampleUninstall".into(), original.hidden().unwrap());
+        let path = dir.path().join(format!("{}.json", result.backup_id));
+        let mut backup: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        backup["uninstall"]["keyName"] = serde_json::json!("OtherEntry");
+        fs::write(path, serde_json::to_vec(&backup).unwrap()).unwrap();
+        assert!(manager
+            .prepare_restore(&result.backup_id)
+            .unwrap_err()
+            .contains("integrity"));
+        assert!(store
+            .read_uninstall("ExampleUninstall")
+            .unwrap()
+            .is_hidden());
+    }
+
+    #[test]
+    fn restores_unchanged_v012_app_path_backup_without_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = app_setup(dir.path());
+        store.1.borrow_mut().get_mut("broken.exe").unwrap().value = None;
+        let id = "22222222-2222-4222-8222-222222222222";
+        let legacy = include_str!("../tests/fixtures/app-path-backup-v2.json");
+        let path = dir.path().join(format!("{id}.json"));
+        fs::write(&path, legacy).unwrap();
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "app_path");
+        manager.apply(&plan.token).unwrap();
+        assert_eq!(
+            store.read_app_path("broken.exe").unwrap().value,
+            Some(original())
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), legacy);
     }
 }

@@ -48,6 +48,7 @@ export async function verifyAppPathRecovery(page, output, checked, summary) {
     await expect(page.locator('tbody tr')).toHaveCount(1);
     await page.locator('.entry-button').click();
     await page.getByRole('button', { name: 'Review repair', exact: true }).click();
+    await expect(page.getByRole('dialog')).toContainText(name);
     await expect(
       page.getByRole('heading', { name: 'Repair broken application path?', exact: true }),
     ).toBeVisible();
@@ -60,6 +61,7 @@ export async function verifyAppPathRecovery(page, output, checked, summary) {
 
     await page.locator('.entry-button').click();
     await page.getByRole('button', { name: 'Review repair', exact: true }).click();
+    await expect(page.getByRole('dialog')).toContainText(name);
     await page.getByRole('checkbox').check();
     await page.screenshot({ path: resolve(output, 'desktop-app-path-review.png'), fullPage: true });
     await page.getByRole('button', { name: 'Back up & repair', exact: true }).click();
@@ -90,6 +92,7 @@ export async function verifyAppPathRecovery(page, output, checked, summary) {
       .click();
     await expect(backup.getByRole('button', { name: 'Review restore', exact: true })).toBeEnabled();
     await backup.getByRole('button', { name: 'Review restore', exact: true }).click();
+    await expect(page.getByRole('dialog')).toContainText(name);
     await expect(
       page.getByRole('heading', { name: 'Restore application path?', exact: true }),
     ).toBeVisible();

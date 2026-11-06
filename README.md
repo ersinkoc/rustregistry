@@ -1,6 +1,6 @@
 # RustRegistry
 
-A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup and application path changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
+A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup, application path, and orphaned uninstall-listing changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
 
 Open source under the [MIT license](LICENSE). See the [changelog](CHANGELOG.md) and [GitHub releases](https://github.com/ersinkoc/rustregistry/releases) for version history and Windows downloads.
 
@@ -46,7 +46,7 @@ The app includes search, category/status filters, pagination, a record detail pa
 
 Scanning still opens registry handles with `KEY_READ`. A scan never changes registry values.
 
-For a named `REG_SZ` or `REG_EXPAND_SZ` value in **HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run**, a confirmed missing local executable target makes **Review disable** available in the detail panel. HKLM, RunOnce, uninstall entries, uncertain targets, and existing targets are not eligible. This release does not offer bulk cleanup, general registry editing, administrator elevation, or command execution.
+For a named `REG_SZ` or `REG_EXPAND_SZ` value in **HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run**, a confirmed missing local executable target makes **Review disable** available in the detail panel. HKLM, RunOnce, uncertain targets, and existing targets are not eligible for startup changes. App Paths and uninstall scopes are described below. This release does not offer bulk cleanup, general registry editing, administrator elevation, or command execution.
 
 1. Complete a scan, open an eligible entry, and choose **Review disable**.
 2. Review the exact original command, path, and value name. Confirm the checkbox, then choose **Back up & disable**.
@@ -74,6 +74,16 @@ Scan results remain in memory. Confirmed changes save their backups locally, and
 
 The engine checks up to 5,000 entries per location and interprets string values up to 32 KiB. Limits are reported in coverage. The scan is a point-in-time inventory rather than an atomic registry snapshot. It does not inspect all registry hives, COM registrations, file associations, application functionality, malware, or overall Windows performance.
 
+## Uninstall listing repair in 0.1.3
+
+For flat entries under **HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall**, repair requires a nonempty display name, a confirmed missing local `InstallLocation` directory, and confirmed missing explicit local `.exe` targets for `UninstallString` and any `QuietUninstallString`. A missing directory alone is insufficient. Existing or ambiguous uninstallers, MSI/`WindowsInstaller` records, nonzero or malformed `SystemComponent`/`NoRemove` flags, update/group markers, child keys, registry links, and oversized metadata remain outside repair scope. HKLM remains read-only.
+
+**Review repair → Back up & hide entry** saves every original registry value, type, and raw byte before setting only the `SystemComponent` DWORD to `1`. This is a reversible quarantine of the orphaned installed-program listing. It does **not** uninstall software, run the uninstall command, fix missing application files, delete the registration key, or change its permissions. The key stays in RustRegistry's inventory as a hidden/system-component record. Visibility behavior in other inventory tools may differ; see [Microsoft's Add/Remove Programs documentation](https://learn.microsoft.com/en-us/windows/win32/msi/configuring-add-remove-programs-with-windows-installer).
+
+**Backups & restore → Review restore** restores the original absent or DWORD-zero visibility flag only when the entire live value snapshot matches the backed-up hidden state. Changed names, paths, commands, versions, custom values, added child keys, or a missing key block restoration. Existing keys are never recreated. Windows-managed key write timestamps naturally change; the backup covers original value contents, while key permissions stay untouched throughout.
+
+Uninstall snapshots are limited to 64 values and 32 KiB of raw data; the complete backup must also fit the existing backup-file limit. The new integrity-protected backup format coexists with unchanged startup and App Paths formats in the local backup folder. Older backups are not migrated or rewritten.
+
 ## Verify
 
 ```powershell
@@ -89,7 +99,9 @@ npm run test:desktop
 
 `test:desktop` launches the **built release app** with a temporary local WebView2 debugging connection and verifies real native IPC scanning, filters, search, pagination, details, coverage, history, themes, the minimum desktop layout, cancellation, backup discovery, and review/cancel controls. It never confirms changes to the user's actual startup entries. For App Paths it creates one uniquely named, owned `RustRegistry-E2E-<uuid>.exe` test registration, runs repair and restore through the real UI, independently reads the resulting registry state, then removes only its own registration and test backup. Existing user registrations and backups are not edited. The helper requires an existing current-user App Paths root and does not change PowerShell execution policy. The debugging connection is enabled only for that test process. Results and screenshots are written to the ignored `.temp_files/` directory; an interactive Windows desktop is required.
 
-Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and restoration of a fixed `0.1.1` backup fixture. Three Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. They never modify the user's real startup list.
+Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and fixed `0.1.1`/`0.1.2` backup fixtures. Four Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. Uninstall tests cover both an originally absent flag and an originally zero flag, including exact raw metadata preservation. They never modify the user's real startup list.
+
+The desktop suite also creates one uniquely named `RustRegistry-E2E-Uninstall-<uuid>` registration in the existing current-user Uninstall root. It verifies review/cancel, full-backup hide, hidden-state diagnostics, reload and restore through the packaged UI. A separate PowerShell reader checks all fixture values, types, and owner/group/DACL permissions before and after. The suite cleans only its own registration and matching backup; existing entries and user backups are not edited. No Windows Settings/Control Panel list UI assertion is made.
 
 For a real read-only scan without the GUI:
 

@@ -45,6 +45,10 @@ pub struct RegistryEntry {
     #[serde(skip)]
     pub app_path_guard: Option<crate::changes::AppPathGuard>,
     pub app_path_repairable: bool,
+    #[serde(skip)]
+    pub uninstall_snapshot: Option<crate::uninstall::UninstallSnapshot>,
+    pub uninstall_repairable: bool,
+    pub uninstall_hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
