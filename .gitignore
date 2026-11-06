@@ -1,0 +1,16 @@
+node_modules/
+dist/
+target/
+.temp_files/
+*.log
+src-tauri/gen/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.exe
+*.pdb

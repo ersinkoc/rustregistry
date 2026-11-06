@@ -1,0 +1,15 @@
+[package]
+name = "rustregistry"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Read-only registry health explorer for Windows"
+default-run = "rustregistry"
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = [] }
+registry-core = { path = "../crates/registry-core" }

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Local read-only registry interface. No shell, filesystem or registry write plugins.",
+  "windows": ["main"],
+  "permissions": []
+}
