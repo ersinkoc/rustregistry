@@ -5,7 +5,7 @@ use std::{
 };
 use winreg::{enums::*, RegKey, RegValue};
 
-const MAX_ENTRIES_PER_SCOPE: usize = 5_000;
+const MAX_ENTRIES_PER_SCOPE: usize = 10_000;
 const MAX_VALUE_BYTES: usize = 32_768;
 
 struct Source {
@@ -61,6 +61,33 @@ fn sources() -> Vec<Source> {
             path: crate::associations::CLASSES_KEY,
             flag: 0,
             view: "shared",
+        });
+    }
+    for hive in ["HKCU", "HKLM"] {
+        for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
+            result.push(Source {
+                category: Category::Com,
+                hive,
+                path: crate::com::CLSID_KEY,
+                flag,
+                view,
+            });
+        }
+    }
+    result.push(Source {
+        category: Category::Services,
+        hive: "HKLM",
+        path: r"SYSTEM\CurrentControlSet\Services",
+        flag: 0,
+        view: "shared",
+    });
+    for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
+        result.push(Source {
+            category: Category::SharedDlls,
+            hive: "HKLM",
+            path: r"Software\Microsoft\Windows\CurrentVersion\SharedDLLs",
+            flag,
+            view,
         });
     }
     result
@@ -153,10 +180,12 @@ fn make_entry(
             match text(&value) {
                 Ok(raw) => {
                     let kind = match source.category {
-                        Category::Startup => TargetKind::Command,
+                        Category::Startup | Category::Services => TargetKind::Command,
                         Category::AppPaths => TargetKind::File,
                         Category::Uninstall => TargetKind::Directory,
-                        Category::FileAssociations => TargetKind::File,
+                        Category::FileAssociations | Category::Com | Category::SharedDlls => {
+                            TargetKind::File
+                        }
                     };
                     let assessment = analyze_target(&raw, kind, environment, &LocalPathProbe);
                     (raw, value_type, assessment)
@@ -205,12 +234,20 @@ fn make_entry(
         uninstall_hidden: false,
         association_state: None,
         association_repairable: false,
+        com_state: None,
+        com_repairable: false,
     }
 }
 
 #[path = "association_scan.rs"]
 mod association_scan;
 use association_scan::scan_associations;
+#[path = "com_scan.rs"]
+mod com_scan;
+use com_scan::scan_com;
+#[path = "extra_scan.rs"]
+mod extra_scan;
+use extra_scan::scan_shared_dlls;
 
 fn scan_source(
     source: &Source,
@@ -248,8 +285,12 @@ fn scan_source(
         }
     };
     let start_count = entries.len();
-    if source.category == Category::FileAssociations {
+    if source.category == Category::Com {
+        scan_com(source, &key, cancel, environment, entries, &mut scope);
+    } else if source.category == Category::FileAssociations {
         scan_associations(source, &key, cancel, entries, &mut scope);
+    } else if source.category == Category::SharedDlls {
+        scan_shared_dlls(source, &key, cancel, environment, entries, &mut scope);
     } else if source.category == Category::Startup {
         for (index, result) in key.enum_values().enumerate() {
             if cancel.load(Ordering::Relaxed) {
@@ -310,19 +351,22 @@ fn scan_source(
                         continue;
                     }
                 };
-            let value_name = if source.category == Category::AppPaths {
+            let value_name = if source.category == Category::Services {
+                "ImagePath"
+            } else if source.category == Category::AppPaths {
                 ""
             } else {
                 "InstallLocation"
             };
             let mut notes = Vec::new();
-            let display_name = if source.category == Category::Uninstall {
-                read_optional(&child, "DisplayName", &mut notes)
-                    .filter(|s| !s.trim().is_empty())
-                    .unwrap_or_else(|| name.clone())
-            } else {
-                name.clone()
-            };
+            let display_name =
+                if matches!(source.category, Category::Uninstall | Category::Services) {
+                    read_optional(&child, "DisplayName", &mut notes)
+                        .filter(|s| !s.trim().is_empty())
+                        .unwrap_or_else(|| name.clone())
+                } else {
+                    name.clone()
+                };
             let raw = child.get_raw_value(value_name).map_err(|error| {
                 if error.kind() == std::io::ErrorKind::NotFound {
                     "This record does not define a target path. Missing path information alone does not mean the record is broken.".into()

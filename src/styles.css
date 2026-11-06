@@ -1952,3 +1952,125 @@ tr:hover td {
     scroll-behavior: auto !important;
   }
 }
+
+.clean-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px;
+  margin-bottom: 18px;
+}
+.clean-hero h2 {
+  font-size: 25px;
+  margin: 12px 0;
+}
+.clean-hero p,
+.clean-mode p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+  max-width: 620px;
+}
+.clean-hero > svg,
+.clean-mode > svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.clean-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.clean-mode {
+  padding: 24px;
+}
+.clean-mode h2 {
+  margin: 15px 0 10px;
+  font-size: 19px;
+}
+.clean-mode .primary-button {
+  margin-top: 15px;
+}
+.clean-search {
+  width: 100%;
+  padding: 11px;
+  color: var(--text);
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.clean-candidates {
+  max-height: 550px;
+  overflow: auto;
+}
+.clean-candidate {
+  display: flex;
+  align-items: start;
+  gap: 13px;
+  padding: 17px 22px;
+  border-top: 1px solid var(--border);
+  cursor: pointer;
+}
+.clean-candidate input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+.clean-candidate > span {
+  min-width: 0;
+}
+.clean-candidate strong,
+.clean-candidate small,
+.clean-candidate code {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.clean-candidate strong {
+  font-size: 12px;
+}
+.clean-candidate small,
+.clean-candidate code {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.clean-footnote {
+  font-size: 10px;
+  padding: 12px 22px;
+  color: var(--muted);
+}
+.clean-review-items details {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  margin: 12px 0;
+  padding: 14px;
+}
+.clean-review-items summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.clean-review-items summary span {
+  display: block;
+  color: var(--muted);
+  margin-top: 7px;
+  font-size: 11px;
+}
+.clean-review-items .detail-fields {
+  margin-bottom: 0;
+}
+.clean-dialog .change-buttons {
+  position: sticky;
+  bottom: -28px;
+  background: var(--surface);
+  padding-block: 16px;
+}
+@media (max-width: 1000px) {
+  .clean-modes {
+    grid-template-columns: 1fr;
+  }
+  .clean-hero > svg {
+    display: none;
+  }
+}

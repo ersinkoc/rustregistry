@@ -2,6 +2,18 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.5 — 2026-11-07
+
+- Add Quick Clean and selected Clean with a full review, up to 100 protected candidates, separate verified backups, and individual restore. Stop at the first failed change and report completed, failed, skipped, and unattempted entries.
+- Add read-only service/driver ImagePath inventory and shared DLL usage references. Increase the reported per-scope inventory cap to 10,000; machine/service/reference-count changes stay excluded from cleaning.
+
+- Add read-only InprocServer32, InprocHandler32, and LocalServer32 COM inventory in separate HKCU/HKLM 32-bit and 64-bit views, bringing coverage to 21 scopes. Keep 32-bit DLL targets unverified without probing them in the wrong filesystem context.
+- Add backed-up, reversible disabling of confirmed missing explicit local DLL paths in simple current-user 64-bit COM classes.
+- Remove only the default DLL path after a verified backup; preserve the CLSID and server keys, threading metadata, permissions, and application files. No COM object is activated and no DLL is loaded or registered.
+- Exclude machine counterparts, alternate activation, services/AppID, managed-server or unknown metadata, nested keys, and uncertain targets. Recheck class structure and all supported metadata inside conditional Windows transactions.
+- Restore the exact original path type and bytes only when the live keys and guarded metadata still match and no replacement value exists. Preserve all four earlier backup formats without migration.
+- Add English COM review/restore screens, native Windows conflict/restart tests, and a packaged UI round trip that independently verifies both architecture views and permissions.
+
 ## 0.1.4 — 2026-11-07
 
 - Add read-only Open with suggestion inventory under shared current-user and machine Classes roots, bringing coverage to 14 scopes.

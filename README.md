@@ -1,6 +1,6 @@
 # RustRegistry
 
-A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup, application path, orphaned uninstall-listing, and Open with suggestion changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
+A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup, application path, orphaned uninstall-listing, Open with suggestion, and guarded COM DLL mapping changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
 
 Open source under the [MIT license](LICENSE). See the [changelog](CHANGELOG.md) and [GitHub releases](https://github.com/ersinkoc/rustregistry/releases) for version history and Windows downloads.
 
@@ -26,7 +26,7 @@ The executable requires WebView2 on the target computer. This first release does
 
 ## What it reads
 
-The scanner has a fixed scope of 14 registry locations:
+The scanner has a fixed scope of 21 registry locations:
 
 | Category          | Location under `Software\Microsoft\Windows\CurrentVersion` | Check                                    |
 | ----------------- | ---------------------------------------------------------- | ---------------------------------------- |
@@ -34,7 +34,7 @@ The scanner has a fixed scope of 14 registry locations:
 | Application paths | `App Paths`                                                | Default executable path                  |
 | Uninstall records | `Uninstall`                                                | `InstallLocation` folder, when provided  |
 
-The four locations above are each read once under HKCU (shared view) and twice under HKLM (32-bit and 64-bit views), giving 12 scopes. Two additional scopes read `Software\Classes\.extension\OpenWithProgids` under HKCU and HKLM once each: these extension/ProgID keys are shared on supported Windows. See [Microsoft’s registry view table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Uninstall records also show their reported display name, publisher, and version when available.
+The four locations above are each read once under HKCU (shared view) and twice under HKLM (32-bit and 64-bit views), giving 12 scopes. Two additional scopes read `Software\Classes\.extension\OpenWithProgids` under HKCU and HKLM once each: these extension/ProgID keys are shared on supported Windows. See [Microsoft’s registry view table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Four more scopes inventory `Software\Classes\CLSID\{GUID}\InprocServer32` under HKCU and HKLM in separate 32-bit and 64-bit views. COM inventory also includes LocalServer32 and InprocHandler32 mappings. Three more scopes cover shared-system Services ImagePath values and 32/64-bit SharedDLLs reference counts. Services and shared-file registrations are always read-only. COM and shared-file target probing is limited to 64-bit mappings; 32-bit targets remain unverified because their filesystem/environment resolution requires a 32-bit context. Uninstall records also show their reported display name, publisher, and version when available.
 
 - **Found:** the expected local file, directory, or suggested file-type registration existed at scan time.
 - **Review:** an unambiguously resolved local target was not found. A disconnected drive or uninstalled application may explain this; this is not a recommendation to delete the record.
@@ -72,7 +72,7 @@ Scanning runs in a blocking worker outside the UI thread. Commands found in regi
 
 Scan results remain in memory. Confirmed changes save their backups locally, and the theme is saved in WebView local storage. No telemetry or remote content is used by the production frontend. Developer package installation and the development server naturally require their normal build-time connections.
 
-The engine checks up to 5,000 entries per location (and at most 20,000 direct Classes child keys while discovering file extensions) and interprets string values up to 32 KiB. Limits are reported in coverage. The scan is a point-in-time inventory rather than an atomic registry snapshot. It does not inspect all registry hives, COM registrations, default application handlers, application functionality, malware, or overall Windows performance.
+The engine checks up to 10,000 entries per location (and at most 20,000 direct Classes child keys while discovering file extensions) and interprets string values up to 32 KiB. Limits are reported in coverage. The scan is a point-in-time inventory rather than an atomic registry snapshot. It does not inspect all registry hives, COM activation functionality, default application handlers, application functionality, malware, or overall Windows performance.
 
 ## Uninstall listing repair in 0.1.3
 
@@ -94,6 +94,26 @@ This patch inventories **Open with suggestions**, not every file association or 
 
 The initial repair scope accepts ASCII extensions of 2–64 bytes (letters, digits, `_`, `-`, `+` after the dot) and single ASCII ProgIDs of at most 128 bytes with a leading letter and at least one dot. Unsupported names remain unverified or appear in coverage notes. Each guarded value collection is limited to 64 values/32 KiB and excludes registry links and ambiguous metadata. The complete backup must fit the existing 256 KiB limit. New association backups retain unchanged support for all three earlier backup formats; older files are never rewritten.
 
+## COM DLL mapping repair in 0.1.5
+
+This patch inventories `InprocServer32`, `InprocHandler32`, and `LocalServer32` default mappings for braced, nonzero CLSIDs in both hives and both architecture views. Only simple InprocServer32 mappings support repair. It does not enumerate all COM registration types or activate any COM object. The 32-bit mappings are shown as **Unverified** without probing DLL paths; 64-bit targets use the existing conservative local file checks. See Microsoft’s [InprocServer32 documentation](https://learn.microsoft.com/en-us/windows/win32/com/inprocserver32) and [registry architecture view table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys).
+
+**Review repair → Back up & disable mapping** is available only for a simple **current-user 64-bit** registration with a confirmed missing explicit local `.dll` target. The class must have exactly one child, `InprocServer32`, with no nested server keys. Its only supported class value is an optional REG_SZ default description; server metadata may contain only an optional REG_SZ `ThreadingModel` with an empty or documented threading model. Unknown metadata, managed-server fields, AppID/services, TreatAs/other activation children, inaccessible data, registry links, and a same-view HKLM class block the action. Machine and 32-bit mappings remain read-only. See Microsoft’s [CLSID registration options](https://learn.microsoft.com/en-us/windows/win32/com/clsid-key-hklm).
+
+A verified backup saves the exact original DLL path type and bytes, class values, threading metadata, CLSID, and architecture view before a conditional registry transaction removes only the default path value. The class and server keys, their permissions, other metadata, and application files remain intact. The app does not load or register DLLs, run `regsvr32`, guess replacement files, or change machine registrations. This is reversible disabling of a missing-target mapping, not repair of missing application files.
+
+**Backups & restore → Review restore** restores the exact original path only when the existing key is still present, its default value is absent, class/server metadata matches the backup, and no machine counterpart or alternate activation has appeared. A conflict is never overwritten and deleted keys are never recreated. Restore can permit later COM loading if the DLL exists again; the app itself never activates it. Original key write timestamps naturally change; permissions are preserved without deleting keys.
+
+COM backups use a new integrity-protected format alongside all four earlier formats in the same local backup folder. Fixed legacy fixtures verify their unchanged checksums and restore behavior. Existing backup limits and single-use, expiring confirmation tokens still apply.
+
+## Quick Clean and selected cleaning in 0.1.5
+
+Use **Clean registry** to review supported current-user repair candidates after a completed scan. **Quick Clean** proposes up to 100 candidates from the latest backend-cached report. **Clean selected** lets you search and choose exact entries, up to the same limit. A review shows every entry, action, original value, registry path, architecture, and any skipped entry before an explicit confirmation. Scanning and preparing/cancelling a cleaning review never modify registry values or create backups.
+
+Each change uses the same scope-specific rechecks, verified backup, and conditional registry transaction as an individual repair. Cleaning is sequential and stops at the first failed entry; it is not atomic across the batch. Earlier successes remain individually restorable from **Backups & restore**, and unattempted entries are reported. Sibling values in one guarded registration are deferred to a later scan to avoid invalidating one another’s metadata guards. Expired reviews, duplicate IDs, unknown IDs, stale scans, and unsupported scopes are rejected or explicitly skipped. Quick Clean never treats every review finding as eligible.
+
+Additional read-only inventory includes service/driver `ImagePath` values under `HKLM\SYSTEM\CurrentControlSet\Services` and both views of `HKLM\Software\Microsoft\Windows\CurrentVersion\SharedDLLs`. It does not start/stop services, change driver configuration, alter reference counts, or delete files. Relative kernel paths, ambiguous commands, and 32-bit shared-file targets remain unverified. See Microsoft’s [Services registry documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hklm-system-currentcontrolset-services-registry-tree) and [shared-file usage count documentation](https://learn.microsoft.com/en-us/sql/odbc/reference/install/usage-counting?view=sql-server-ver17).
+
 ## Verify
 
 ```powershell
@@ -109,11 +129,13 @@ npm run test:desktop
 
 `test:desktop` launches the **built release app** with a temporary local WebView2 debugging connection and verifies real native IPC scanning, filters, search, pagination, details, coverage, history, themes, the minimum desktop layout, cancellation, backup discovery, and review/cancel controls. It never confirms changes to the user's actual startup entries. For App Paths it creates one uniquely named, owned `RustRegistry-E2E-<uuid>.exe` test registration, runs repair and restore through the real UI, independently reads the resulting registry state, then removes only its own registration and test backup. Existing user registrations and backups are not edited. The helper requires an existing current-user App Paths root and does not change PowerShell execution policy. The debugging connection is enabled only for that test process. Results and screenshots are written to the ignored `.temp_files/` directory; an interactive Windows desktop is required.
 
-Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and fixed `0.1.1`/`0.1.2`/`0.1.3` backup fixtures. Seven Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. Uninstall tests cover both an originally absent flag and an originally zero flag, including exact raw metadata preservation. They never modify the user's real startup list.
+Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and fixed `0.1.1`/`0.1.2`/`0.1.3`/`0.1.4` backup fixtures. Ten Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. Uninstall tests cover both an originally absent flag and an originally zero flag, including exact raw metadata preservation. They never modify the user's real startup list.
 
 The desktop suite also creates one uniquely named `RustRegistry-E2E-Uninstall-<uuid>` registration in the existing current-user Uninstall root. It verifies review/cancel, full-backup hide, hidden-state diagnostics, reload and restore through the packaged UI. A separate PowerShell reader checks all fixture values, types, and owner/group/DACL permissions before and after. The suite cleans only its own registration and matching backup; existing entries and user backups are not edited. No Windows Settings/Control Panel list UI assertion is made.
 
 The desktop suite additionally creates a uniquely named `.rr<uuid>` extension with two owned Open with suggestions and an owned default metadata value. It tests review/cancel, one-suggestion repair, exclusion of the default-selected suggestion, UI reload, and exact restore. An independent registry reader checks the original value types, other suggestions, extension defaults, permissions, and absence of UserChoice throughout. Only its owned extension and matching backup are removed afterward. The suite never creates or changes a protected UserChoice selection and does not assert Explorer’s cached Open with menu presentation.
+
+The desktop suite also creates an owned random CLSID in both current-user architecture views. It verifies the 32-bit entry stays unverified/read-only, 64-bit review/cancel, backup/disable, inventory after disabling, UI reload, and exact restore. An independent reader compares both views, registry value types, raw unexpanded paths, threading metadata, and owner/group/DACL permissions. Only the owned classes and matching backup are removed. Neither production COM activation nor DLL loading is tested. The cleaning suite separately reviews/cancels Quick Clean without applying real user changes, then cleans exactly two owned App Paths fixtures and restores each from its independent backup after a UI reload.
 
 For a real read-only scan without the GUI:
 

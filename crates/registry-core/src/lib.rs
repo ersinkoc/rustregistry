@@ -1,6 +1,7 @@
 mod analysis;
 pub mod associations;
 pub mod changes;
+pub mod com;
 mod model;
 #[cfg(windows)]
 mod scanner;

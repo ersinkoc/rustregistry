@@ -155,6 +155,8 @@ pub(super) fn scan_associations(
                 uninstall_repairable: false,
                 uninstall_hidden: false,
                 association_repairable: state.is_some(),
+                com_state: None,
+                com_repairable: false,
                 association_state: state,
             });
         }

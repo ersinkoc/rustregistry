@@ -22,6 +22,29 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers COM repair only for a verified current-user 64-bit default DLL mapping', () => {
+    const com = {
+      ...entry,
+      category: 'com' as const,
+      view: '64',
+      valueName: '',
+      comRepairable: true,
+      keyPath: 'Software\\Classes\\CLSID\\{11111111-1111-4111-8111-111111111111}\\InprocServer32',
+    };
+    expect(canQuarantine(com)).toBe(true);
+    expect(canQuarantine({ ...com, valueType: 'REG_EXPAND_SZ' })).toBe(true);
+    for (const changed of [
+      { ...com, hive: 'HKLM' },
+      { ...com, view: '32' },
+      { ...com, view: 'shared' },
+      { ...com, comRepairable: false },
+      { ...com, valueName: 'ThreadingModel' },
+      { ...com, valueType: 'REG_BINARY' },
+      { ...com, keyPath: com.keyPath.replace('InprocServer32', 'LocalServer32') },
+      { ...com, assessment: { ...entry.assessment, status: 'unknown' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only verified current-user orphaned Open with suggestions', () => {
     const association = {
       ...entry,

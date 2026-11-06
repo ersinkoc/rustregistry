@@ -7,6 +7,9 @@ pub enum Category {
     AppPaths,
     Uninstall,
     FileAssociations,
+    Com,
+    Services,
+    SharedDlls,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +56,9 @@ pub struct RegistryEntry {
     #[serde(skip)]
     pub association_state: Option<crate::associations::AssociationState>,
     pub association_repairable: bool,
+    #[serde(skip)]
+    pub com_state: Option<crate::com::ComState>,
+    pub com_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

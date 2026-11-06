@@ -325,6 +325,8 @@ mod tests {
                 uninstall_hidden: false,
                 association_state: Some(state),
                 association_repairable: true,
+                com_state: None,
+                com_repairable: false,
             }
         }
     }

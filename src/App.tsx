@@ -37,11 +37,13 @@ import {
   TerminalSquare,
   TriangleAlert,
   X,
+  Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import packageInfo from '../package.json';
 import { BackupsPanel, canQuarantine, ChangeConfirmation } from './Changes';
 import type { ChangePlan, ChangeResult } from './Changes';
+import { CleanPanel, CleanConfirmation, type CleanPlan, type CleanResult } from './Clean';
 import type { Category, EntryStatus, RegistryEntry, ScanProgress, ScanReport } from './model';
 import {
   categories,
@@ -55,9 +57,10 @@ import {
   viewLabel,
 } from './model';
 
-type Page = 'overview' | 'results' | 'coverage' | 'history' | 'backups' | 'about';
+type Page = 'clean' | 'overview' | 'results' | 'coverage' | 'history' | 'backups' | 'about';
 const pageNames: Record<Page, string> = {
   overview: 'Overview',
+  clean: 'Clean registry',
   results: 'Scan results',
   coverage: 'Scan coverage',
   history: 'Session history',
@@ -69,6 +72,9 @@ const categoryIcons: Record<Category, LucideIcon> = {
   app_paths: FolderOpen,
   uninstall: Boxes,
   file_associations: FileSearch,
+  com: Boxes,
+  services: SlidersHorizontal,
+  shared_dlls: FileSearch,
 };
 const PAGE_SIZE = 25;
 
@@ -225,22 +231,26 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'file_associations'
-              ? 'Protected Open with repair'
-              : entry.category === 'uninstall'
-                ? 'Protected uninstall listing repair'
-                : entry.category === 'app_paths'
-                  ? 'Protected application path repair'
-                  : 'Protected startup change'}
+            {entry.category === 'com'
+              ? 'Protected COM DLL mapping repair'
+              : entry.category === 'file_associations'
+                ? 'Protected Open with repair'
+                : entry.category === 'uninstall'
+                  ? 'Protected uninstall listing repair'
+                  : entry.category === 'app_paths'
+                    ? 'Protected application path repair'
+                    : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'file_associations'
-              ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
-              : entry.category === 'uninstall'
-                ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
-                : entry.category === 'app_paths'
-                  ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-                  : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'com'
+              ? 'Review a backup before disabling this missing 64-bit DLL mapping. The class and threading metadata stay in place. No DLL is loaded or registered.'
+              : entry.category === 'file_associations'
+                ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
+                : entry.category === 'uninstall'
+                  ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+                  : entry.category === 'app_paths'
+                    ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                    : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy
@@ -283,7 +293,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 14,
+    total: 21,
     entries: 0,
     current: '',
   });
@@ -294,6 +304,7 @@ export default function App() {
   const [tablePage, setTablePage] = useState(0);
   const [selected, setSelected] = useState<RegistryEntry | null>(null);
   const [plan, setPlan] = useState<ChangePlan | null>(null);
+  const [cleanPlan, setCleanPlan] = useState<CleanPlan | null>(null);
   const [changing, setChanging] = useState(false);
   const [success, setSuccess] = useState('');
   const [backupRevision, setBackupRevision] = useState(0);
@@ -330,7 +341,7 @@ export default function App() {
     setScanning(true);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 14, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 21, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -381,6 +392,7 @@ export default function App() {
       setError(String(cause));
     }
     setPlan(null);
+    setCleanPlan(null);
   };
   const confirmChange = async () => {
     if (!plan || changing) return;
@@ -406,6 +418,47 @@ export default function App() {
     }
   };
 
+  const reviewClean = async (mode: 'quick' | 'selected', entryIds: string[]) => {
+    if (scanning || changing || plan || cleanPlan) return;
+    setChanging(true);
+    setError('');
+    setSuccess('');
+    try {
+      setCleanPlan(await invoke<CleanPlan>('prepare_clean', { mode, entryIds }));
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setChanging(false);
+    }
+  };
+  const confirmClean = async () => {
+    if (!cleanPlan || changing) return;
+    setChanging(true);
+    setError('');
+    setSuccess('');
+    let failure = '';
+    try {
+      const result = await invoke<CleanResult>('apply_clean', {
+        token: cleanPlan.token,
+        confirmed: true,
+      });
+      setSuccess(
+        `${result.completed.length} registry entries cleaned. Each completed change has its own backup.`,
+      );
+      if (result.failed)
+        failure = `Cleaning stopped at ${result.failed.name}: ${result.failed.reason} ${result.notAttempted} remaining entries were not attempted.`;
+      setPage('backups');
+    } catch (cause) {
+      failure = String(cause);
+    } finally {
+      setCleanPlan(null);
+      setBackupRevision((value) => value + 1);
+      await startScan();
+      if (failure) setError(failure);
+      setChanging(false);
+    }
+  };
+
   const chooseCategory = (next: Category | 'all') => {
     setCategory(next);
     setTablePage(0);
@@ -415,7 +468,7 @@ export default function App() {
   const scanButton = (
     <button
       className="primary-button"
-      disabled={scanning || changing || Boolean(plan)}
+      disabled={scanning || changing || Boolean(plan) || Boolean(cleanPlan)}
       onClick={startScan}
     >
       {scanning ? (
@@ -561,7 +614,7 @@ export default function App() {
           <p>
             {report
               ? 'Try a different search or clear your filters to see other entries.'
-              : 'Your startup entries, application paths, uninstall records, and Open with suggestions will appear here.'}
+              : 'Your startup entries, application paths, uninstall records, Open with suggestions, and COM DLL mappings will appear here.'}
           </p>
           {report && (
             <button
@@ -638,6 +691,7 @@ export default function App() {
           {(
             [
               ['overview', LayoutDashboard],
+              ['clean', Zap],
               ['results', FileSearch],
               ['coverage', SlidersHorizontal],
               ['history', History],
@@ -810,6 +864,16 @@ export default function App() {
             </div>
           )}
 
+          {page === 'clean' && (
+            <CleanPanel
+              entries={report?.entries || []}
+              complete={Boolean(report && !report.cancelled)}
+              busy={scanning || changing || Boolean(plan) || Boolean(cleanPlan)}
+              onReview={reviewClean}
+              onScan={startScan}
+            />
+          )}
+
           {page === 'overview' && (
             <>
               <section className="hero">
@@ -831,6 +895,17 @@ export default function App() {
                   </p>
                   <div className="hero-actions">
                     {scanButton}
+                    <button
+                      className="secondary-button"
+                      disabled={scanning || changing}
+                      onClick={() => {
+                        setPage('clean');
+                        if (!report) void startScan();
+                      }}
+                    >
+                      <Zap size={16} />
+                      Quick Clean
+                    </button>
                     <span>
                       <ShieldCheck size={14} /> Scanning never changes entries
                     </span>
@@ -1014,9 +1089,10 @@ export default function App() {
                 <div>
                   <h2>Focused scope. Transparent results.</h2>
                   <p>
-                    This release checks 14 locations. File association Classes roots are shared and
-                    read once per hive. Other HKCU locations use the shared view; other HKLM
-                    locations use both 32-bit and 64-bit views.
+                    This release checks 21 locations, including separate 32-bit and 64-bit COM views
+                    in both hives. File association Classes roots are shared and read once per hive.
+                    Services use the shared system view. Other application locations use their
+                    documented 32-bit, 64-bit, or shared views.
                   </p>
                 </div>
               </div>
@@ -1049,7 +1125,7 @@ export default function App() {
                           scope.notes.map((note, i) => <p key={i}>{note}</p>)
                         ) : (
                           <p>
-                            Entries in this location were read. Each location is limited to 5,000
+                            Entries in this location were read. Each location is limited to 10,000
                             entries.
                           </p>
                         )}
@@ -1110,7 +1186,7 @@ export default function App() {
                         </strong>
                         <small>
                           {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/14 locations
+                          {formatDuration(item.durationMs)} · {item.scopes.length}/21 locations
                         </small>
                       </span>
                       <span className="readonly-pill">
@@ -1199,7 +1275,9 @@ export default function App() {
                   <li>
                     <ArrowDownLeft size={17} />
                     File association checks cover Open with registration references only. Default
-                    handlers, COM registrations, and system hives are outside scan scope.
+                    handlers and full system configuration are outside scan scope. COM checks cover
+                    DLL, handler, and local-server mappings. Services and shared DLL references
+                    remain read-only; 32-bit targets are inventoried without probing.
                   </li>
                   <li>
                     <ArrowDownLeft size={17} />
@@ -1235,6 +1313,14 @@ export default function App() {
           close={() => setSelected(null)}
           review={(entry) => reviewChange(entry)}
           busy={scanning || changing}
+        />
+      )}
+      {cleanPlan && (
+        <CleanConfirmation
+          plan={cleanPlan}
+          busy={changing}
+          onCancel={cancelChange}
+          onConfirm={confirmClean}
         />
       )}
       {plan && (

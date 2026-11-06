@@ -7,6 +7,8 @@ import { once } from 'node:events';
 import { verifyAppPathRecovery } from './app-path-smoke.mjs';
 import { verifyUninstallRecovery } from './uninstall-smoke.mjs';
 import { verifyAssociationRecovery } from './association-smoke.mjs';
+import { verifyComRecovery } from './com-smoke.mjs';
+import { verifyCleaning } from './clean-smoke.mjs';
 
 if (process.platform !== 'win32')
   throw new Error('Desktop smoke verification requires Windows x64.');
@@ -119,7 +121,33 @@ try {
     }
   });
   expect(unknownEntryRefused).toBe(true);
-  checked('Native commands reject an unconfirmed apply and an entry outside the scanned inventory');
+  const cleaningRefused = await page.evaluate(async () => {
+    try {
+      await window.__TAURI_INTERNALS__.invoke('apply_clean', {
+        token: 'not-a-plan',
+        confirmed: false,
+      });
+      return false;
+    } catch (error) {
+      return String(error).includes('Explicit confirmation');
+    }
+  });
+  expect(cleaningRefused).toBe(true);
+  const unknownCleanRefused = await page.evaluate(async () => {
+    try {
+      await window.__TAURI_INTERNALS__.invoke('prepare_clean', {
+        mode: 'selected',
+        entryIds: ['__not_a_scanned_entry__'],
+      });
+      return false;
+    } catch (error) {
+      return String(error).includes('latest scan');
+    }
+  });
+  expect(unknownCleanRefused).toBe(true);
+  checked(
+    'Native single-change and cleaning commands reject unconfirmed writes and unknown scan IDs',
+  );
   await page.screenshot({ path: resolve(output, 'desktop-overview-scanned.png'), fullPage: true });
 
   await page
@@ -155,16 +183,34 @@ try {
   checked('Search empty state is honest and clearing filters restores real entries');
 
   await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-  await expect(page.locator('.scope-item')).toHaveCount(14);
+  await expect(page.locator('.scope-item')).toHaveCount(21);
   await page.locator('.scope-item summary').first().click();
   await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-  checked('Coverage lists all 14 actual registry locations with expandable read results');
+  checked('Coverage lists all 21 actual registry locations with expandable read results');
 
   await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
   await expect(page.locator('.history-item')).toHaveCount(1);
   await page.locator('.history-item').first().click();
   await expect(page.getByRole('heading', { name: 'Scan results', exact: true })).toBeVisible();
   checked('Session history reopens the completed scan');
+  for (const category of ['services', 'shared_dlls']) {
+    await page.getByRole('combobox', { name: 'Filter by category' }).selectOption(category);
+    await page.getByRole('combobox', { name: 'Filter by status' }).selectOption('all');
+    if (await page.locator('.entry-button').count()) {
+      await page.locator('.entry-button').first().click();
+      await expect(page.getByRole('button', { name: 'Review repair', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Review disable', exact: true })).toHaveCount(
+        0,
+      );
+      await page.keyboard.press('Escape');
+    } else
+      await expect(
+        page.getByRole('heading', { name: 'No entries match your filters', exact: true }),
+      ).toBeVisible();
+  }
+  checked(
+    'Expanded service and shared DLL categories show real inventory or honest empty states and offer no repair',
+  );
 
   await page.locator('nav').getByRole('button', { name: 'Backups & restore', exact: true }).click();
   await expect(page.getByRole('heading', { name: /Local backups/ })).toBeVisible();
@@ -215,6 +261,8 @@ try {
   await verifyAppPathRecovery(page, output, checked, summary);
   await verifyUninstallRecovery(page, output, checked, summary);
   await verifyAssociationRecovery(page, output, checked, summary);
+  await verifyComRecovery(page, output, checked, summary);
+  await verifyCleaning(page, output, checked, summary);
 
   await page.getByRole('link', { name: 'RustRegistry overview', exact: true }).click();
   await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();

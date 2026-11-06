@@ -1,7 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use registry_core::{
-    changes::{BackupInventory, ChangeManager, ChangePlan, ChangeResult},
+    changes::{
+        is_repair_candidate, BackupInventory, ChangeManager, ChangePlan, ChangeResult, CleanPlan,
+        CleanResult, MAX_CLEAN_ENTRIES,
+    },
     windows_changes::WindowsRegistryStore,
     LocalPathProbe, ScanProgress, ScanReport,
 };
@@ -141,6 +144,87 @@ async fn apply_change(
 }
 
 #[tauri::command]
+async fn prepare_clean(
+    control: State<'_, ScanControl>,
+    changes: State<'_, Changes>,
+    mode: String,
+    entry_ids: Vec<String>,
+) -> Result<CleanPlan, String> {
+    let guard = acquire(&control)?;
+    let entries = {
+        let cache = control
+            .last_report
+            .lock()
+            .map_err(|_| "Scan state is unavailable.")?;
+        let report = cache
+            .as_ref()
+            .filter(|r| !r.cancelled)
+            .ok_or("Complete a fresh scan before cleaning.")?;
+        if mode == "quick" {
+            if !entry_ids.is_empty() {
+                return Err("Quick Clean uses the latest protected scan candidates.".into());
+            }
+            report
+                .entries
+                .iter()
+                .filter(|entry| is_repair_candidate(entry))
+                .take(MAX_CLEAN_ENTRIES)
+                .cloned()
+                .collect::<Vec<_>>()
+        } else if mode == "selected"
+            && !entry_ids.is_empty()
+            && entry_ids.len() <= MAX_CLEAN_ENTRIES
+        {
+            entry_ids
+                .iter()
+                .map(|id| {
+                    report
+                        .entries
+                        .iter()
+                        .find(|entry| &entry.id == id)
+                        .cloned()
+                        .ok_or("An entry is not in the latest scan.".to_string())
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        } else {
+            return Err("Unsupported cleaning mode or selection size.".into());
+        }
+    };
+    let manager = changes.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        manager
+            .lock()
+            .map_err(|_| "Change state is unavailable.".to_string())?
+            .prepare_clean(&entries, &mode)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn apply_clean(
+    control: State<'_, ScanControl>,
+    changes: State<'_, Changes>,
+    token: String,
+    confirmed: bool,
+) -> Result<CleanResult, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required.".into());
+    }
+    let guard = acquire(&control)?;
+    let manager = changes.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        manager
+            .lock()
+            .map_err(|_| "Change state is unavailable.".to_string())?
+            .apply_clean(&token)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn cancel_change(changes: State<'_, Changes>) -> Result<(), String> {
     changes
         .0
@@ -181,6 +265,8 @@ fn main() {
             prepare_quarantine,
             prepare_restore,
             apply_change,
+            prepare_clean,
+            apply_clean,
             cancel_change,
             list_backups
         ])

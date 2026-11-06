@@ -18,10 +18,11 @@ export interface ChangePlan {
   name: string;
   valueName: string;
   registryPath: string;
+  registryView?: string;
   originalValue: string;
   valueType: string;
   expiresAt: number;
-  scope: 'startup' | 'app_path' | 'uninstall' | 'association';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -38,8 +39,9 @@ interface Backup {
   createdAt: number;
   state: 'restore_available' | 'original_present' | 'conflict' | 'unverified';
   note: string;
-  scope: 'startup' | 'app_path' | 'uninstall' | 'association';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com';
   registryPath: string;
+  registryView?: string;
 }
 interface Inventory {
   storagePath: string;
@@ -48,6 +50,20 @@ interface Inventory {
 }
 
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'com')
+    return (
+      entry.hive === 'HKCU' &&
+      entry.view === '64' &&
+      entry.comRepairable === true &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'target_missing' &&
+      entry.valueName === '' &&
+      ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
+      /^software\\classes\\clsid\\\{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\}\\inprocserver32$/i.test(
+        entry.keyPath,
+      )
+    );
+
   if (entry.category === 'file_associations')
     return (
       entry.hive === 'HKCU' &&
@@ -103,6 +119,7 @@ export function ChangeConfirmation({
   const appPath = plan.scope === 'app_path';
   const uninstall = plan.scope === 'uninstall';
   const association = plan.scope === 'association';
+  const com = plan.scope === 'com';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -138,38 +155,46 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {association
+        {com
           ? restore
-            ? 'Restore Open with suggestion?'
-            : 'Repair orphaned file association?'
-          : uninstall
+            ? 'Restore COM DLL mapping?'
+            : 'Repair broken COM DLL mapping?'
+          : association
             ? restore
-              ? 'Restore uninstall entry visibility?'
-              : 'Repair orphaned uninstall entry?'
-            : appPath
+              ? 'Restore Open with suggestion?'
+              : 'Repair orphaned file association?'
+            : uninstall
               ? restore
-                ? 'Restore application path?'
-                : 'Repair broken application path?'
-              : restore
-                ? 'Restore startup entry?'
-                : 'Disable this startup entry?'}
+                ? 'Restore uninstall entry visibility?'
+                : 'Repair orphaned uninstall entry?'
+              : appPath
+                ? restore
+                  ? 'Restore application path?'
+                  : 'Repair broken application path?'
+                : restore
+                  ? 'Restore startup entry?'
+                  : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {association
+        {com
           ? restore
-            ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
-            : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
-          : uninstall
+            ? 'This restores the exact original 64-bit DLL mapping. If the DLL exists later, applications may load it through COM. The class and server metadata must still match the backup.'
+            : 'The explicit local DLL is missing. After a verified backup, only the default InprocServer32 path is removed. This disables this broken mapping; it does not repair missing DLL files or choose a replacement.'
+          : association
             ? restore
-              ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
-              : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
-            : appPath
+              ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
+              : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
+            : uninstall
               ? restore
-                ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
-                : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
-              : restore
-                ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-                : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+                ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
+                : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
+              : appPath
+                ? restore
+                  ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+                  : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+                : restore
+                  ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+                  : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -180,6 +205,12 @@ export function ChangeConfirmation({
           <dt>Registry path</dt>
           <dd className="code-field">{plan.registryPath}</dd>
         </div>
+        {com && (
+          <div className="full-field">
+            <dt>Registry view</dt>
+            <dd>{plan.registryView} bit · current user</dd>
+          </div>
+        )}
         <div>
           <dt>Value name</dt>
           <dd>{plan.valueName || '(Default)'}</dd>
@@ -190,13 +221,15 @@ export function ChangeConfirmation({
         </div>
         <div className="full-field">
           <dt>
-            {association
-              ? 'Original suggestion data'
-              : uninstall
-                ? 'Original installation folder'
-                : appPath
-                  ? 'Exact original executable path'
-                  : 'Exact original command'}
+            {com
+              ? 'Exact original COM DLL path'
+              : association
+                ? 'Original suggestion data'
+                : uninstall
+                  ? 'Original installation folder'
+                  : appPath
+                    ? 'Exact original executable path'
+                    : 'Exact original command'}
           </dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
@@ -224,6 +257,13 @@ export function ChangeConfirmation({
           </p>
         </>
       )}
+      {com && (
+        <p className="change-intro">
+          The COM class, InprocServer32 key, and {plan.preservedValues} other metadata value(s)
+          remain in place. Alternative activation keys, changed metadata, or a same-view machine
+          registration block repair and restore.
+        </p>
+      )}
       {association && (
         <p className="change-intro">
           The extension key, {plan.preservedValues} other suggestion(s), and all default selections
@@ -240,13 +280,15 @@ export function ChangeConfirmation({
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
-          {association
-            ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
-            : uninstall
-              ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
-              : restore
-                ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
-                : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
+          {com
+            ? 'No DLL is loaded or registered, no COM object is activated, and no key, file, or permission is changed. A verified backup is required before removing this one path value.'
+            : association
+              ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
+              : uninstall
+                ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
+                : restore
+                  ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
+                  : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
         </p>
       </div>
       <label className="confirmation-check">
@@ -257,13 +299,15 @@ export function ChangeConfirmation({
           onChange={(event) => setAgreed(event.target.checked)}
         />
         <span>
-          {association
-            ? 'I reviewed this exact suggestion and understand the file association change.'
-            : uninstall
-              ? 'I reviewed this entry and understand this only changes listing visibility.'
-              : appPath
-                ? 'I reviewed this exact value and understand the application path change.'
-                : 'I reviewed this exact value and understand the startup change.'}
+          {com
+            ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
+            : association
+              ? 'I reviewed this exact suggestion and understand the file association change.'
+              : uninstall
+                ? 'I reviewed this entry and understand this only changes listing visibility.'
+                : appPath
+                  ? 'I reviewed this exact value and understand the application path change.'
+                  : 'I reviewed this exact value and understand the startup change.'}
         </span>
       </label>
       {expired && (
@@ -283,19 +327,23 @@ export function ChangeConfirmation({
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
           {busy
             ? 'Applying…'
-            : association
+            : com
               ? restore
                 ? 'Restore original value'
-                : 'Back up & remove suggestion'
-              : uninstall
+                : 'Back up & disable mapping'
+              : association
                 ? restore
-                  ? 'Restore original visibility'
-                  : 'Back up & hide entry'
-                : restore
                   ? 'Restore original value'
-                  : appPath
-                    ? 'Back up & repair'
-                    : 'Back up & disable'}
+                  : 'Back up & remove suggestion'
+                : uninstall
+                  ? restore
+                    ? 'Restore original visibility'
+                    : 'Back up & hide entry'
+                  : restore
+                    ? 'Restore original value'
+                    : appPath
+                      ? 'Back up & repair'
+                      : 'Back up & disable'}
         </button>
       </div>
     </dialog>
@@ -408,13 +456,15 @@ export function BackupsPanel({
                     {new Date(backup.createdAt).toLocaleString('en-US')}
                     <span>
                       ·{' '}
-                      {backup.scope === 'association'
-                        ? 'File association'
-                        : backup.scope === 'uninstall'
-                          ? 'Uninstall'
-                          : backup.scope === 'app_path'
-                            ? 'Application path'
-                            : 'Startup'}{' '}
+                      {backup.scope === 'com'
+                        ? `COM DLL · ${backup.registryView} bit`
+                        : backup.scope === 'association'
+                          ? 'File association'
+                          : backup.scope === 'uninstall'
+                            ? 'Uninstall'
+                            : backup.scope === 'app_path'
+                              ? 'Application path'
+                              : 'Startup'}{' '}
                       · {backup.valueName || '(Default)'}
                     </span>
                   </small>

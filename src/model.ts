@@ -1,4 +1,5 @@
-export type Category = 'startup' | 'app_paths' | 'uninstall' | 'file_associations';
+export type Category =
+  'startup' | 'app_paths' | 'uninstall' | 'file_associations' | 'com' | 'services' | 'shared_dlls';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -15,6 +16,7 @@ export interface RegistryEntry {
   uninstallRepairable?: boolean;
   uninstallHidden?: boolean;
   associationRepairable?: boolean;
+  comRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -55,6 +57,21 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  services: {
+    label: 'Services & drivers',
+    description: 'Read-only ImagePath inventory',
+    short: 'Service',
+  },
+  shared_dlls: {
+    label: 'Shared DLL references',
+    description: 'Read-only file usage registrations',
+    short: 'Shared DLL',
+  },
+  com: {
+    label: 'COM registrations',
+    description: 'InprocServer32 DLL mappings by registry view',
+    short: 'COM DLL',
+  },
   startup: {
     label: 'Startup entries',
     description: 'Local targets of Run and RunOnce commands',

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 4,
+  "id": "44444444-4444-4444-8444-444444444444",
+  "name": "Legacy association",
+  "valueName": "Example.Document",
+  "createdAt": 4,
+  "original": {
+    "kind": 0,
+    "bytes": []
+  },
+  "association": {
+    "extension": ".rrlegacy",
+    "guard": {
+      "suggestions": [],
+      "extensionValues": [],
+      "machineExtensionValues": null,
+      "userChoice": null
+    }
+  },
+  "integritySha256": "9f6e2610012dbc7d2c371868077412c6c3db761d0eb1c55a54013024dc9f1ff8"
+}

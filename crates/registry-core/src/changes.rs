@@ -1,6 +1,11 @@
+#[path = "batch.rs"]
+mod batch;
 use crate::associations::{
     validate_extension, validate_suggestion, AssociationBackup, AssociationState, CLASSES_KEY,
     OPEN_WITH,
+};
+use crate::com::{
+    validate_clsid, verify_missing_dll, ComBackup, ComState, CLSID_KEY, INPROC_SERVER,
 };
 use crate::uninstall::{
     validate_uninstall_name, verify_orphan, UninstallBackup, UninstallSnapshot, COMPONENT,
@@ -9,6 +14,7 @@ use crate::uninstall::{
 use crate::{
     analyze_target, Category, EntryStatus, Environment, PathProbe, RegistryEntry, TargetKind,
 };
+pub use batch::{is_repair_candidate, CleanPlan, CleanResult, MAX_CLEAN_ENTRIES};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -138,6 +144,18 @@ struct AppPathBackup {
 }
 
 pub trait RegistryStore {
+    fn read_com(&self, _clsid: &str) -> Result<ComState, String> {
+        Err("COM recovery is unavailable in this registry store.".into())
+    }
+    fn compare_exchange_com(
+        &self,
+        _clsid: &str,
+        _expected: &ComState,
+        _replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        Err("COM recovery is unavailable in this registry store.".into())
+    }
+
     fn read_association(
         &self,
         _extension: &str,
@@ -195,6 +213,7 @@ pub struct ChangePlan {
     pub name: String,
     pub value_name: String,
     pub registry_path: String,
+    pub registry_view: String,
     pub original_value: String,
     pub value_type: String,
     pub expires_at: u64,
@@ -220,6 +239,8 @@ struct BackupRecord {
     uninstall: Option<UninstallBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     association: Option<AssociationBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    com: Option<ComBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -233,6 +254,7 @@ pub struct BackupSummary {
     pub note: String,
     pub scope: String,
     pub registry_path: String,
+    pub registry_view: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -265,6 +287,7 @@ pub struct ChangeManager<S: RegistryStore, P: PathProbe> {
     directory: PathBuf,
     probe: P,
     pending: Option<Pending>,
+    batch_pending: Option<batch::PendingBatch>,
 }
 
 fn now() -> Result<u64, String> {
@@ -293,6 +316,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             directory,
             probe,
             pending: None,
+            batch_pending: None,
         }
     }
 
@@ -317,14 +341,15 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.app_path,
             &record.uninstall,
             &record.association,
+            &record.com,
             record.schema_version,
         ) {
-            (None, None, None, 1) => validate_value_name(&record.value_name)?,
-            (Some(app), None, None, 2) if record.value_name.is_empty() => {
+            (None, None, None, None, 1) => validate_value_name(&record.value_name)?,
+            (Some(app), None, None, None, 2) if record.value_name.is_empty() => {
                 validate_app_path_name(&app.executable)?;
                 app.guard.validate()?;
             }
-            (None, Some(uninstall), None, 3) if record.value_name == COMPONENT => {
+            (None, Some(uninstall), None, None, 3) if record.value_name == COMPONENT => {
                 validate_uninstall_name(&uninstall.key_name)?;
                 uninstall.snapshot.validate_original()?;
                 if uninstall.snapshot.get("InstallLocation") != Some(&record.original) {
@@ -333,10 +358,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     );
                 }
             }
-            (None, None, Some(association), 4) => {
+            (None, None, Some(association), None, 4) => {
                 validate_extension(&association.extension)?;
                 association.guard.validate(&record.value_name)?;
                 validate_suggestion(&record.original)?;
+            }
+            (None, None, None, Some(com), 5) if record.value_name.is_empty() => {
+                com.validate()?;
             }
             _ => return Err("Unsupported backup format or registry scope.".into()),
         }
@@ -365,6 +393,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             serde_json::to_vec(&(bytes, &record.uninstall)).map_err(|e| e.to_string())?
         } else if record.schema_version == 4 {
             serde_json::to_vec(&(bytes, &record.association)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 5 {
+            serde_json::to_vec(&(bytes, &record.com)).map_err(|e| e.to_string())?
         } else {
             bytes
         };
@@ -459,8 +489,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
 
     pub fn prepare_quarantine(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
         self.pending = None;
+        self.batch_pending = None;
         if entry.hive != "HKCU"
-            || entry.view != "shared"
+            || (if entry.category == Category::Com {
+                entry.view != "64"
+            } else {
+                entry.view != "shared"
+            })
             || entry.assessment.status != EntryStatus::Review
             || (entry.category != Category::FileAssociations
                 && entry.assessment.code != "target_missing")
@@ -469,6 +504,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "Only confirmed missing-target entries in supported current-user locations are eligible."
                     .into(),
             );
+        }
+        if entry.category == Category::Com {
+            return self.prepare_com(entry);
         }
         if entry.category == Category::FileAssociations {
             return self.prepare_association(entry);
@@ -539,6 +577,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             app_path,
             uninstall: None,
             association: None,
+            com: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -588,6 +627,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 snapshot,
             }),
             association: None,
+            com: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -632,6 +672,53 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 extension: extension.into(),
                 guard: state.guard,
             }),
+            com: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_com(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        if !entry.value_name.is_empty() {
+            return Err("Only the default COM DLL mapping is supported.".into());
+        }
+        let prefix = format!("{CLSID_KEY}\\");
+        let suffix = format!("\\{INPROC_SERVER}");
+        let clsid = entry
+            .key_path
+            .strip_prefix(&prefix)
+            .and_then(|p| p.strip_suffix(&suffix))
+            .ok_or("Unsupported COM registry location.")?;
+        validate_clsid(clsid)?;
+        let state = entry
+            .com_state
+            .clone()
+            .ok_or("COM evidence is unavailable. Run a fresh scan.")?;
+        state.guard.validate()?;
+        let original = state
+            .value
+            .clone()
+            .ok_or("The COM DLL mapping no longer exists.")?;
+        if original.text()? != entry.raw_value || self.store.read_com(clsid)? != state {
+            return Err("The COM mapping changed after scanning. Nothing was changed.".into());
+        }
+        verify_missing_dll(&original, &self.probe)?;
+        let mut record = BackupRecord {
+            schema_version: 5,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: String::new(),
+            created_at: now()?,
+            original,
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: None,
+            association: None,
+            com: Some(ComBackup {
+                clsid: clsid.into(),
+                view: "64".into(),
+                guard: state.guard,
+            }),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -639,6 +726,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
 
     pub fn prepare_restore(&mut self, id: &str) -> Result<ChangePlan, String> {
         self.pending = None;
+        self.batch_pending = None;
         let record = self.load(id)?;
         if self.read_record(&record)?.is_some() {
             return Err("A value with this name already exists. Restore never overwrites an existing value.".into());
@@ -653,6 +741,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             name: record.name.clone(),
             value_name: record.value_name.clone(),
             registry_path: Self::registry_path(&record),
+            registry_view: if record.com.is_some() { "64" } else { "shared" }.into(),
             original_value: if record.association.is_some() {
                 "(empty)".into()
             } else {
@@ -669,7 +758,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.association.is_some() {
+            scope: if record.com.is_some() {
+                "com"
+            } else if record.association.is_some() {
                 "association"
             } else if record.uninstall.is_some() {
                 "uninstall"
@@ -679,7 +770,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "startup"
             }
             .into(),
-            preserved_values: if let Some(association) = &record.association {
+            preserved_values: if let Some(com) = &record.com {
+                com.guard.class_values.len() + com.guard.server_values.len()
+            } else if let Some(association) = &record.association {
                 association.guard.suggestions.len()
             } else if let Some(uninstall) = &record.uninstall {
                 uninstall.snapshot.values.len()
@@ -712,9 +805,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
 
     pub fn cancel(&mut self) {
         self.pending = None;
+        self.batch_pending = None;
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if let Some(com) = &record.com {
+            return format!("HKCU\\{CLSID_KEY}\\{}\\{INPROC_SERVER}", com.clsid);
+        }
         if let Some(association) = &record.association {
             return format!(
                 "HKCU\\{CLASSES_KEY}\\{}\\{OPEN_WITH}",
@@ -731,6 +828,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
+        if let Some(com) = &record.com {
+            let state = self.store.read_com(&com.clsid)?;
+            if state.guard != com.guard {
+                return Err("COM metadata changed. Repair or restore is blocked.".into());
+            }
+            return Ok(state.value);
+        }
         if let Some(association) = &record.association {
             let state = self
                 .store
@@ -767,6 +871,16 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         expected: Option<StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if let Some(com) = &record.com {
+            return self.store.compare_exchange_com(
+                &com.clsid,
+                &ComState {
+                    value: expected,
+                    guard: com.guard.clone(),
+                },
+                replacement,
+            );
+        }
         if let Some(association) = &record.association {
             return self.store.compare_exchange_association(
                 &association.extension,
@@ -823,6 +937,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         } else {
             if let Some(uninstall) = &record.uninstall {
                 verify_orphan(&uninstall.snapshot, &self.probe)?;
+            } else if record.com.is_some() {
+                verify_missing_dll(&record.original, &self.probe)?;
             } else if record.association.is_none() {
                 self.verify_missing(&record.original, record.app_path.is_some())?;
             }
@@ -846,7 +962,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.association.is_some() {
+            message: if record.com.is_some() {
+                if restore {"Original 64-bit COM DLL mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM DLL mapping disabled after a verified backup. The class key and metadata were preserved."}
+            } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
             } else if record.uninstall.is_some() {
                 if restore { "Original uninstall metadata and visibility restored and verified." } else { "Orphaned uninstall entry hidden after a full verified backup. No uninstall command was executed." }
@@ -914,7 +1032,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.association.is_some() {
+            let scope = if record.com.is_some() {
+                "com"
+            } else if record.association.is_some() {
                 "association"
             } else if record.uninstall.is_some() {
                 "uninstall"
@@ -925,6 +1045,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into();
             let registry_path = Self::registry_path(&record);
+            let registry_view = if record.com.is_some() { "64" } else { "shared" }.into();
             inventory.backups.push(BackupSummary {
                 id: record.id.to_string(),
                 name: record.name,
@@ -934,6 +1055,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 note,
                 scope,
                 registry_path,
+                registry_view,
             });
         }
         inventory
@@ -958,8 +1080,38 @@ mod tests {
         Rc<RefCell<HashMap<String, StoredValue>>>,
         Rc<RefCell<HashMap<String, AppPathState>>>,
         Rc<RefCell<HashMap<String, UninstallSnapshot>>>,
+        Rc<RefCell<HashMap<(String, String), AssociationState>>>,
     );
     impl RegistryStore for Memory {
+        fn read_association(
+            &self,
+            extension: &str,
+            progid: &str,
+        ) -> Result<AssociationState, String> {
+            self.3
+                .borrow()
+                .get(&(extension.into(), progid.into()))
+                .cloned()
+                .ok_or("Association key is absent".into())
+        }
+        fn compare_exchange_association(
+            &self,
+            extension: &str,
+            progid: &str,
+            expected: &AssociationState,
+            replacement: Option<&StoredValue>,
+        ) -> Result<(), String> {
+            let mut records = self.3.borrow_mut();
+            let actual = records
+                .get_mut(&(extension.into(), progid.into()))
+                .ok_or("Association key is absent")?;
+            if actual != expected {
+                return Err("Association conflict".into());
+            }
+            actual.value = replacement.cloned();
+            Ok(())
+        }
+
         fn read_uninstall(&self, key_name: &str) -> Result<UninstallSnapshot, String> {
             self.2
                 .borrow()
@@ -1071,6 +1223,8 @@ mod tests {
             uninstall_hidden: false,
             association_state: None,
             association_repairable: false,
+            com_state: None,
+            com_repairable: false,
         }
     }
     fn setup(path: &Path) -> (Memory, Rc<Cell<ProbeResult>>, ChangeManager<Memory, Probe>) {
@@ -1609,5 +1763,175 @@ mod tests {
         manager.apply(&plan.token).unwrap();
         assert_eq!(store.read_uninstall("ExampleUninstall").unwrap(), original);
         assert_eq!(fs::read_to_string(path).unwrap(), legacy);
+    }
+    #[test]
+    fn restores_unchanged_v014_association_backup_without_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(dir.path());
+        let guard = crate::associations::AssociationGuard {
+            suggestions: vec![],
+            extension_values: vec![],
+            machine_extension_values: None,
+            user_choice: None,
+        };
+        store.3.borrow_mut().insert(
+            (".rrlegacy".into(), "Example.Document".into()),
+            AssociationState { value: None, guard },
+        );
+        let id = "44444444-4444-4444-8444-444444444444";
+        let legacy = include_str!("../tests/fixtures/association-backup-v4.json");
+        let path = dir.path().join(format!("{id}.json"));
+        fs::write(&path, legacy).unwrap();
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "association");
+        manager.apply(&plan.token).unwrap();
+        assert_eq!(
+            store
+                .read_association(".rrlegacy", "Example.Document")
+                .unwrap()
+                .value,
+            Some(StoredValue {
+                kind: 0,
+                bytes: vec![]
+            })
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), legacy);
+    }
+    #[test]
+    fn cleaning_review_cancel_and_tokens_do_not_create_backups_or_mutate_values() {
+        let dir = tempfile::tempdir().unwrap();
+        let backups = dir.path().join("backups");
+        let (store, _, mut manager) = setup(&backups);
+        let review = manager.prepare_clean(&[entry()], "quick").unwrap();
+        assert_eq!(review.items.len(), 1);
+        assert_eq!(store.read("Example").unwrap(), Some(original()));
+        assert!(!backups.exists());
+        manager.cancel();
+        assert!(manager.apply_clean(&review.token).is_err());
+        assert!(!backups.exists());
+        let review = manager.prepare_clean(&[entry()], "selected").unwrap();
+        assert!(manager.apply_clean("wrong-token").is_err());
+        assert!(manager.apply_clean(&review.token).is_err());
+        assert!(manager
+            .prepare_clean(&[entry(), entry()], "selected")
+            .is_err());
+        assert!(!backups.exists());
+    }
+    #[test]
+    fn cleaning_stops_at_a_conflict_and_keeps_completed_changes_individually_restorable() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(dir.path());
+        let mut second = entry();
+        second.id = "second".into();
+        second.name = "Second".into();
+        second.value_name = "Second".into();
+        let mut third = second.clone();
+        third.id = "third".into();
+        third.name = "Third".into();
+        third.value_name = "Third".into();
+        for name in ["Second", "Third"] {
+            store.0.borrow_mut().insert(name.into(), original());
+        }
+        let review = manager
+            .prepare_clean(&[entry(), second, third], "selected")
+            .unwrap();
+        assert_eq!(review.items.len(), 3);
+        let conflict = StoredValue {
+            kind: 1,
+            bytes: "C:\\Keep\\existing.exe\0"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect(),
+        };
+        store
+            .0
+            .borrow_mut()
+            .insert("Second".into(), conflict.clone());
+        let result = manager.apply_clean(&review.token).unwrap();
+        assert_eq!(result.completed.len(), 1);
+        assert_eq!(result.failed.unwrap().name, "Second");
+        assert_eq!(result.not_attempted, 1);
+        assert_eq!(store.read("Example").unwrap(), None);
+        assert_eq!(store.read("Second").unwrap(), Some(conflict));
+        assert_eq!(store.read("Third").unwrap(), Some(original()));
+        let restore = manager
+            .prepare_restore(&result.completed[0].backup_id)
+            .unwrap();
+        manager.apply(&restore.token).unwrap();
+        assert_eq!(store.read("Example").unwrap(), Some(original()));
+    }
+    #[test]
+    fn cleaning_skips_ineligible_entries_and_enforces_expiry_and_size_limits() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(dir.path());
+        let mut machine = entry();
+        machine.id = "machine".into();
+        machine.hive = "HKLM".into();
+        let review = manager.prepare_clean(&[entry(), machine], "quick").unwrap();
+        assert_eq!(review.items.len(), 1);
+        assert_eq!(review.skipped.len(), 1);
+        manager.batch_pending.as_mut().unwrap().plan.expires_at = 0;
+        assert!(manager.apply_clean(&review.token).is_err());
+        assert_eq!(store.read("Example").unwrap(), Some(original()));
+        assert!(manager.prepare_clean(&vec![entry(); 101], "quick").is_err());
+        assert!(manager.prepare_clean(&[], "selected").is_err());
+    }
+    #[test]
+    fn cleaning_defers_sibling_suggestions_to_keep_metadata_guards_independent() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(dir.path());
+        let original = StoredValue {
+            kind: 0,
+            bytes: vec![],
+        };
+        let names = ["Example.First", "Example.Second"];
+        let mut entries = Vec::new();
+        for (index, name) in names.iter().enumerate() {
+            let state = AssociationState {
+                value: Some(original.clone()),
+                guard: crate::associations::AssociationGuard {
+                    suggestions: vec![NamedValue {
+                        name: names[1 - index].into(),
+                        value: original.clone(),
+                    }],
+                    extension_values: vec![],
+                    machine_extension_values: None,
+                    user_choice: None,
+                },
+            };
+            store
+                .3
+                .borrow_mut()
+                .insert((".rrexample".into(), (*name).into()), state.clone());
+            let mut item = entry();
+            item.id = (*name).into();
+            item.name = (*name).into();
+            item.category = Category::FileAssociations;
+            item.key_path = format!("{CLASSES_KEY}\\.rrexample\\{OPEN_WITH}");
+            item.value_name = (*name).into();
+            item.raw_value = "(empty)".into();
+            item.assessment.code = "progid_missing".into();
+            item.association_state = Some(state);
+            item.association_repairable = true;
+            entries.push(item);
+        }
+        let plan = manager.prepare_clean(&entries, "selected").unwrap();
+        assert_eq!(plan.items.len(), 1);
+        assert_eq!(plan.skipped.len(), 1);
+        let result = manager.apply_clean(&plan.token).unwrap();
+        assert_eq!(result.completed.len(), 1);
+        assert!(result.failed.is_none());
+        assert!(store
+            .read_association(".rrexample", names[0])
+            .unwrap()
+            .value
+            .is_none());
+        assert_eq!(
+            store
+                .read_association(".rrexample", names[1])
+                .unwrap()
+                .value,
+            Some(original)
+        );
     }
 }
