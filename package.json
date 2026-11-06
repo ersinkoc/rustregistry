@@ -2,6 +2,11 @@
   "name": "rustregistry",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ersinkoc/rustregistry.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -11,7 +16,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:desktop": "node scripts/desktop-smoke.mjs",
-    "check": "npm run format:check && npm run typecheck && npm test && cargo fmt --all --check && npm run check:rust && npm run test:rust",
+    "version:check": "node scripts/check-version.mjs",
+    "check": "npm run version:check && npm run format:check && npm run typecheck && npm test && cargo fmt --all --check && npm run check:rust && npm run test:rust",
     "desktop": "tauri dev",
     "desktop:build": "tauri build --no-bundle",
     "scan": "cargo run -p registry-core --bin registry-scan --quiet",

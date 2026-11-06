@@ -2,6 +2,8 @@
 
 A read-only Windows registry health explorer, built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
 
+Open source under the [MIT license](LICENSE). See the [changelog](CHANGELOG.md) and [GitHub releases](https://github.com/ersinkoc/rustregistry/releases) for version history and Windows downloads.
+
 ## Run the desktop app
 
 Requirements: Windows x64, Rust 1.93 or newer with the MSVC toolchain, Visual Studio C++ Build Tools with a Windows SDK, Node.js 26 or newer, and Microsoft Edge WebView2 Runtime.
