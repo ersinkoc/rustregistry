@@ -180,6 +180,8 @@ mod tests {
                 prog_id_repairable: false,
                 interface_state: None,
                 interface_repairable: false,
+                proxy_state: None,
+                proxy_repairable: false,
             }
         }
         fn assert_controls(&self) {

@@ -50,6 +50,7 @@ pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
                 && entry.key_path.eq_ignore_ascii_case(STARTUP_KEY)
                 && entry.snapshot.is_some()
         }
+        Category::ComProxies => entry.view == "64" && entry.proxy_repairable,
         Category::Interfaces => entry.view == "64" && entry.interface_repairable,
         Category::ProgIds => entry.view == "shared" && entry.prog_id_repairable,
         Category::TypeLibraries => entry.view == "shared" && entry.type_library_repairable,
@@ -95,7 +96,15 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "{}|{}|{}|{}",
                 entry.hive,
                 entry.view,
-                entry.key_path.to_ascii_lowercase(),
+                if matches!(entry.category, Category::Interfaces | Category::ComProxies) {
+                    entry
+                        .key_path
+                        .rsplit_once('\\')
+                        .map_or(entry.key_path.as_str(), |(parent, _)| parent)
+                        .to_ascii_lowercase()
+                } else {
+                    entry.key_path.to_ascii_lowercase()
+                },
                 if matches!(
                     entry.category,
                     Category::SharedDlls | Category::RegisteredApplications

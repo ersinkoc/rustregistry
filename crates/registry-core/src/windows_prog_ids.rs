@@ -85,7 +85,11 @@ impl WindowsRegistryStore {
         }
         HKEY_LOCAL_MACHINE
     }
-    fn prog_id_target_in(&self, clsid: &str, tx: Option<&Transaction>) -> Result<bool, String> {
+    pub(super) fn prog_id_target_in(
+        &self,
+        clsid: &str,
+        tx: Option<&Transaction>,
+    ) -> Result<bool, String> {
         crate::com::validate_clsid(clsid)?;
         for (hive, classes) in [
             (HKEY_CURRENT_USER, &self.prog_ids_path),

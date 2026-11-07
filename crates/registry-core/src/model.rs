@@ -15,6 +15,7 @@ pub enum Category {
     TypeLibraries,
     ProgIds,
     Interfaces,
+    ComProxies,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +86,10 @@ pub struct RegistryEntry {
     pub interface_state: Option<crate::interfaces::InterfaceState>,
     #[serde(default)]
     pub interface_repairable: bool,
+    #[serde(skip)]
+    pub proxy_state: Option<crate::com_proxies::ProxyState>,
+    #[serde(default)]
+    pub proxy_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

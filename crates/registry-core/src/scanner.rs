@@ -18,7 +18,9 @@ struct Source {
 
 fn source_id(source: &Source) -> String {
     let id = format!("{}|{}|{}", source.hive, source.view, source.path);
-    if source.category == Category::ProgIds {
+    if source.category == Category::ComProxies {
+        format!("{id}|com_proxies")
+    } else if source.category == Category::ProgIds {
         format!("{id}|prog_ids")
     } else {
         id
@@ -99,6 +101,17 @@ fn sources() -> Vec<Source> {
             flag: 0,
             view: "shared",
         });
+    }
+    for hive in ["HKCU", "HKLM"] {
+        for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
+            result.push(Source {
+                category: Category::ComProxies,
+                hive,
+                path: crate::interfaces::INTERFACES_KEY,
+                flag,
+                view,
+            });
+        }
     }
     for hive in ["HKCU", "HKLM"] {
         for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
@@ -241,11 +254,15 @@ fn make_entry(
                         | Category::RegisteredApplications
                         | Category::TypeLibraries
                         | Category::Interfaces
+                        | Category::ComProxies
                         | Category::ProgIds => TargetKind::File,
                     };
                     let assessment = if matches!(
                         source.category,
-                        Category::TypeLibraries | Category::ProgIds | Category::Interfaces
+                        Category::TypeLibraries
+                            | Category::ProgIds
+                            | Category::Interfaces
+                            | Category::ComProxies
                     ) {
                         Assessment {
                             status: EntryStatus::Unknown,
@@ -318,6 +335,8 @@ fn make_entry(
         prog_id_repairable: false,
         interface_state: None,
         interface_repairable: false,
+        proxy_state: None,
+        proxy_repairable: false,
         service_repairable: false,
     }
 }
@@ -337,6 +356,8 @@ mod application_scan;
 mod interface_scan;
 #[path = "prog_id_scan.rs"]
 mod prog_id_scan;
+#[path = "proxy_scan.rs"]
+mod proxy_scan;
 #[path = "registered_apps_scan.rs"]
 mod registered_apps_scan;
 #[path = "type_libraries_scan.rs"]
@@ -374,6 +395,7 @@ fn scan_source(
                 | Category::RegisteredApplications
                 | Category::TypeLibraries
                 | Category::Interfaces
+                | Category::ComProxies
         ) {
             REG_OPTION_OPEN_LINK
         } else {
@@ -400,6 +422,7 @@ fn scan_source(
             | Category::RegisteredApplications
             | Category::TypeLibraries
             | Category::Interfaces
+            | Category::ComProxies
     ) && key
         .get_raw_value("SymbolicLinkValue")
         .is_ok_and(|v| v.vtype == REG_LINK)
@@ -409,7 +432,17 @@ fn scan_source(
         return scope;
     }
     let start_count = entries.len();
-    if source.category == Category::Interfaces {
+    if source.category == Category::ComProxies {
+        proxy_scan::scan_proxies(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::Interfaces {
         interface_scan::scan_interfaces(
             source,
             &key,

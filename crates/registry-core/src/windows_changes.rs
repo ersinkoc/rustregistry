@@ -1,5 +1,7 @@
 #[path = "windows_interfaces.rs"]
 mod interfaces;
+#[path = "windows_proxies.rs"]
+mod proxies;
 pub(crate) use interfaces::open_interface_child;
 #[path = "windows_applications.rs"]
 mod applications;
@@ -194,6 +196,26 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_proxy(
+        &self,
+        app: &crate::com_proxies::ProxyBackup,
+    ) -> Result<crate::com_proxies::ProxyState, String> {
+        self.proxy_state(app)
+    }
+    fn check_proxy_write_access(
+        &self,
+        app: &crate::com_proxies::ProxyBackup,
+    ) -> Result<(), String> {
+        self.proxy_write_access(app)
+    }
+    fn compare_exchange_proxy(
+        &self,
+        app: &crate::com_proxies::ProxyBackup,
+        expected: &crate::com_proxies::ProxyState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_proxy(app, expected, replacement)
+    }
     fn read_interface(
         &self,
         app: &crate::interfaces::InterfaceBackup,
@@ -678,6 +700,8 @@ mod tests {
             prog_id_repairable: false,
             interface_state: None,
             interface_repairable: false,
+            proxy_state: None,
+            proxy_repairable: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -798,6 +822,8 @@ mod tests {
             prog_id_repairable: false,
             interface_state: None,
             interface_repairable: false,
+            proxy_state: None,
+            proxy_repairable: false,
             service_repairable: false,
         };
         let mut manager =
@@ -969,6 +995,8 @@ mod tests {
                 prog_id_repairable: false,
                 interface_state: None,
                 interface_repairable: false,
+                proxy_state: None,
+                proxy_repairable: false,
                 service_repairable: false,
             };
             let mut manager =

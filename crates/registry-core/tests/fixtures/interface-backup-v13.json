@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 13,
+  "id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  "name": "Legacy interface",
+  "valueName": "",
+  "createdAt": 1700000000000,
+  "original": {
+    "kind": 2,
+    "bytes": [
+      123, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 45, 0, 100, 0, 100, 0,
+      100, 0, 100, 0, 45, 0, 52, 0, 100, 0, 100, 0, 100, 0, 45, 0, 56, 0, 100, 0, 100, 0, 100, 0,
+      45, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0, 100, 0,
+      101, 0, 125, 0, 0, 0, 0, 0
+    ]
+  },
+  "integritySha256": "da49518fe7d8db0745cdaa67ffab1d53e99441ada0563b6af8830365de936ad0",
+  "interface": {
+    "iid": "{dddddddd-dddd-4ddd-8ddd-dddddddddddd}",
+    "libraryId": "{dddddddd-dddd-4ddd-8ddd-ddddddddddde}",
+    "guard": {
+      "values": [],
+      "typeLibValues": [],
+      "proxyValues": null
+    }
+  }
+}

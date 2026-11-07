@@ -6,7 +6,7 @@ use crate::{
 use std::borrow::Cow;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
-fn open(
+pub(super) fn open(
     parent: &RegKey,
     path: &str,
     view: u32,
@@ -43,7 +43,7 @@ fn open(
         )),
     }
 }
-fn required(
+pub(super) fn required(
     parent: &RegKey,
     path: &str,
     tx: Option<&Transaction>,
@@ -60,7 +60,7 @@ pub(crate) fn open_interface_child(
 ) -> Result<Option<RegKey>, String> {
     open(parent, path, view, None, false, false)
 }
-fn values(key: &RegKey) -> Result<Vec<NamedValue>, String> {
+pub(super) fn values(key: &RegKey) -> Result<Vec<NamedValue>, String> {
     let mut values = vec![];
     let mut bytes = 0;
     for item in key.enum_values() {
@@ -82,7 +82,7 @@ fn values(key: &RegKey) -> Result<Vec<NamedValue>, String> {
     Ok(values)
 }
 impl WindowsRegistryStore {
-    fn interface_machine_hive(&self) -> winreg::HKEY {
+    pub(super) fn interface_machine_hive(&self) -> winreg::HKEY {
         #[cfg(test)]
         if self.interface_test_machine_user {
             return HKEY_CURRENT_USER;
@@ -433,6 +433,31 @@ mod tests {
         fn drop(&mut self) {
             let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(&self.base);
         }
+    }
+    #[test]
+    fn restores_unchanged_v0113_interface_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+        let leaf = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!(r"{}\User\{{{id}}}\TypeLib", fixture.base))
+            .unwrap()
+            .0;
+        let bytes = include_bytes!("../tests/fixtures/interface-backup-v13.json");
+        let file = directory.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut manager =
+            ChangeManager::new(fixture.store(), directory.path().to_path_buf(), NoFileProbe);
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "interface");
+        manager.apply(&plan.token).unwrap();
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(
+            read_value(&leaf, "").unwrap(),
+            Some(serde_json::from_value(record["original"].clone()).unwrap())
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+        fixture.assert_other();
     }
     #[test]
     fn interface_quick_and_selected_clean_keep_separate_backups_and_restore_exact_types_bytes_and_metadata(

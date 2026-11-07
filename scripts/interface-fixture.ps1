@@ -22,10 +22,19 @@ if($Action -eq 'create'){
         foreach($id in @($libraries.GetSubKeyNames()|Sort-Object)){if($id -notmatch '^\{[a-fA-F0-9-]{36}\}$' -or $id -eq '{00000000-0000-0000-0000-000000000000}'){continue};$key=$user.OpenSubKey("Software\Classes\TypeLib\$id");if($key){$key.Dispose()}else{$machineLibrary=$id;break}}
         if(-not $machineLibrary){throw 'No read-only machine library control is available.'}
     }finally{$libraries.Dispose()}}finally{$machine.Dispose();$user.Dispose()}
+    # Keep the preserved proxy valid so proxy inventory cannot turn TypeLib
+    # controls into unrelated cleaning candidates as coverage expands.
+    $machine=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry64)
+    try{$classes=$machine.OpenSubKey('Software\Classes\CLSID');try{
+        $existingProxy=@($classes.GetSubKeyNames()|Sort-Object|Where-Object{$_ -match '^\{[a-fA-F0-9-]{36}\}$' -and $_ -ne '{00000000-0000-0000-0000-000000000000}'}|Select-Object -First 1)[0]
+        if(-not $existingProxy){throw 'No read-only proxy class control is available.'}
+    }finally{$classes.Dispose()}}finally{$machine.Dispose()}
 }else{
     $descriptor=Get-Content -LiteralPath $descriptorPath -Raw|ConvertFrom-Json
     if($descriptor.token -cne $Token -or $descriptor.ownerSid -cne $owner){throw 'Owned fixture identity mismatch.'}
     $machineLibrary=$descriptor.machineLibrary
+    $existingProxy=$descriptor.existingProxy
+    if($existingProxy -notmatch '^\{[a-fA-F0-9-]{36}\}$'){throw 'Invalid preserved proxy control.'}
     if($machineLibrary -notmatch '^\{[a-fA-F0-9-]{36}\}$'){throw 'Invalid machine control.'}
 }
 $fixtures=@(foreach($kind in @('One','Two','Found','Machine','Complex','Malformed','ReadOnly32')){
@@ -74,7 +83,7 @@ if($Action -eq 'create'){
     $baseline=@(Read-Views)
     if(@($baseline.interfaces|Where-Object{$_.exists}).Count -ne 0 -or @($baseline.targets|Where-Object{$_.exists}).Count -ne 0){throw 'Owned registry fixture collision.'}
     New-Item -ItemType Directory -Path $directory -Force|Out-Null
-    $descriptor=[ordered]@{token=$Token;ownerSid=$owner;machineLibrary=$machineLibrary;baseline=$baseline;originalViews=$null}
+    $descriptor=[ordered]@{token=$Token;ownerSid=$owner;machineLibrary=$machineLibrary;existingProxy=$existingProxy;baseline=$baseline;originalViews=$null}
     [IO.File]::WriteAllText($descriptorPath,($descriptor|ConvertTo-Json -Depth 12 -Compress),[Text.UTF8Encoding]::new($false))
     foreach($view in @('Registry64','Registry32')){
         $base=Base $view
@@ -84,7 +93,7 @@ if($Action -eq 'create'){
                 $key=$root.CreateSubKey($fixture.iid)
                 try{$key.SetValue('',($fixture.name+$(if($view -eq 'Registry32' -and $fixture.kind -eq 'One'){'32'}else{''})),[Microsoft.Win32.RegistryValueKind]::String)
                     $leaf=$key.CreateSubKey('TypeLib');try{$leaf.SetValue('',$(if($fixture.kind -eq 'Malformed'){'%LIBID%'}else{$fixture.libraryId}),$(if($fixture.kind -eq 'One'){[Microsoft.Win32.RegistryValueKind]::ExpandString}else{[Microsoft.Win32.RegistryValueKind]::String}));$leaf.SetValue('Version','1.0',[Microsoft.Win32.RegistryValueKind]::String)}finally{$leaf.Dispose()}
-                    $proxy=$key.CreateSubKey('ProxyStubClsid32');try{$proxy.SetValue('',(Id 'proxy'),[Microsoft.Win32.RegistryValueKind]::String)}finally{$proxy.Dispose()}
+                    $proxy=$key.CreateSubKey('ProxyStubClsid32');try{$proxy.SetValue('',$existingProxy,[Microsoft.Win32.RegistryValueKind]::String)}finally{$proxy.Dispose()}
                     if($fixture.kind -eq 'Complex'){$child=$key.CreateSubKey('NumMethods');try{$child.SetValue('','3',[Microsoft.Win32.RegistryValueKind]::String)}finally{$child.Dispose()}}
                 }finally{$key.Dispose()}
             }

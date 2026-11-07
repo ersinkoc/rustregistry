@@ -22,6 +22,32 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only guarded native current-user orphaned proxy references', () => {
+    const mapping = {
+      ...entry,
+      category: 'com_proxies' as RegistryEntry['category'],
+      keyPath:
+        'Software\\Classes\\Interface\\{11111111-1111-4111-8111-111111111111}\\ProxyStubClsid32',
+      view: '64',
+      valueName: '',
+      rawValue: '{22222222-2222-4222-8222-222222222222}',
+      proxyRepairable: true,
+      assessment: { ...entry.assessment, code: 'proxy_clsid_missing' },
+    };
+    expect(canQuarantine(mapping)).toBe(true);
+    for (const changed of [
+      { ...mapping, hive: 'HKLM' },
+      { ...mapping, view: '32' },
+      { ...mapping, view: 'shared' },
+      { ...mapping, proxyRepairable: false },
+      { ...mapping, valueName: 'Named' },
+      { ...mapping, valueType: 'REG_DWORD' },
+      { ...mapping, rawValue: '%CLSID%' },
+      { ...mapping, keyPath: `${mapping.keyPath}\\Nested` },
+      { ...mapping, assessment: { ...mapping.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only guarded native current-user interface type-library references', () => {
     const mapping = {
       ...entry,

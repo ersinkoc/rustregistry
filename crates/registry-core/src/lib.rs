@@ -33,3 +33,5 @@ pub fn scan(
 }
 
 pub mod interfaces;
+
+pub mod com_proxies;

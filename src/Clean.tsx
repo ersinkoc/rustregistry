@@ -243,29 +243,31 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'interface'
-                  ? 'Disable orphaned interface TypeLib reference'
-                  : item.scope === 'prog_id'
-                    ? 'Disable orphaned COM ProgID mapping'
-                    : item.scope === 'type_library'
-                      ? 'Disable missing type library mapping · win64'
-                      : item.scope === 'registered_app'
-                        ? 'Remove orphaned application registration'
-                        : item.scope === 'shared_dll'
-                          ? 'Remove missing zero-count DLL reference · 64 bit'
-                          : item.scope === 'application'
-                            ? 'Hide broken application suggestion · NoOpenWith'
-                            : item.scope === 'service'
-                              ? 'Disable stopped service · Manual → Disabled'
-                              : item.scope === 'uninstall'
-                                ? 'Hide orphaned listing · SystemComponent → 1'
-                                : item.scope === 'association'
-                                  ? 'Remove Open with suggestion'
-                                  : item.scope === 'com'
-                                    ? 'Disable COM mapping'
-                                    : item.scope === 'app_path'
-                                      ? 'Remove broken application path'
-                                      : 'Disable startup value'}
+                {item.scope === 'com_proxy'
+                  ? 'Disable orphaned COM proxy reference'
+                  : item.scope === 'interface'
+                    ? 'Disable orphaned interface TypeLib reference'
+                    : item.scope === 'prog_id'
+                      ? 'Disable orphaned COM ProgID mapping'
+                      : item.scope === 'type_library'
+                        ? 'Disable missing type library mapping · win64'
+                        : item.scope === 'registered_app'
+                          ? 'Remove orphaned application registration'
+                          : item.scope === 'shared_dll'
+                            ? 'Remove missing zero-count DLL reference · 64 bit'
+                            : item.scope === 'application'
+                              ? 'Hide broken application suggestion · NoOpenWith'
+                              : item.scope === 'service'
+                                ? 'Disable stopped service · Manual → Disabled'
+                                : item.scope === 'uninstall'
+                                  ? 'Hide orphaned listing · SystemComponent → 1'
+                                  : item.scope === 'association'
+                                    ? 'Remove Open with suggestion'
+                                    : item.scope === 'com'
+                                      ? 'Disable COM mapping'
+                                      : item.scope === 'app_path'
+                                        ? 'Remove broken application path'
+                                        : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -349,6 +351,15 @@ export function CleanConfirmation({
           separate verified backup. Version, locale, win32 mappings, keys, metadata, and files are
           preserved. New files, machine counterparts, or changed registration details block repair
           and restore.
+        </p>
+      )}
+      {plan.items.some((item) => item.scope === 'com_proxy') && (
+        <p className="change-intro">
+          Proxy cleanup removes only a reviewed current-user 64-bit ProxyStubClsid32 default whose
+          class is absent from all user/machine 32/64-bit views. Description, TypeLib and Version
+          metadata, 32-bit mappings, keys, files, and permissions are preserved. New classes or
+          machine counterparts and changed evidence block repair and restore. Only one change per
+          interface is included in a cleaning batch.
         </p>
       )}
       {plan.items.some((item) => item.scope === 'interface') && (

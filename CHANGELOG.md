@@ -2,6 +2,16 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.14 — 2026-11-07
+
+- Expand coverage from 33 to 37 logical scan sections with COM interface ProxyStubClsid32 reference inventory in HKCU/HKLM and both architecture views. These checks share Interface roots with TypeLib reference inventory but have distinct coverage IDs. Check target CLSID keys across both hives and views without COM activation, resolution APIs, DLL loading, or filesystem probes.
+- Add backed-up, reversible disabling of simple orphaned current-user 64-bit proxy defaults to individual repair, Quick Clean, and selected Clean. Require a class absent from every checked view, no machine interface counterpart in either view, exact live evidence, and existing write access before review.
+- Preserve description, complete optional TypeLib/Version metadata, keys, the entire 32-bit interface view including same-IID mappings, other registrations, defaults, permissions, and files. Machine changes, existing class targets in any view, complex/nested metadata, unknown children, links, malformed GUIDs, and uncertain evidence remain excluded.
+- Allow only one TypeLib or proxy change per interface in a cleaning batch so mutually guarded siblings cannot invalidate each other's backups. Report the deferred entry for a later scan; keep individual backups and stop at the first conflict.
+- Flush and verify a separate checksum-protected schema 14 backup before each conditional registry transaction. Restore exact original REG_SZ/REG_EXPAND_SZ bytes only while the proxy default remains absent and all target, metadata, structure, and counterpart guards match. Preserve formats 1–13 unchanged with a fixed v0.1.13 interface restoration fixture.
+- Add policy, read-only inventory, write-access, conflict, corruption, batch-stop, same-interface exclusion in both orders, and exact-byte restart/restore tests. Add owned packaged UI controls for real 32-bit-only, 64-bit-only and read-only machine class targets, same-IID 32-bit mappings, post-review class conflicts, Quick Clean review/cancel, individual and selected repair, reload/restore, raw metadata/permission comparisons, and cleanup.
+- Allow 20 minutes for the explicit full-suite helper after expanded registry coverage exceeded its previous 10-minute outer wait. Individual test deadlines, required assertions, and the focused helper's limit are unchanged.
+
 ## 0.1.13 — 2026-11-07
 
 - Expand coverage from 29 to 33 logical scan sections with COM Interface-to-TypeLib references under both hives and both architecture views. Check library GUID key existence in shared user and machine TypeLib roots without loading libraries, activating COM, or probing files. Any existing library prevents repair; this deliberately does not diagnose version-specific library failures.
