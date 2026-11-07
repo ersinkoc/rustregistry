@@ -38,3 +38,5 @@ pub mod com_proxies;
 
 pub mod application_icons;
 pub mod report_exports;
+
+pub mod shell_menus;

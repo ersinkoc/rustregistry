@@ -29,9 +29,9 @@ if ($Action -eq 'prepare') {
     if ($ServiceToken) { $arguments+=@('-ServiceToken',$ServiceToken) }
     # This explicit developer test setup elevates the test process, never the production app or normal smoke command.
     $helper=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
-    # Expanded full suites re-scan every registry scope after each repair/restore.
-    # Allow the overall session more time; individual test deadlines stay unchanged.
-    $sessionTimeout=if($Mode -eq 'full'){1200000}else{600000}
+    # The 43-section full suite re-scans every scope after each repair/restore
+    # and can exceed 20 minutes. Individual test deadlines stay unchanged.
+    $sessionTimeout=if($Mode -eq 'full'){1800000}else{600000}
     if (-not $helper.WaitForExit($sessionTimeout)) { throw 'The elevated test session is still running. Inspect its private log before continuing.' }
     if ($helper.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultPath)) { throw "Elevated desktop verification failed. Inspect .temp_files/elevated-$Mode-$Token.stdout.log and stderr.log." }
     Get-Content -LiteralPath $resultPath -Raw

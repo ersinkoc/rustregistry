@@ -160,6 +160,20 @@ fn sources() -> Vec<Source> {
             view,
         });
     }
+    for hive in ["HKCU", "HKLM"] {
+        for location in [
+            crate::shell_menus::MenuLocation::Files,
+            crate::shell_menus::MenuLocation::DirectoryBackground,
+        ] {
+            result.push(Source {
+                category: Category::ShellMenus,
+                hive,
+                path: location.path(),
+                flag: 0,
+                view: "shared",
+            });
+        }
+    }
     result
 }
 
@@ -265,6 +279,7 @@ fn make_entry(
                         | Category::Interfaces
                         | Category::ComProxies
                         | Category::ApplicationIcons
+                        | Category::ShellMenus
                         | Category::ProgIds => TargetKind::File,
                     };
                     let assessment = if matches!(
@@ -274,6 +289,7 @@ fn make_entry(
                             | Category::Interfaces
                             | Category::ComProxies
                             | Category::ApplicationIcons
+                            | Category::ShellMenus
                     ) {
                         Assessment {
                             status: EntryStatus::Unknown,
@@ -350,6 +366,9 @@ fn make_entry(
         proxy_repairable: false,
         icon_state: None,
         icon_repairable: false,
+        menu_snapshot: None,
+        menu_repairable: false,
+        menu_hidden: false,
         service_repairable: false,
     }
 }
@@ -369,6 +388,8 @@ mod application_scan;
 mod icon_scan;
 #[path = "interface_scan.rs"]
 mod interface_scan;
+#[path = "menu_scan.rs"]
+mod menu_scan;
 #[path = "prog_id_scan.rs"]
 mod prog_id_scan;
 #[path = "proxy_scan.rs"]
@@ -395,6 +416,33 @@ fn scan_source(
         entries: 0,
         notes: Vec::new(),
     };
+    if source.category == Category::ShellMenus {
+        let location =
+            crate::shell_menus::MenuLocation::from_path(source.path).expect("fixed menu source");
+        match crate::windows_changes::open_menu_source(source.hive, location) {
+            Ok(Some(root)) => {
+                let start = entries.len();
+                menu_scan::scan_menus(
+                    source,
+                    &root,
+                    cancel,
+                    environment,
+                    entries,
+                    &mut scope,
+                    probe,
+                );
+                scope.entries = entries.len() - start;
+            }
+            Ok(None) => {
+                scope.status = "missing".into();
+            }
+            Err(reason) => {
+                scope.status = "error".into();
+                scope.notes.push(reason);
+            }
+        }
+        return scope;
+    }
     let hive = RegKey::predef(if source.hive == "HKCU" {
         HKEY_CURRENT_USER
     } else {
@@ -412,6 +460,7 @@ fn scan_source(
                 | Category::Interfaces
                 | Category::ComProxies
                 | Category::ApplicationIcons
+                | Category::ShellMenus
         ) {
             REG_OPTION_OPEN_LINK
         } else {
@@ -440,6 +489,7 @@ fn scan_source(
             | Category::Interfaces
             | Category::ComProxies
             | Category::ApplicationIcons
+            | Category::ShellMenus
     ) && key
         .get_raw_value("SymbolicLinkValue")
         .is_ok_and(|v| v.vtype == REG_LINK)

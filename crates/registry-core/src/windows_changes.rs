@@ -1,3 +1,6 @@
+#[path = "windows_menus.rs"]
+mod menus;
+pub(crate) use menus::open_menu_source;
 #[path = "windows_icons.rs"]
 mod icons;
 pub(crate) use icons::open_icon_child;
@@ -39,6 +42,8 @@ pub struct WindowsRegistryStore {
     uninstall_path: String,
     #[cfg(test)]
     icon_test_machine_user: bool,
+    #[cfg(test)]
+    menu_test_machine_user: bool,
     classes_path: String,
     machine_classes_path: String,
     file_exts_path: String,
@@ -75,6 +80,8 @@ impl Default for WindowsRegistryStore {
             uninstall_path: UNINSTALL_KEY.into(),
             #[cfg(test)]
             icon_test_machine_user: false,
+            #[cfg(test)]
+            menu_test_machine_user: false,
             classes_path: crate::associations::CLASSES_KEY.into(),
             machine_classes_path: crate::associations::CLASSES_KEY.into(),
             file_exts_path: crate::associations::FILE_EXTS_KEY.into(),
@@ -203,6 +210,23 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_menu(
+        &self,
+        app: &crate::shell_menus::MenuBackup,
+    ) -> Result<crate::shell_menus::MenuSnapshot, String> {
+        self.menu_snapshot(app)
+    }
+    fn check_menu_write_access(&self, app: &crate::shell_menus::MenuBackup) -> Result<(), String> {
+        self.menu_write_access(app)
+    }
+    fn set_menu_hidden(
+        &self,
+        app: &crate::shell_menus::MenuBackup,
+        hidden: bool,
+    ) -> Result<(), String> {
+        self.change_menu_hidden(app, hidden)
+    }
+
     fn read_proxy(
         &self,
         app: &crate::com_proxies::ProxyBackup,
@@ -731,6 +755,9 @@ mod tests {
             proxy_repairable: false,
             icon_state: None,
             icon_repairable: false,
+            menu_snapshot: None,
+            menu_repairable: false,
+            menu_hidden: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -855,6 +882,9 @@ mod tests {
             proxy_repairable: false,
             icon_state: None,
             icon_repairable: false,
+            menu_snapshot: None,
+            menu_repairable: false,
+            menu_hidden: false,
             service_repairable: false,
         };
         let mut manager =
@@ -1030,6 +1060,9 @@ mod tests {
                 proxy_repairable: false,
                 icon_state: None,
                 icon_repairable: false,
+                menu_snapshot: None,
+                menu_repairable: false,
+                menu_hidden: false,
                 service_repairable: false,
             };
             let mut manager =

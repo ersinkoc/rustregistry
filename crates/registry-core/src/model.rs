@@ -7,6 +7,7 @@ pub enum Category {
     AppPaths,
     ApplicationCommands,
     ApplicationIcons,
+    ShellMenus,
     Uninstall,
     FileAssociations,
     Com,
@@ -95,6 +96,12 @@ pub struct RegistryEntry {
     pub icon_state: Option<crate::application_icons::IconState>,
     #[serde(default)]
     pub icon_repairable: bool,
+    #[serde(skip)]
+    pub menu_snapshot: Option<crate::shell_menus::MenuSnapshot>,
+    #[serde(default)]
+    pub menu_repairable: bool,
+    #[serde(default)]
+    pub menu_hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

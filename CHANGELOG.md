@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.16 — 2026-11-07
+
+- Expand read-only diagnostics from 39 to 43 logical scan sections with static file and folder-background context-menu commands under shared HKCU/HKLM shell roots. Walk namespace components without following untrusted registry links, distinguish delegated/cascading/hidden commands, and never execute commands, load icons, or activate handlers.
+- Add individual backed-up visibility recovery for guarded custom current-user menu commands pointing to confirmed missing literal local executables outside Windows. Add only an empty ProgrammaticAccessOnly REG_SZ flag, preserving exact commands/arguments, display/Extended metadata, root defaults, keys, permissions, and files. Programmatic invocation remains possible; no executable is replaced or disabled.
+- Explain recovery exclusions in record details and show the exact preserved command in change review. Canonical/system verbs, selected/default shell roots, machine counterparts, unknown/conditional/delegated metadata, existing visibility flags, inaccessible evidence, aliases, and environment-dependent executables remain read-only. Include eligible entries in selected Clean and Quick Clean, with separate backups and stop-on-conflict behavior.
+- Flush and verify schema 16 backups before conditional registry transactions. Restore only the original absent visibility flag while the command is still missing and every command/display/root/counterpart/structure check matches. Changed flags or commands, reappearing files, missing keys, or corrupted/scope-mismatched backups block changes. Keep formats 1–15 unchanged with a frozen v0.1.15 icon restoration fixture.
+- Add policy, read-only inventory, protected/default verb, write-access, file/metadata/flag/counterpart conflict, batch-stop, legacy-format and exact-byte restart/restore tests. Add owned packaged UI checks for both menu locations, detailed exclusions, filtered JSON reports, review/cancel, individual and selected visibility changes, reappearing-file refusal before backup, independent raw/permission comparisons in both shared-view reads, and cleanup of owned roots/files/reports.
+- Allow 30 minutes for the explicit full-suite helper after the 43-section suite exceeded its former 20-minute outer wait. Individual test deadlines, required assertions, and the focused helper's limit are unchanged.
+
 ## 0.1.15 — 2026-11-07
 
 - Expand diagnostics from 37 to 39 logical scan sections with shared HKCU/HKLM application DefaultIcon inventory. Verify literal .ico file references without loading/decoding icons, running commands, or changing default application selections. Resource containers/indexes, indirect/environment expressions, and uncertain evidence remain unverified.

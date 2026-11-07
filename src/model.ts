@@ -12,7 +12,8 @@ export type Category =
   | 'prog_ids'
   | 'interfaces'
   | 'com_proxies'
-  | 'application_icons';
+  | 'application_icons'
+  | 'shell_menus';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -40,6 +41,8 @@ export interface RegistryEntry {
   interfaceRepairable?: boolean;
   proxyRepairable?: boolean;
   iconRepairable?: boolean;
+  menuRepairable?: boolean;
+  menuHidden?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -80,6 +83,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  shell_menus: {
+    label: 'Context-menu commands',
+    description: 'File and folder-background menu diagnostics and protected visibility recovery',
+    short: 'Context menu',
+  },
   application_icons: {
     label: 'Application icons',
     description: 'Literal icon file checks and protected reference recovery',

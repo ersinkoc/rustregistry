@@ -22,6 +22,27 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only guarded visible current-user custom context-menu commands', () => {
+    const menu = {
+      ...entry,
+      category: 'shell_menus' as RegistryEntry['category'],
+      keyPath: 'Software\\Classes\\*\\shell\\Example.Custom\\command',
+      valueName: '',
+      menuRepairable: true,
+      menuHidden: false,
+    };
+    expect(canQuarantine(menu)).toBe(true);
+    for (const changed of [
+      { ...menu, hive: 'HKLM' },
+      { ...menu, view: '64' },
+      { ...menu, menuRepairable: false },
+      { ...menu, menuHidden: true },
+      { ...menu, valueName: 'Named' },
+      { ...menu, keyPath: `${menu.keyPath}\\Nested` },
+      { ...menu, assessment: { ...menu.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only guarded user application icon references', () => {
     const icon = {
       ...entry,

@@ -256,6 +256,42 @@ mod tests {
         }
     }
     #[test]
+    fn restores_unchanged_v0115_icon_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let id = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+        let app = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!(
+                r"{}\User\Applications\RustRegistry.LegacyIcon.exe",
+                fixture.base
+            ))
+            .unwrap()
+            .0;
+        app.create_subkey(r"shell\open\command")
+            .unwrap()
+            .0
+            .set_value("", &r#""C:\Preserved\legacy.exe" "%1""#)
+            .unwrap();
+        let leaf = app.create_subkey("DefaultIcon").unwrap().0;
+        let bytes = include_bytes!("../tests/fixtures/icon-backup-v15.json");
+        let file = directory.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut manager = ChangeManager::new(
+            fixture.store(),
+            directory.path().to_path_buf(),
+            LocalPathProbe,
+        );
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "application_icon");
+        manager.apply(&plan.token).unwrap();
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(
+            read_value(&leaf, "").unwrap(),
+            Some(serde_json::from_value(record["original"].clone()).unwrap())
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+    }
+    #[test]
     fn icon_single_quick_and_selected_repairs_keep_separate_backups_and_restore_exact_commands_and_bytes(
     ) {
         for mode in ["single", "quick", "selected"] {
