@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 14,
+  "id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+  "name": "Legacy proxy",
+  "valueName": "",
+  "createdAt": 1700000000000,
+  "original": {
+    "kind": 1,
+    "bytes": [
+      123, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 45, 0, 101, 0, 101, 0,
+      101, 0, 101, 0, 45, 0, 52, 0, 101, 0, 101, 0, 101, 0, 45, 0, 56, 0, 101, 0, 101, 0, 101, 0,
+      45, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0, 101, 0,
+      100, 0, 125, 0, 0, 0
+    ]
+  },
+  "integritySha256": "a9d45fa98355c5e6d167a2ef12651add87e46f8010ed8338fe53675f41b8ddb6",
+  "proxy": {
+    "iid": "{eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee}",
+    "clsid": "{eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeed}",
+    "guard": {
+      "values": [],
+      "typeLibValues": null
+    }
+  }
+}

@@ -318,6 +318,31 @@ mod tests {
         }
     }
     #[test]
+    fn restores_unchanged_v0114_proxy_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+        let leaf = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!(r"{}\User\{{{id}}}\ProxyStubClsid32", fixture.base))
+            .unwrap()
+            .0;
+        let bytes = include_bytes!("../tests/fixtures/proxy-backup-v14.json");
+        let file = directory.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut manager =
+            ChangeManager::new(fixture.store(), directory.path().to_path_buf(), NoFileProbe);
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "com_proxy");
+        manager.apply(&plan.token).unwrap();
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(
+            read_value(&leaf, "").unwrap(),
+            Some(serde_json::from_value(record["original"].clone()).unwrap())
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+        fixture.assert_other();
+    }
+    #[test]
     fn one_interface_change_per_batch_preserves_independent_restore_in_both_orders() {
         use crate::interfaces::{InterfaceBackup, InterfaceGuard};
         for mode in ["quick", "selected"] {

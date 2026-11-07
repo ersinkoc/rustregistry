@@ -1,3 +1,4 @@
+use crate::application_icons::{validate_icon_path, verify_missing_icon, IconBackup, IconState};
 use crate::applications::{
     validate_application_name, verify_missing_command, ApplicationBackup, ApplicationSnapshot,
     APPLICATIONS_KEY, NO_OPEN_WITH, OPEN_COMMAND,
@@ -179,6 +180,20 @@ pub trait RegistryStore {
         _replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
         Err("COM proxy recovery is unavailable.".into())
+    }
+    fn read_icon(&self, _app: &IconBackup) -> Result<IconState, String> {
+        Err("application icon recovery is unavailable.".into())
+    }
+    fn check_icon_write_access(&self, _app: &IconBackup) -> Result<(), String> {
+        Err("application icon recovery is unavailable.".into())
+    }
+    fn compare_exchange_icon(
+        &self,
+        _app: &IconBackup,
+        _expected: &IconState,
+        _replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        Err("application icon recovery is unavailable.".into())
     }
     fn read_interface(&self, _app: &InterfaceBackup) -> Result<InterfaceState, String> {
         Err("Interface TypeLib recovery is unavailable.".into())
@@ -397,6 +412,8 @@ struct BackupRecord {
     interface: Option<InterfaceBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     proxy: Option<ProxyBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    icon: Option<IconBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -506,20 +523,35 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.prog_id,
             &record.interface,
             &record.proxy,
+            &record.icon,
             record.schema_version,
         ) {
-            (None, None, None, None, None, None, None, None, None, None, None, None, 1) => {
+            (None, None, None, None, None, None, None, None, None, None, None, None, None, 1) => {
                 validate_value_name(&record.value_name)?
             }
-            (Some(app), None, None, None, None, None, None, None, None, None, None, None, 2)
-                if record.value_name.is_empty() =>
-            {
+            (
+                Some(app),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                2,
+            ) if record.value_name.is_empty() => {
                 validate_app_path_name(&app.executable)?;
                 app.guard.validate()?;
             }
             (
                 None,
                 Some(uninstall),
+                None,
                 None,
                 None,
                 None,
@@ -553,6 +585,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 None,
                 None,
                 None,
+                None,
                 4,
             ) => {
                 validate_extension(&association.extension)?;
@@ -564,6 +597,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 None,
                 None,
                 Some(com),
+                None,
                 None,
                 None,
                 None,
@@ -592,6 +626,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 None,
                 None,
                 None,
+                None,
                 6,
             ) if record.value_name == "Start" => {
                 validate_service_name(&service.service_name)?;
@@ -600,56 +635,168 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     return Err("Service backup startup evidence does not match.".into());
                 }
             }
-            (None, None, None, None, None, Some(app), None, None, None, None, None, None, 8)
-                if record.value_name == NO_OPEN_WITH =>
-            {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(app),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                8,
+            ) if record.value_name == NO_OPEN_WITH => {
                 validate_application_name(&app.executable)?;
                 app.snapshot.validate_original()?;
                 if app.snapshot.command()? != &record.original {
                     return Err("Application backup command evidence does not match.".into());
                 }
             }
-            (None, None, None, None, None, None, Some(shared), None, None, None, None, None, 9)
-                if record.value_name == shared.path && shared.view == "64" =>
-            {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(shared),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                9,
+            ) if record.value_name == shared.path && shared.view == "64" => {
                 validate_shared_dll_path(&shared.path)?;
                 validate_zero_count(&record.original)?;
             }
-            (None, None, None, None, None, None, None, Some(app), None, None, None, None, 10) => {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(app),
+                None,
+                None,
+                None,
+                None,
+                None,
+                10,
+            ) => {
                 validate_registration_name(&record.value_name)?;
                 if capabilities_path(&record.original)? != app.capabilities_path {
                     return Err("Application capabilities backup evidence does not match.".into());
                 }
             }
-            (None, None, None, None, None, None, None, None, Some(app), None, None, None, 11)
-                if record.value_name.is_empty() =>
-            {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(app),
+                None,
+                None,
+                None,
+                None,
+                11,
+            ) if record.value_name.is_empty() => {
                 app.validate()?;
                 validate_library_path(&record.original.text()?)?;
             }
-            (None, None, None, None, None, None, None, None, None, Some(app), None, None, 12)
-                if record.value_name.is_empty() =>
-            {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(app),
+                None,
+                None,
+                None,
+                12,
+            ) if record.value_name.is_empty() => {
                 app.validate()?;
                 if mapping_clsid(&record.original)? != app.clsid {
                     return Err("ProgID backup CLSID evidence does not match.".into());
                 }
             }
-            (None, None, None, None, None, None, None, None, None, None, Some(app), None, 13)
-                if record.value_name.is_empty() =>
-            {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(app),
+                None,
+                None,
+                13,
+            ) if record.value_name.is_empty() => {
                 app.validate()?;
                 if mapping_library(&record.original)? != app.library_id {
                     return Err("Interface backup library evidence does not match.".into());
                 }
             }
-            (None, None, None, None, None, None, None, None, None, None, None, Some(app), 14)
-                if record.value_name.is_empty() =>
-            {
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(app),
+                None,
+                14,
+            ) if record.value_name.is_empty() => {
                 app.validate()?;
                 if mapping_clsid(&record.original)? != app.clsid {
                     return Err("Proxy backup CLSID evidence does not match.".into());
                 }
+            }
+            (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(app),
+                15,
+            ) if record.value_name.is_empty() => {
+                app.validate()?;
+                validate_icon_path(&record.original.text()?)?;
             }
             _ => return Err("Unsupported backup format or registry scope.".into()),
         }
@@ -680,6 +827,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             serde_json::to_vec(&(bytes, &record.association)).map_err(|e| e.to_string())?
         } else if matches!(record.schema_version, 5 | 7) {
             serde_json::to_vec(&(bytes, &record.com)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 15 {
+            serde_json::to_vec(&(bytes, &record.icon)).map_err(|e| e.to_string())?
         } else if record.schema_version == 14 {
             serde_json::to_vec(&(bytes, &record.proxy)).map_err(|e| e.to_string())?
         } else if record.schema_version == 13 {
@@ -791,6 +940,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     pub fn prepare_quarantine(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
         self.pending = None;
         self.batch_pending = None;
+        if entry.category == Category::ApplicationIcons {
+            return self.prepare_icon(entry);
+        }
         if entry.category == Category::ComProxies {
             return self.prepare_proxy(entry);
         }
@@ -908,6 +1060,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -973,6 +1126,71 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: Some(app),
+            icon: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_icon(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        let prefix = format!("{APPLICATIONS_KEY}\\");
+        let tail = entry
+            .key_path
+            .strip_prefix(&prefix)
+            .ok_or("Unsupported application icon location.")?;
+        let parts: Vec<_> = tail.split('\\').collect();
+        if entry.hive != "HKCU"
+            || entry.view != "shared"
+            || !entry.value_name.is_empty()
+            || entry.assessment.status != EntryStatus::Review
+            || entry.assessment.code != "target_missing"
+            || !entry.icon_repairable
+            || parts.len() != 2
+            || !parts[1].eq_ignore_ascii_case("DefaultIcon")
+        {
+            return Err(
+                "Only guarded current-user missing application icon mappings support recovery."
+                    .into(),
+            );
+        }
+        let state = entry
+            .icon_state
+            .as_ref()
+            .ok_or("application icon scan evidence is unavailable.")?;
+        let original = state
+            .value
+            .clone()
+            .ok_or("The application icon mapping is absent.")?;
+        let app = IconBackup {
+            executable: parts[0].into(),
+            guard: state.guard.clone(),
+        };
+        app.validate()?;
+        verify_missing_icon(&original, &self.probe)?;
+        if original.text()? != entry.raw_value || self.store.read_icon(&app)? != *state {
+            return Err("application icon evidence changed after scanning. Scan again.".into());
+        }
+        let mut record = BackupRecord {
+            schema_version: 15,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: String::new(),
+            created_at: now()?,
+            original,
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: None,
+            association: None,
+            com: None,
+            service: None,
+            application: None,
+            shared_dll: None,
+            registered_app: None,
+            type_library: None,
+            prog_id: None,
+            interface: None,
+            icon: Some(app),
+            proxy: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1035,6 +1253,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: Some(app),
             proxy: None,
+            icon: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1094,6 +1313,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: Some(app),
             interface: None,
             proxy: None,
+            icon: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1160,6 +1380,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: Some(app),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
@@ -1212,6 +1433,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: Some(RegisteredApplicationBackup {
                 capabilities_path: path,
@@ -1257,6 +1479,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: None,
             shared_dll: Some(SharedDllBackup {
@@ -1304,6 +1527,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -1366,6 +1590,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -1419,6 +1644,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -1474,6 +1700,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -1530,6 +1757,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             prog_id: None,
             interface: None,
             proxy: None,
+            icon: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -1553,6 +1781,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn prepare(&mut self, record: BackupRecord, restore: bool) -> Result<ChangePlan, String> {
+        if let Some(app) = &record.icon {
+            self.store.check_icon_write_access(app)?;
+        }
         if let Some(app) = &record.proxy {
             self.store.check_proxy_write_access(app)?;
         }
@@ -1613,7 +1844,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.proxy.is_some() {
+            scope: if record.icon.is_some() {
+                "application_icon"
+            } else if record.proxy.is_some() {
                 "com_proxy"
             } else if record.interface.is_some() {
                 "interface"
@@ -1641,7 +1874,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "startup"
             }
             .into(),
-            preserved_values: if let Some(app) = &record.proxy {
+            preserved_values: if let Some(app) = &record.icon {
+                app.guard.value_count()
+            } else if let Some(app) = &record.proxy {
                 app.guard.value_count()
             } else if let Some(app) = &record.interface {
                 app.guard.value_count()
@@ -1706,6 +1941,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if let Some(app) = &record.icon {
+            return format!("HKCU\\{APPLICATIONS_KEY}\\{}\\DefaultIcon", app.executable);
+        }
         if let Some(app) = &record.proxy {
             return format!("HKCU\\{INTERFACES_KEY}\\{}\\ProxyStubClsid32", app.iid);
         }
@@ -1754,6 +1992,15 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
         if let Some(app) = &record.proxy {
             let state = self.store.read_proxy(app)?;
+            if state.guard != app.guard {
+                return Err("Interface metadata changed. Repair or restore is blocked.".into());
+            }
+            return Ok(state.value);
+        }
+
+        if let Some(app) = &record.icon {
+            verify_missing_icon(&record.original, &self.probe)?;
+            let state = self.store.read_icon(app)?;
             if state.guard != app.guard {
                 return Err("Interface metadata changed. Repair or restore is blocked.".into());
             }
@@ -1864,6 +2111,16 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             return self.store.compare_exchange_proxy(
                 app,
                 &ProxyState {
+                    value: expected,
+                    guard: app.guard.clone(),
+                },
+                replacement,
+            );
+        }
+        if let Some(app) = &record.icon {
+            return self.store.compare_exchange_icon(
+                app,
+                &IconState {
                     value: expected,
                     guard: app.guard.clone(),
                 },
@@ -1994,7 +2251,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             self.read_record(&record)?;
             self.exchange_record(&record, None, Some(&record.original))?;
         } else {
-            if let Some(app) = &record.proxy {
+            if record.icon.is_some() {
+                verify_missing_icon(&record.original, &self.probe)?;
+            } else if let Some(app) = &record.proxy {
                 self.store.read_proxy(app)?;
             } else if let Some(app) = &record.interface {
                 self.store.read_interface(app)?;
@@ -2038,7 +2297,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
+            message: if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
                 if restore {"Original 64-bit COM mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
@@ -2108,7 +2367,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.proxy.is_some() {
+            let scope = if record.icon.is_some() {
+                "application_icon"
+            } else if record.proxy.is_some() {
                 "com_proxy"
             } else if record.interface.is_some() {
                 "interface"
@@ -2396,6 +2657,8 @@ mod tests {
             interface_repairable: false,
             proxy_state: None,
             proxy_repairable: false,
+            icon_state: None,
+            icon_repairable: false,
             service_repairable: false,
         }
     }

@@ -171,6 +171,8 @@ pub(super) fn scan_associations(
                 interface_repairable: false,
                 proxy_state: None,
                 proxy_repairable: false,
+                icon_state: None,
+                icon_repairable: false,
                 service_repairable: false,
                 association_state: state,
             });

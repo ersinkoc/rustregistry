@@ -35,3 +35,6 @@ pub fn scan(
 pub mod interfaces;
 
 pub mod com_proxies;
+
+pub mod application_icons;
+pub mod report_exports;

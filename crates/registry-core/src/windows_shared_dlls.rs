@@ -182,6 +182,8 @@ mod tests {
                 interface_repairable: false,
                 proxy_state: None,
                 proxy_repairable: false,
+                icon_state: None,
+                icon_repairable: false,
             }
         }
         fn assert_controls(&self) {

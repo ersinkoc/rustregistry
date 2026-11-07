@@ -22,6 +22,27 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only guarded user application icon references', () => {
+    const icon = {
+      ...entry,
+      category: 'application_icons' as RegistryEntry['category'],
+      keyPath: 'Software\\Classes\\Applications\\Example.exe\\DefaultIcon',
+      valueName: '',
+      rawValue: 'C:\\Missing\\example.ico',
+      iconRepairable: true,
+    };
+    expect(canQuarantine(icon)).toBe(true);
+    for (const changed of [
+      { ...icon, hive: 'HKLM' },
+      { ...icon, view: '32' },
+      { ...icon, iconRepairable: false },
+      { ...icon, valueName: 'Named' },
+      { ...icon, valueType: 'REG_BINARY' },
+      { ...icon, keyPath: `${icon.keyPath}\\Nested` },
+      { ...icon, assessment: { ...icon.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only guarded native current-user orphaned proxy references', () => {
     const mapping = {
       ...entry,

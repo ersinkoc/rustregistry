@@ -92,6 +92,8 @@ pub(super) fn scan_shared_dlls(
             interface_repairable: false,
             proxy_state: None,
             proxy_repairable: false,
+            icon_state: None,
+            icon_repairable: false,
             service_repairable: false,
         });
     }

@@ -16,6 +16,7 @@ import {
   CirclePause,
   Clock3,
   Copy,
+  Download,
   FileSearch,
   FolderOpen,
   History,
@@ -75,6 +76,7 @@ const categoryIcons: Record<Category, LucideIcon> = {
   type_libraries: FileSearch,
   registered_applications: FileSearch,
   application_commands: TerminalSquare,
+  application_icons: FileSearch,
   startup: Radio,
   app_paths: FolderOpen,
   uninstall: Boxes,
@@ -242,58 +244,62 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'com_proxies'
-              ? 'Protected COM proxy reference repair'
-              : entry.category === 'interfaces'
-                ? 'Protected COM interface TypeLib reference repair'
-                : entry.category === 'prog_ids'
-                  ? 'Protected COM ProgID mapping repair'
-                  : entry.category === 'type_libraries'
-                    ? 'Protected type library mapping repair'
-                    : entry.category === 'registered_applications'
-                      ? 'Protected application registration repair'
-                      : entry.category === 'shared_dlls'
-                        ? 'Protected shared DLL reference repair'
-                        : entry.category === 'application_commands'
-                          ? 'Protected application suggestion repair'
-                          : entry.category === 'services'
-                            ? 'Protected service startup repair'
-                            : entry.category === 'com'
-                              ? 'Protected COM mapping repair'
-                              : entry.category === 'file_associations'
-                                ? 'Protected Open with repair'
-                                : entry.category === 'uninstall'
-                                  ? 'Protected uninstall listing repair'
-                                  : entry.category === 'app_paths'
-                                    ? 'Protected application path repair'
-                                    : 'Protected startup change'}
+            {entry.category === 'application_icons'
+              ? 'Protected application icon reference repair'
+              : entry.category === 'com_proxies'
+                ? 'Protected COM proxy reference repair'
+                : entry.category === 'interfaces'
+                  ? 'Protected COM interface TypeLib reference repair'
+                  : entry.category === 'prog_ids'
+                    ? 'Protected COM ProgID mapping repair'
+                    : entry.category === 'type_libraries'
+                      ? 'Protected type library mapping repair'
+                      : entry.category === 'registered_applications'
+                        ? 'Protected application registration repair'
+                        : entry.category === 'shared_dlls'
+                          ? 'Protected shared DLL reference repair'
+                          : entry.category === 'application_commands'
+                            ? 'Protected application suggestion repair'
+                            : entry.category === 'services'
+                              ? 'Protected service startup repair'
+                              : entry.category === 'com'
+                                ? 'Protected COM mapping repair'
+                                : entry.category === 'file_associations'
+                                  ? 'Protected Open with repair'
+                                  : entry.category === 'uninstall'
+                                    ? 'Protected uninstall listing repair'
+                                    : entry.category === 'app_paths'
+                                      ? 'Protected application path repair'
+                                      : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'com_proxies'
-              ? 'Review a verified backup before disabling an orphaned current-user 64-bit proxy reference. All user/machine 32/64-bit class views are checked again. TypeLib and Version metadata, 32-bit mappings, keys, permissions, and files are preserved. No proxy is loaded or activated.'
-              : entry.category === 'interfaces'
-                ? 'Only a verified orphaned current-user 64-bit TypeLib reference can change after backup. Version, proxy metadata, both registry views, keys, and files are preserved. New libraries, machine counterparts, or changed evidence block the operation.'
-                : entry.category === 'prog_ids'
-                  ? 'Review a verified backup before disabling this orphaned ProgID mapping. Both user/machine 32/64-bit CLSID views are checked again; keys, descriptions, default selections, and files are preserved. No COM object is activated.'
-                  : entry.category === 'type_libraries'
-                    ? 'Review a verified backup before disabling this missing win64 library mapping. Version, locale, win32 mappings, help metadata, keys, files, and permissions are preserved. No library is loaded or registered.'
-                    : entry.category === 'registered_applications'
-                      ? 'Review a verified backup before removing this orphaned application registration. Only its named value changes; default selections, Capabilities keys, commands, files, and permissions are preserved.'
-                      : entry.category === 'shared_dlls'
-                        ? 'Review a verified backup before removing only this missing DLL’s zero-count reference. Existing Windows write access is required. No DLL file or positive counter is changed.'
-                        : entry.category === 'application_commands'
-                          ? 'Review a verified backup before hiding this broken application suggestion. Its open command and default selections stay intact; no command is run.'
-                          : entry.category === 'services'
-                            ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
-                            : entry.category === 'com'
-                              ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
-                              : entry.category === 'file_associations'
-                                ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
-                                : entry.category === 'uninstall'
-                                  ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
-                                  : entry.category === 'app_paths'
-                                    ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-                                    : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'application_icons'
+              ? 'Review a verified backup before removing only a confirmed missing .ico reference. The application command, metadata, flags, keys, and files are preserved. Resource expressions and uncertain targets remain outside repair scope.'
+              : entry.category === 'com_proxies'
+                ? 'Review a verified backup before disabling an orphaned current-user 64-bit proxy reference. All user/machine 32/64-bit class views are checked again. TypeLib and Version metadata, 32-bit mappings, keys, permissions, and files are preserved. No proxy is loaded or activated.'
+                : entry.category === 'interfaces'
+                  ? 'Only a verified orphaned current-user 64-bit TypeLib reference can change after backup. Version, proxy metadata, both registry views, keys, and files are preserved. New libraries, machine counterparts, or changed evidence block the operation.'
+                  : entry.category === 'prog_ids'
+                    ? 'Review a verified backup before disabling this orphaned ProgID mapping. Both user/machine 32/64-bit CLSID views are checked again; keys, descriptions, default selections, and files are preserved. No COM object is activated.'
+                    : entry.category === 'type_libraries'
+                      ? 'Review a verified backup before disabling this missing win64 library mapping. Version, locale, win32 mappings, help metadata, keys, files, and permissions are preserved. No library is loaded or registered.'
+                      : entry.category === 'registered_applications'
+                        ? 'Review a verified backup before removing this orphaned application registration. Only its named value changes; default selections, Capabilities keys, commands, files, and permissions are preserved.'
+                        : entry.category === 'shared_dlls'
+                          ? 'Review a verified backup before removing only this missing DLL’s zero-count reference. Existing Windows write access is required. No DLL file or positive counter is changed.'
+                          : entry.category === 'application_commands'
+                            ? 'Review a verified backup before hiding this broken application suggestion. Its open command and default selections stay intact; no command is run.'
+                            : entry.category === 'services'
+                              ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
+                              : entry.category === 'com'
+                                ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
+                                : entry.category === 'file_associations'
+                                  ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
+                                  : entry.category === 'uninstall'
+                                    ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+                                    : entry.category === 'app_paths'
+                                      ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                                      : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy
@@ -343,7 +349,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 37,
+    total: 39,
     entries: 0,
     current: '',
   });
@@ -357,6 +363,10 @@ export default function App() {
   const [cleanPlan, setCleanPlan] = useState<CleanPlan | null>(null);
   const [changing, setChanging] = useState(false);
   const [success, setSuccess] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportReceipt, setExportReceipt] = useState<{ path: string; entries: number } | null>(
+    null,
+  );
   const [backupRevision, setBackupRevision] = useState(0);
   const scanLock = useRef(false);
   const desktop = isTauri();
@@ -400,9 +410,10 @@ export default function App() {
     }
     scanLock.current = true;
     setScanning(true);
+    setExportReceipt(null);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 37, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 39, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -526,10 +537,32 @@ export default function App() {
     setPage('results');
   };
 
+  const exportFiltered = async () => {
+    if (!report || !filtered.length || scanning || changing || exporting) return;
+    setExporting(true);
+    setError('');
+    setExportReceipt(null);
+    try {
+      const result = await invoke<{ path: string; entries: number }>('export_findings', {
+        request: {
+          scanId: report.id,
+          entryIds: filtered.map((entry) => entry.id),
+          query,
+          category: category === 'all' ? null : category,
+          status: status === 'all' ? null : status,
+        },
+      });
+      setExportReceipt(result);
+    } catch (cause) {
+      setError(`Could not export findings: ${String(cause)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
   const scanButton = (
     <button
       className="primary-button"
-      disabled={scanning || changing || Boolean(plan) || Boolean(cleanPlan)}
+      disabled={scanning || changing || exporting || Boolean(plan) || Boolean(cleanPlan)}
       onClick={startScan}
     >
       {scanning ? (
@@ -554,13 +587,40 @@ export default function App() {
           </h2>
           <p>Real entries. Clear findings. Explore the reason behind every result.</p>
         </div>
-        <ListFilter size={18} className="muted" />
+        <div className="results-actions">
+          <button
+            className="secondary-button"
+            disabled={
+              !report ||
+              !filtered.length ||
+              scanning ||
+              changing ||
+              exporting ||
+              Boolean(plan) ||
+              Boolean(cleanPlan)
+            }
+            onClick={exportFiltered}
+          >
+            {exporting ? <RotateCw className="spin" size={16} /> : <Download size={16} />}{' '}
+            {exporting ? 'Exporting…' : 'Export filtered JSON'}
+          </button>
+          <ListFilter size={18} className="muted" />
+        </div>
       </div>
+      {exportReceipt && (
+        <p className="export-receipt" role="status">
+          Saved {formatNumber(exportReceipt.entries)} findings from the current filters.{' '}
+          <span className="mono" aria-label="Exported report path">
+            {exportReceipt.path}
+          </span>
+        </p>
+      )}
       <div className="table-toolbar">
         <label className="search-field">
           <Search size={16} />
           <input
             aria-label="Search entries"
+            maxLength={4096}
             placeholder="Search name, path, or publisher…"
             value={query}
             onChange={(event) => {
@@ -1166,7 +1226,7 @@ export default function App() {
                 <div>
                   <h2>Focused scope. Transparent results.</h2>
                   <p>
-                    This release checks 37 scan sections, including separate 32-bit and 64-bit COM
+                    This release checks 39 scan sections, including separate 32-bit and 64-bit COM
                     views in both hives. ProgID and file association checks share Classes roots and
                     inspect different children. Services use the shared system view. Other
                     application locations use their documented 32-bit, 64-bit, or shared views.
@@ -1263,7 +1323,7 @@ export default function App() {
                         </strong>
                         <small>
                           {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/37 scan sections
+                          {formatDuration(item.durationMs)} · {item.scopes.length}/39 scan sections
                         </small>
                       </span>
                       <span className="readonly-pill">
@@ -1355,8 +1415,10 @@ export default function App() {
                     File association checks cover Open with registration references only. Default
                     handlers and full system configuration are outside scan scope. COM checks cover
                     DLL, handler, and local-server mappings. Registered applications check bounded
-                    Capabilities references. COM proxy references check class registrations across
-                    both hives and views; simple native user orphans support backed-up recovery. COM
+                    Capabilities references. Application icon checks cover literal .ico files;
+                    protected recovery preserves the open command and metadata. Resource expressions
+                    remain unverified. COM proxy references check class registrations across both
+                    hives and views; simple native user orphans support backed-up recovery. COM
                     interfaces check TypeLib references in both hives and architecture views; only
                     guarded current-user 64-bit orphans support recovery. COM ProgID references
                     check for registered CLSIDs in both hives and views. Type library checks

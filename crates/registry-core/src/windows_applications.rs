@@ -6,7 +6,7 @@ use crate::{
 use std::borrow::Cow;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
-fn open(
+pub(super) fn open(
     parent: &RegKey,
     name: &str,
     transaction: Option<&Transaction>,
@@ -32,7 +32,7 @@ fn open(
         )),
     }
 }
-fn required(
+pub(super) fn required(
     parent: &RegKey,
     name: &str,
     tx: Option<&Transaction>,
@@ -42,7 +42,11 @@ fn required(
         "An application registration key is missing. Keys are never recreated.".into()
     })
 }
-fn root(parent: &RegKey, path: &str, tx: Option<&Transaction>) -> Result<RegKey, String> {
+pub(super) fn root(
+    parent: &RegKey,
+    path: &str,
+    tx: Option<&Transaction>,
+) -> Result<RegKey, String> {
     // Follow only the fixed Windows-managed Classes hive alias.
     let result = if let Some(tx) = tx {
         parent.open_subkey_transacted_with_flags(path, tx, KEY_READ)
@@ -51,7 +55,7 @@ fn root(parent: &RegKey, path: &str, tx: Option<&Transaction>) -> Result<RegKey,
     };
     result.map_err(|_| "The Classes root could not be completely verified.".into())
 }
-fn only_child(key: &RegKey, expected: Option<&str>) -> Result<(), String> {
+pub(super) fn only_child(key: &RegKey, expected: Option<&str>) -> Result<(), String> {
     let children = key
         .enum_keys()
         .take(2)
@@ -66,7 +70,7 @@ fn only_child(key: &RegKey, expected: Option<&str>) -> Result<(), String> {
     }
     Ok(())
 }
-fn values(key: &RegKey) -> Result<Vec<NamedValue>, String> {
+pub(super) fn values(key: &RegKey) -> Result<Vec<NamedValue>, String> {
     let mut values = vec![];
     let mut size = 0;
     for item in key.enum_values() {
@@ -289,6 +293,8 @@ mod tests {
                 interface_repairable: false,
                 proxy_state: None,
                 proxy_repairable: false,
+                icon_state: None,
+                icon_repairable: false,
             }
         }
     }

@@ -1,3 +1,6 @@
+#[path = "windows_icons.rs"]
+mod icons;
+pub(crate) use icons::open_icon_child;
 #[path = "windows_interfaces.rs"]
 mod interfaces;
 #[path = "windows_proxies.rs"]
@@ -34,6 +37,8 @@ pub struct WindowsRegistryStore {
     path: String,
     app_paths_path: String,
     uninstall_path: String,
+    #[cfg(test)]
+    icon_test_machine_user: bool,
     classes_path: String,
     machine_classes_path: String,
     file_exts_path: String,
@@ -68,6 +73,8 @@ impl Default for WindowsRegistryStore {
             path: STARTUP_KEY.into(),
             app_paths_path: APP_PATHS_KEY.into(),
             uninstall_path: UNINSTALL_KEY.into(),
+            #[cfg(test)]
+            icon_test_machine_user: false,
             classes_path: crate::associations::CLASSES_KEY.into(),
             machine_classes_path: crate::associations::CLASSES_KEY.into(),
             file_exts_path: crate::associations::FILE_EXTS_KEY.into(),
@@ -215,6 +222,26 @@ impl RegistryStore for WindowsRegistryStore {
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
         self.exchange_proxy(app, expected, replacement)
+    }
+    fn read_icon(
+        &self,
+        app: &crate::application_icons::IconBackup,
+    ) -> Result<crate::application_icons::IconState, String> {
+        self.icon_state(app)
+    }
+    fn check_icon_write_access(
+        &self,
+        app: &crate::application_icons::IconBackup,
+    ) -> Result<(), String> {
+        self.icon_write_access(app)
+    }
+    fn compare_exchange_icon(
+        &self,
+        app: &crate::application_icons::IconBackup,
+        expected: &crate::application_icons::IconState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_icon(app, expected, replacement)
     }
     fn read_interface(
         &self,
@@ -702,6 +729,8 @@ mod tests {
             interface_repairable: false,
             proxy_state: None,
             proxy_repairable: false,
+            icon_state: None,
+            icon_repairable: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -824,6 +853,8 @@ mod tests {
             interface_repairable: false,
             proxy_state: None,
             proxy_repairable: false,
+            icon_state: None,
+            icon_repairable: false,
             service_repairable: false,
         };
         let mut manager =
@@ -997,6 +1028,8 @@ mod tests {
                 interface_repairable: false,
                 proxy_state: None,
                 proxy_repairable: false,
+                icon_state: None,
+                icon_repairable: false,
                 service_repairable: false,
             };
             let mut manager =

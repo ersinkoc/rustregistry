@@ -18,7 +18,9 @@ struct Source {
 
 fn source_id(source: &Source) -> String {
     let id = format!("{}|{}|{}", source.hive, source.view, source.path);
-    if source.category == Category::ComProxies {
+    if source.category == Category::ApplicationIcons {
+        format!("{id}|application_icons")
+    } else if source.category == Category::ComProxies {
         format!("{id}|com_proxies")
     } else if source.category == Category::ProgIds {
         format!("{id}|prog_ids")
@@ -84,6 +86,13 @@ fn sources() -> Vec<Source> {
             category: Category::RegisteredApplications,
             hive,
             path: crate::registered_apps::REGISTERED_APPS_KEY,
+            flag: 0,
+            view: "shared",
+        });
+        result.push(Source {
+            category: Category::ApplicationIcons,
+            hive,
+            path: crate::applications::APPLICATIONS_KEY,
             flag: 0,
             view: "shared",
         });
@@ -255,6 +264,7 @@ fn make_entry(
                         | Category::TypeLibraries
                         | Category::Interfaces
                         | Category::ComProxies
+                        | Category::ApplicationIcons
                         | Category::ProgIds => TargetKind::File,
                     };
                     let assessment = if matches!(
@@ -263,6 +273,7 @@ fn make_entry(
                             | Category::ProgIds
                             | Category::Interfaces
                             | Category::ComProxies
+                            | Category::ApplicationIcons
                     ) {
                         Assessment {
                             status: EntryStatus::Unknown,
@@ -337,6 +348,8 @@ fn make_entry(
         interface_repairable: false,
         proxy_state: None,
         proxy_repairable: false,
+        icon_state: None,
+        icon_repairable: false,
         service_repairable: false,
     }
 }
@@ -352,6 +365,8 @@ mod extra_scan;
 use extra_scan::scan_shared_dlls;
 #[path = "application_scan.rs"]
 mod application_scan;
+#[path = "icon_scan.rs"]
+mod icon_scan;
 #[path = "interface_scan.rs"]
 mod interface_scan;
 #[path = "prog_id_scan.rs"]
@@ -396,6 +411,7 @@ fn scan_source(
                 | Category::TypeLibraries
                 | Category::Interfaces
                 | Category::ComProxies
+                | Category::ApplicationIcons
         ) {
             REG_OPTION_OPEN_LINK
         } else {
@@ -423,6 +439,7 @@ fn scan_source(
             | Category::TypeLibraries
             | Category::Interfaces
             | Category::ComProxies
+            | Category::ApplicationIcons
     ) && key
         .get_raw_value("SymbolicLinkValue")
         .is_ok_and(|v| v.vtype == REG_LINK)
@@ -432,7 +449,17 @@ fn scan_source(
         return scope;
     }
     let start_count = entries.len();
-    if source.category == Category::ComProxies {
+    if source.category == Category::ApplicationIcons {
+        icon_scan::scan_icons(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::ComProxies {
         proxy_scan::scan_proxies(
             source,
             &key,

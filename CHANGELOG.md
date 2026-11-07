@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.15 — 2026-11-07
+
+- Expand diagnostics from 37 to 39 logical scan sections with shared HKCU/HKLM application DefaultIcon inventory. Verify literal .ico file references without loading/decoding icons, running commands, or changing default application selections. Resource containers/indexes, indirect/environment expressions, and uncertain evidence remain unverified.
+- Add individual backed-up removal of confirmed missing current-user .ico defaults, plus Quick Clean and selected Clean support. Require an existing simple application registration, no machine counterpart, unchanged open-command/metadata evidence, and existing write access before review. Preserve commands, NoOpenWith and other supported metadata, keys, permissions, and files; never invent a replacement icon.
+- Save a separate verified schema 15 backup before each conditional registry transaction. Restore exact original REG_SZ/REG_EXPAND_SZ bytes only while the default remains absent, the icon is still missing, and all metadata/structure/counterpart checks match. Reappearing files, replacement values, changed commands/flags, unknown metadata, missing keys, and corrupted backups block changes. Preserve formats 1–14 unchanged with a frozen v0.1.14 proxy restoration fixture.
+- Add **Export filtered JSON** to scan results. Export all entries matching the current search/category/status selection across pages, from the native latest-scan cache, with scan/filter provenance and explicit partial-scan status. Write unique local report files without overwriting earlier exports; reports are diagnostic files, not registry backups, and never modify registry entries. Reject stale, empty, duplicate, unknown, or filter-mismatched selections and unsafe report storage.
+- Add policy, read-only inventory, write-access, file/metadata/backup conflict, exact-byte restart/restore, batch-stop, and report selection/storage tests. Add packaged UI verification for filtered exports, review/cancel, individual and selected icon recovery, reappearing-file refusal before backup, preserved command/visibility metadata, independent raw/permission comparisons through both views, and owned-fixture/report cleanup.
+
 ## 0.1.14 — 2026-11-07
 
 - Expand coverage from 33 to 37 logical scan sections with COM interface ProxyStubClsid32 reference inventory in HKCU/HKLM and both architecture views. These checks share Interface roots with TypeLib reference inventory but have distinct coverage IDs. Check target CLSID keys across both hives and views without COM activation, resolution APIs, DLL loading, or filesystem probes.

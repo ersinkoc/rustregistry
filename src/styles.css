@@ -2101,3 +2101,19 @@ tr:hover td {
     display: none;
   }
 }
+
+.results-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.export-receipt {
+  margin: 0;
+  padding: 12px 24px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.export-receipt .mono {
+  display: block;
+  margin-top: 6px;
+}

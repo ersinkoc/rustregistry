@@ -67,6 +67,31 @@ fn cancel_scan(control: State<'_, ScanControl>) {
 }
 
 #[tauri::command]
+async fn export_findings(
+    app: tauri::AppHandle,
+    control: State<'_, ScanControl>,
+    request: registry_core::report_exports::ExportRequest,
+) -> Result<registry_core::report_exports::ExportResult, String> {
+    let guard = acquire(&control)?;
+    let reports = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("reports-v1");
+    let cache = control.last_report.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        let cache = cache.lock().map_err(|_| "Scan state is unavailable.")?;
+        let report = cache
+            .as_ref()
+            .ok_or("Run a scan before exporting findings.")?;
+        registry_core::report_exports::export_findings(report, &request, &reports)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn prepare_quarantine(
     control: State<'_, ScanControl>,
     changes: State<'_, Changes>,
@@ -271,6 +296,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             set_display_scale,
+            export_findings,
             scan_registry,
             cancel_scan,
             prepare_quarantine,

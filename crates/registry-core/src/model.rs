@@ -6,6 +6,7 @@ pub enum Category {
     Startup,
     AppPaths,
     ApplicationCommands,
+    ApplicationIcons,
     Uninstall,
     FileAssociations,
     Com,
@@ -90,6 +91,10 @@ pub struct RegistryEntry {
     pub proxy_state: Option<crate::com_proxies::ProxyState>,
     #[serde(default)]
     pub proxy_repairable: bool,
+    #[serde(skip)]
+    pub icon_state: Option<crate::application_icons::IconState>,
+    #[serde(default)]
+    pub icon_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

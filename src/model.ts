@@ -11,7 +11,8 @@ export type Category =
   | 'type_libraries'
   | 'prog_ids'
   | 'interfaces'
-  | 'com_proxies';
+  | 'com_proxies'
+  | 'application_icons';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -38,6 +39,7 @@ export interface RegistryEntry {
   progIdRepairable?: boolean;
   interfaceRepairable?: boolean;
   proxyRepairable?: boolean;
+  iconRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -78,6 +80,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  application_icons: {
+    label: 'Application icons',
+    description: 'Literal icon file checks and protected reference recovery',
+    short: 'App icon',
+  },
   com_proxies: {
     label: 'COM proxy references',
     description: 'Interface-to-proxy CLSID checks and guarded orphan recovery',
