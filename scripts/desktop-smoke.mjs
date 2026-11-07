@@ -1,3 +1,4 @@
+import { verifyRedirectionRecovery } from './redirection-smoke.mjs';
 import { chromium, expect } from '@playwright/test';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -31,6 +32,7 @@ const applicationOnly = process.argv.includes('--application-only');
 const sharedDllOnly = process.argv.includes('--shared-dll-only');
 const registeredAppOnly = process.argv.includes('--registered-app-only');
 const typeLibraryOnly = process.argv.includes('--type-library-only');
+const redirectionOnly = process.argv.includes('--redirection-only');
 const menuOnly = process.argv.includes('--menu-only');
 const iconOnly = process.argv.includes('--icon-only');
 const proxyOnly = process.argv.includes('--proxy-only');
@@ -51,6 +53,7 @@ if (
     proxyOnly,
     iconOnly,
     menuOnly,
+    redirectionOnly,
   ].filter(Boolean).length > 1
 )
   throw new Error('Choose only one focused verification mode.');
@@ -126,29 +129,31 @@ const summary = {
   executable,
   sourceExecutable: process.env.RUSTREGISTRY_SOURCE_EXE || executable,
   version: appVersion,
-  mode: menuOnly
-    ? 'menu-only'
-    : iconOnly
-      ? 'icon-only'
-      : proxyOnly
-        ? 'proxy-only'
-        : interfaceOnly
-          ? 'interface-only'
-          : progIdOnly
-            ? 'prog-id-only'
-            : typeLibraryOnly
-              ? 'type-library-only'
-              : registeredAppOnly
-                ? 'registered-app-only'
-                : serviceOnly
-                  ? 'service-only'
-                  : expandedOnly
-                    ? 'expanded-only'
-                    : applicationOnly
-                      ? 'application-only'
-                      : sharedDllOnly
-                        ? 'shared-dll-only'
-                        : 'full',
+  mode: redirectionOnly
+    ? 'redirection-only'
+    : menuOnly
+      ? 'menu-only'
+      : iconOnly
+        ? 'icon-only'
+        : proxyOnly
+          ? 'proxy-only'
+          : interfaceOnly
+            ? 'interface-only'
+            : progIdOnly
+              ? 'prog-id-only'
+              : typeLibraryOnly
+                ? 'type-library-only'
+                : registeredAppOnly
+                  ? 'registered-app-only'
+                  : serviceOnly
+                    ? 'service-only'
+                    : expandedOnly
+                      ? 'expanded-only'
+                      : applicationOnly
+                        ? 'application-only'
+                        : sharedDllOnly
+                          ? 'shared-dll-only'
+                          : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -212,7 +217,11 @@ try {
   expect(total).toBeGreaterThan(0);
   summary.entries = total;
   checked('Real registry scan completes through native IPC and populates the paginated table');
-  if (menuOnly) {
+  if (redirectionOnly) {
+    await verifyRedirectionRecovery(page, output, checked, summary);
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (menuOnly) {
     await verifyMenuRecovery(page, output, checked, summary);
     expect(summary.errors).toEqual([]);
     summary.passed = true;
@@ -349,10 +358,10 @@ try {
     checked('Search empty state is honest and clearing filters restores real entries');
 
     await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-    await expect(page.locator('.scope-item')).toHaveCount(43);
+    await expect(page.locator('.scope-item')).toHaveCount(47);
     await page.locator('.scope-item summary').first().click();
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-    checked('Coverage lists all 43 registry scan sections with expandable read results');
+    checked('Coverage lists all 47 registry scan sections with expandable read results');
 
     await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
     await expect(page.locator('.history-item')).toHaveCount(1);
@@ -452,6 +461,7 @@ try {
     await verifyProxyRecovery(page, output, checked, summary);
     await verifyIconRecovery(page, output, checked, summary);
     await verifyMenuRecovery(page, output, checked, summary);
+    await verifyRedirectionRecovery(page, output, checked, summary);
 
     await page.getByRole('link', { name: 'RustRegistry overview', exact: true }).click();
     await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
@@ -581,29 +591,31 @@ try {
   await writeFile(
     resolve(
       output,
-      menuOnly
-        ? 'desktop-menu-verification.json'
-        : iconOnly
-          ? 'desktop-icon-verification.json'
-          : proxyOnly
-            ? 'desktop-proxy-verification.json'
-            : interfaceOnly
-              ? 'desktop-interface-verification.json'
-              : progIdOnly
-                ? 'desktop-prog-id-verification.json'
-                : typeLibraryOnly
-                  ? 'desktop-type-library-verification.json'
-                  : registeredAppOnly
-                    ? 'desktop-registered-app-verification.json'
-                    : serviceOnly
-                      ? 'desktop-service-verification.json'
-                      : expandedOnly
-                        ? 'desktop-expanded-verification.json'
-                        : applicationOnly
-                          ? 'desktop-application-verification.json'
-                          : sharedDllOnly
-                            ? 'desktop-shared-dll-verification.json'
-                            : 'desktop-verification.json',
+      redirectionOnly
+        ? 'desktop-redirection-verification.json'
+        : menuOnly
+          ? 'desktop-menu-verification.json'
+          : iconOnly
+            ? 'desktop-icon-verification.json'
+            : proxyOnly
+              ? 'desktop-proxy-verification.json'
+              : interfaceOnly
+                ? 'desktop-interface-verification.json'
+                : progIdOnly
+                  ? 'desktop-prog-id-verification.json'
+                  : typeLibraryOnly
+                    ? 'desktop-type-library-verification.json'
+                    : registeredAppOnly
+                      ? 'desktop-registered-app-verification.json'
+                      : serviceOnly
+                        ? 'desktop-service-verification.json'
+                        : expandedOnly
+                          ? 'desktop-expanded-verification.json'
+                          : applicationOnly
+                            ? 'desktop-application-verification.json'
+                            : sharedDllOnly
+                              ? 'desktop-shared-dll-verification.json'
+                              : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );

@@ -22,6 +22,29 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers individual TreatAs recovery only for verified native current-user REG_SZ references', () => {
+    const redirection = {
+      ...entry,
+      category: 'com_redirections' as const,
+      view: '64',
+      keyPath: 'Software\\Classes\\CLSID\\{11111111-1111-4111-8111-111111111111}\\TreatAs',
+      valueName: '',
+      valueType: 'REG_SZ',
+      redirectionRepairable: true,
+      assessment: { ...entry.assessment, code: 'redirection_clsid_missing' },
+    };
+    expect(canQuarantine(redirection)).toBe(true);
+    for (const changed of [
+      { ...redirection, hive: 'HKLM' },
+      { ...redirection, view: '32' },
+      { ...redirection, redirectionRepairable: false },
+      { ...redirection, valueType: 'REG_EXPAND_SZ' },
+      { ...redirection, keyPath: `${redirection.keyPath}\\nested` },
+      { ...redirection, valueName: 'Other' },
+      { ...redirection, assessment: { ...redirection.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only guarded visible current-user custom context-menu commands', () => {
     const menu = {
       ...entry,

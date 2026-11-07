@@ -13,7 +13,8 @@ export type Category =
   | 'interfaces'
   | 'com_proxies'
   | 'application_icons'
-  | 'shell_menus';
+  | 'shell_menus'
+  | 'com_redirections';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -43,6 +44,7 @@ export interface RegistryEntry {
   iconRepairable?: boolean;
   menuRepairable?: boolean;
   menuHidden?: boolean;
+  redirectionRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -83,6 +85,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  com_redirections: {
+    label: 'COM class redirections',
+    description: 'TreatAs target checks and protected reference recovery',
+    short: 'COM redirect',
+  },
   shell_menus: {
     label: 'Context-menu commands',
     description: 'File and folder-background menu diagnostics and protected visibility recovery',

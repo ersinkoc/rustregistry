@@ -150,6 +150,8 @@ pub(super) fn scan_com(
                 prog_id_repairable: false,
                 interface_state: None,
                 interface_repairable: false,
+                redirection_state: None,
+                redirection_repairable: false,
                 proxy_state: None,
                 proxy_repairable: false,
                 icon_state: None,

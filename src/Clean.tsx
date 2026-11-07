@@ -243,35 +243,37 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'shell_menu'
-                  ? 'Hide missing-target context-menu entry'
-                  : item.scope === 'application_icon'
-                    ? 'Remove missing application icon reference'
-                    : item.scope === 'com_proxy'
-                      ? 'Disable orphaned COM proxy reference'
-                      : item.scope === 'interface'
-                        ? 'Disable orphaned interface TypeLib reference'
-                        : item.scope === 'prog_id'
-                          ? 'Disable orphaned COM ProgID mapping'
-                          : item.scope === 'type_library'
-                            ? 'Disable missing type library mapping · win64'
-                            : item.scope === 'registered_app'
-                              ? 'Remove orphaned application registration'
-                              : item.scope === 'shared_dll'
-                                ? 'Remove missing zero-count DLL reference · 64 bit'
-                                : item.scope === 'application'
-                                  ? 'Hide broken application suggestion · NoOpenWith'
-                                  : item.scope === 'service'
-                                    ? 'Disable stopped service · Manual → Disabled'
-                                    : item.scope === 'uninstall'
-                                      ? 'Hide orphaned listing · SystemComponent → 1'
-                                      : item.scope === 'association'
-                                        ? 'Remove Open with suggestion'
-                                        : item.scope === 'com'
-                                          ? 'Disable COM mapping'
-                                          : item.scope === 'app_path'
-                                            ? 'Remove broken application path'
-                                            : 'Disable startup value'}
+                {item.scope === 'com_redirection'
+                  ? 'Disable missing-local-target COM redirection'
+                  : item.scope === 'shell_menu'
+                    ? 'Hide missing-target context-menu entry'
+                    : item.scope === 'application_icon'
+                      ? 'Remove missing application icon reference'
+                      : item.scope === 'com_proxy'
+                        ? 'Disable orphaned COM proxy reference'
+                        : item.scope === 'interface'
+                          ? 'Disable orphaned interface TypeLib reference'
+                          : item.scope === 'prog_id'
+                            ? 'Disable orphaned COM ProgID mapping'
+                            : item.scope === 'type_library'
+                              ? 'Disable missing type library mapping · win64'
+                              : item.scope === 'registered_app'
+                                ? 'Remove orphaned application registration'
+                                : item.scope === 'shared_dll'
+                                  ? 'Remove missing zero-count DLL reference · 64 bit'
+                                  : item.scope === 'application'
+                                    ? 'Hide broken application suggestion · NoOpenWith'
+                                    : item.scope === 'service'
+                                      ? 'Disable stopped service · Manual → Disabled'
+                                      : item.scope === 'uninstall'
+                                        ? 'Hide orphaned listing · SystemComponent → 1'
+                                        : item.scope === 'association'
+                                          ? 'Remove Open with suggestion'
+                                          : item.scope === 'com'
+                                            ? 'Disable COM mapping'
+                                            : item.scope === 'app_path'
+                                              ? 'Remove broken application path'
+                                              : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -355,6 +357,14 @@ export function CleanConfirmation({
           separate verified backup. Version, locale, win32 mappings, keys, metadata, and files are
           preserved. New files, machine counterparts, or changed registration details block repair
           and restore.
+        </p>
+      )}
+      {plan.items.some((item) => item.scope === 'com_redirection') && (
+        <p className="change-intro">
+          TreatAs changes remove only the reviewed default reference after a separate verified
+          backup. Local target absence does not prove application failure or establish remote
+          activation needs. Descriptions, keys, files and permissions are preserved. No class is
+          activated.
         </p>
       )}
       {plan.items.some((item) => item.scope === 'shell_menu') && (

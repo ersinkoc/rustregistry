@@ -18,6 +18,7 @@ pub enum Category {
     ProgIds,
     Interfaces,
     ComProxies,
+    ComRedirections,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +93,10 @@ pub struct RegistryEntry {
     pub proxy_state: Option<crate::com_proxies::ProxyState>,
     #[serde(default)]
     pub proxy_repairable: bool,
+    #[serde(skip)]
+    pub redirection_state: Option<crate::com_redirects::RedirectionState>,
+    #[serde(default)]
+    pub redirection_repairable: bool,
     #[serde(skip)]
     pub icon_state: Option<crate::application_icons::IconState>,
     #[serde(default)]

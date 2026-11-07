@@ -8,6 +8,8 @@ pub(crate) use icons::open_icon_child;
 mod interfaces;
 #[path = "windows_proxies.rs"]
 mod proxies;
+#[path = "windows_redirects.rs"]
+mod redirections;
 pub(crate) use interfaces::open_interface_child;
 #[path = "windows_applications.rs"]
 mod applications;
@@ -47,6 +49,10 @@ pub struct WindowsRegistryStore {
     classes_path: String,
     machine_classes_path: String,
     file_exts_path: String,
+    #[cfg(test)]
+    redirection_test_machine_user: bool,
+    #[cfg(test)]
+    redirection_test_user32: Option<String>,
     com_path: String,
     machine_com_path: String,
     services_path: String,
@@ -85,6 +91,10 @@ impl Default for WindowsRegistryStore {
             classes_path: crate::associations::CLASSES_KEY.into(),
             machine_classes_path: crate::associations::CLASSES_KEY.into(),
             file_exts_path: crate::associations::FILE_EXTS_KEY.into(),
+            #[cfg(test)]
+            redirection_test_machine_user: false,
+            #[cfg(test)]
+            redirection_test_user32: None,
             com_path: crate::com::CLSID_KEY.into(),
             machine_com_path: crate::com::CLSID_KEY.into(),
             services_path: crate::services::SERVICES_KEY.into(),
@@ -210,6 +220,27 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_redirection(
+        &self,
+        app: &crate::com_redirects::RedirectionBackup,
+    ) -> Result<crate::com_redirects::RedirectionState, String> {
+        self.redirection_state(app)
+    }
+    fn check_redirection_write_access(
+        &self,
+        app: &crate::com_redirects::RedirectionBackup,
+    ) -> Result<(), String> {
+        self.redirection_write_access(app)
+    }
+    fn compare_exchange_redirection(
+        &self,
+        app: &crate::com_redirects::RedirectionBackup,
+        expected: &crate::com_redirects::RedirectionState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_redirection(app, expected, replacement)
+    }
+
     fn read_menu(
         &self,
         app: &crate::shell_menus::MenuBackup,
@@ -751,6 +782,8 @@ mod tests {
             prog_id_repairable: false,
             interface_state: None,
             interface_repairable: false,
+            redirection_state: None,
+            redirection_repairable: false,
             proxy_state: None,
             proxy_repairable: false,
             icon_state: None,
@@ -878,6 +911,8 @@ mod tests {
             prog_id_repairable: false,
             interface_state: None,
             interface_repairable: false,
+            redirection_state: None,
+            redirection_repairable: false,
             proxy_state: None,
             proxy_repairable: false,
             icon_state: None,
@@ -1056,6 +1091,8 @@ mod tests {
                 prog_id_repairable: false,
                 interface_state: None,
                 interface_repairable: false,
+                redirection_state: None,
+                redirection_repairable: false,
                 proxy_state: None,
                 proxy_repairable: false,
                 icon_state: None,

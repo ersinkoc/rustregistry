@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.17 — 2026-11-07
+
+- Expand diagnostics from 43 to 47 logical scan sections with COM class TreatAs redirections under HKCU/HKLM in both architecture views. Check target CLSID-key existence in all four views without activation, resolution APIs, redirection-chain traversal, library loading, or file probes. Distinguish existing, locally missing, malformed, absent, unsupported-type, and self-referencing mappings.
+- Add individual change review and backed-up removal of a guarded current-user 64-bit TreatAs REG_SZ default. Preserve the owning class description, class and TreatAs keys, files, permissions, other classes, and 32-bit data. Include eligible entries in selected Clean and Quick Clean with a separate backup for every change and stop-on-conflict behavior.
+- Show exact owning/target class evidence, recovery exclusions, and the limits of local checks. A locally absent class does not prove application failure or establish remote activation needs. Existing targets, user 32-bit or machine counterparts, AutoTreatAs, servers, conversion/alternative activation keys, unknown/nested metadata, links, self-references, and uncertain evidence remain read-only.
+- Flush and verify schema 17 backups before conditional Windows registry transactions. Restore exact original REG_SZ bytes only while the value is absent, the target is still locally absent from all checked views, and description/structure/counterpart evidence still matches. Changed values, new targets/counterparts, missing keys, or corrupt backups block changes. Keep formats 1–16 unchanged, with a frozen v0.1.16 context-menu restoration fixture.
+- Add policy, read-only inventory, write-access, metadata/activation/counterpart/target conflicts, backup failure/corruption, batch-stop, and restart/restore tests. Add owned packaged UI checks for native/32-bit targets, a read-only machine target, exclusions, review/cancel, individual/selected changes, repair and restore refusal after a real 32-bit target appears, raw metadata/permission preservation, and complete fixture cleanup.
+
 ## 0.1.16 — 2026-11-07
 
 - Expand read-only diagnostics from 39 to 43 logical scan sections with static file and folder-background context-menu commands under shared HKCU/HKLM shell roots. Walk namespace components without following untrusted registry links, distinguish delegated/cascading/hidden commands, and never execute commands, load icons, or activate handlers.
