@@ -12,14 +12,16 @@ import { verifyComRecovery } from './com-smoke.mjs';
 import { verifyCleaning } from './clean-smoke.mjs';
 import { verifyServiceRecovery } from './service-smoke.mjs';
 import { verifyDisplayScale } from './display-smoke.mjs';
-import { verifyApplicationInventory } from './application-smoke.mjs';
+import { verifyApplicationRecovery } from './application-smoke.mjs';
 
 if (process.platform !== 'win32')
   throw new Error('Desktop smoke verification requires Windows x64.');
 const root = resolve(import.meta.dirname, '..');
 const serviceOnly = process.argv.includes('--service-only');
 const expandedOnly = process.argv.includes('--expanded-only');
-if (serviceOnly && expandedOnly) throw new Error('Choose only one focused verification mode.');
+const applicationOnly = process.argv.includes('--application-only');
+if ([serviceOnly, expandedOnly, applicationOnly].filter(Boolean).length > 1)
+  throw new Error('Choose only one focused verification mode.');
 if (serviceOnly && !process.env.RUSTREGISTRY_SERVICE_FIXTURE_TOKEN)
   throw new Error('A prepared owned service fixture is required for service-only verification.');
 const appVersion = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version;
@@ -55,7 +57,13 @@ let browser;
 const summary = {
   executable,
   version: appVersion,
-  mode: serviceOnly ? 'service-only' : expandedOnly ? 'expanded-only' : 'full',
+  mode: serviceOnly
+    ? 'service-only'
+    : expandedOnly
+      ? 'expanded-only'
+      : applicationOnly
+        ? 'application-only'
+        : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -119,12 +127,16 @@ try {
   expect(total).toBeGreaterThan(0);
   summary.entries = total;
   checked('Real registry scan completes through native IPC and populates the paginated table');
-  if (serviceOnly) {
+  if (applicationOnly) {
+    await verifyApplicationRecovery(page, executable, checked, summary);
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (serviceOnly) {
     await verifyServiceRecovery(page, output, checked, summary);
     expect(summary.errors).toEqual([]);
     summary.passed = true;
   } else if (expandedOnly) {
-    await verifyApplicationInventory(page, executable, checked, summary);
+    await verifyApplicationRecovery(page, executable, checked, summary);
     await verifyComRecovery(page, output, checked, summary, 'InprocHandler32');
     await verifyComRecovery(page, output, checked, summary, 'LocalServer32');
     expect(summary.errors).toEqual([]);
@@ -309,7 +321,7 @@ try {
     await verifyAppPathRecovery(page, output, checked, summary);
     await verifyUninstallRecovery(page, output, checked, summary);
     await verifyAssociationRecovery(page, output, checked, summary);
-    await verifyApplicationInventory(page, executable, checked, summary);
+    await verifyApplicationRecovery(page, executable, checked, summary);
     await verifyComRecovery(page, output, checked, summary);
     await verifyComRecovery(page, output, checked, summary, 'InprocHandler32');
     await verifyComRecovery(page, output, checked, summary, 'LocalServer32');
@@ -430,7 +442,9 @@ try {
         ? 'desktop-service-verification.json'
         : expandedOnly
           ? 'desktop-expanded-verification.json'
-          : 'desktop-verification.json',
+          : applicationOnly
+            ? 'desktop-application-verification.json'
+            : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );

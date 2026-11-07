@@ -1,4 +1,5 @@
 mod analysis;
+pub mod applications;
 pub mod associations;
 pub mod changes;
 pub mod com;

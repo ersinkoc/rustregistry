@@ -328,6 +328,9 @@ mod tests {
                 com_state: None,
                 com_repairable: false,
                 service_state: None,
+                application_snapshot: None,
+                application_repairable: false,
+                application_hidden: false,
                 service_repairable: false,
             }
         }

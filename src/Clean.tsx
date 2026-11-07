@@ -243,17 +243,19 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'service'
-                  ? 'Disable stopped service · Manual → Disabled'
-                  : item.scope === 'uninstall'
-                    ? 'Hide orphaned listing · SystemComponent → 1'
-                    : item.scope === 'association'
-                      ? 'Remove Open with suggestion'
-                      : item.scope === 'com'
-                        ? 'Disable COM mapping'
-                        : item.scope === 'app_path'
-                          ? 'Remove broken application path'
-                          : 'Disable startup value'}
+                {item.scope === 'application'
+                  ? 'Hide broken application suggestion · NoOpenWith'
+                  : item.scope === 'service'
+                    ? 'Disable stopped service · Manual → Disabled'
+                    : item.scope === 'uninstall'
+                      ? 'Hide orphaned listing · SystemComponent → 1'
+                      : item.scope === 'association'
+                        ? 'Remove Open with suggestion'
+                        : item.scope === 'com'
+                          ? 'Disable COM mapping'
+                          : item.scope === 'app_path'
+                            ? 'Remove broken application path'
+                            : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -273,6 +275,12 @@ export function CleanConfirmation({
                 <dt>Original value</dt>
                 <dd className="code-field">{item.originalValue}</dd>
               </div>
+              {item.applicationCommand && (
+                <div className="full-field">
+                  <dt>Original open command · preserved, never executed</dt>
+                  <dd className="code-field">{item.applicationCommand}</dd>
+                </div>
+              )}
               {item.serviceExecutable && (
                 <div className="full-field">
                   <dt>Service executable · never executed</dt>
@@ -304,6 +312,13 @@ export function CleanConfirmation({
         disables only the reviewed mapping; it never loads a DLL or runs a command. Restore is
         available in Backups & restore.
       </p>
+      {plan.items.some((item) => item.scope === 'application') && (
+        <p className="change-intro">
+          Application suggestion repair adds NoOpenWith while preserving the original command and
+          default selections. Explicit Open with lists may still show the application; recent-file
+          Jump List tracking for unregistered file types is also limited.
+        </p>
+      )}
       <label className="confirmation-check">
         <input
           type="checkbox"

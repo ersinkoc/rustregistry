@@ -282,6 +282,9 @@ mod tests {
                 association_repairable: false,
                 com_repairable: true,
                 service_state: None,
+                application_snapshot: None,
+                application_repairable: false,
+                application_hidden: false,
                 service_repairable: false,
                 com_state: Some(state),
             }

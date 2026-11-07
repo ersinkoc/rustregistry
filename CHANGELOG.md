@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.8 — 2026-11-07
+
+- Add backed-up, reversible application suggestion quarantine for simple current-user application open commands with confirmed missing literal local executables. Include eligible entries in individual repair, Quick Clean, and selected Clean; already-hidden registrations remain inventoried without another repair.
+- Add only an empty REG_SZ NoOpenWith flag after flushing and verifying a complete supported value snapshot. Preserve the exact command type/bytes, shell arguments, keys, permissions, files, and default application selections. Never run commands or guess replacement executables.
+- Block machine counterparts, delegated/DDE/alternative activation, extra verbs or nested keys, unknown/protected metadata, environment-dependent executable paths, indirect launchers, and uncertain targets.
+- Restore only the original absent visibility flag when every guarded value and existing key still matches the backup. Save the new scope in integrity-protected schema 8 while retaining unchanged formats 1–7, including a fixed legacy 0.1.7 handler backup fixture.
+- Explain NoOpenWith behavior in review screens: explicit Open with registrations may still display the application, and recent-file Jump List tracking for unregistered file types is also limited. This quarantines an optional suggestion; it does not fix missing files or disable the preserved command.
+- Add Windows transaction/backup/restart/conflict/batch tests and packaged UI verification of individual repair, Quick Clean review, selected cleaning, reload/restore, exclusion controls, permissions, and owned-fixture cleanup.
+
 ## 0.1.7 — 2026-11-07
 
 - Expand scanning from 21 to 23 fixed locations with shared HKCU/HKLM application open-command inventory. Preserve shell argument placeholders, diagnose only explicit local executable expressions, and keep these application commands read-only.

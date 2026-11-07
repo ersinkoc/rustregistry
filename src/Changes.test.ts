@@ -22,6 +22,27 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers backed-up application suggestion repair only for verified current-user open commands', () => {
+    const application: RegistryEntry = {
+      ...entry,
+      category: 'application_commands',
+      valueName: '',
+      applicationRepairable: true,
+      keyPath: 'Software\\Classes\\Applications\\Example.exe\\shell\\open\\command',
+    };
+    expect(canQuarantine(application)).toBe(true);
+    for (const changed of [
+      { ...application, applicationRepairable: false },
+      { ...application, applicationHidden: true },
+      { ...application, hive: 'HKLM' },
+      { ...application, view: '64' },
+      { ...application, valueName: 'NoOpenWith' },
+      { ...application, valueType: 'REG_BINARY' },
+      { ...application, keyPath: `${application.keyPath}\\Nested` },
+      { ...application, assessment: { ...entry.assessment, status: 'unknown' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers service repair only with verified fixed-scope SCM configuration access', () => {
     const service = {
       ...entry,

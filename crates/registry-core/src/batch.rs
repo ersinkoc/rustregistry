@@ -45,6 +45,9 @@ pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
                 && entry.snapshot.is_some()
         }
         Category::AppPaths => entry.app_path_repairable,
+        Category::ApplicationCommands => {
+            entry.view == "shared" && entry.application_repairable && !entry.application_hidden
+        }
         Category::Uninstall => entry.uninstall_repairable && !entry.uninstall_hidden,
         Category::FileAssociations => entry.association_repairable,
         Category::Com => entry.com_repairable && entry.view == "64",

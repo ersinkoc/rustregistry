@@ -25,6 +25,8 @@ export interface RegistryEntry {
   associationRepairable?: boolean;
   comRepairable?: boolean;
   serviceRepairable?: boolean;
+  applicationRepairable?: boolean;
+  applicationHidden?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -67,7 +69,7 @@ export interface ScanProgress {
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
   application_commands: {
     label: 'Application commands',
-    description: 'Read-only registered open commands',
+    description: 'Open commands and guarded suggestion repair',
     short: 'App command',
   },
   services: {

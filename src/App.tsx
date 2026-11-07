@@ -233,30 +233,34 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'services'
-              ? 'Protected service startup repair'
-              : entry.category === 'com'
-                ? 'Protected COM mapping repair'
-                : entry.category === 'file_associations'
-                  ? 'Protected Open with repair'
-                  : entry.category === 'uninstall'
-                    ? 'Protected uninstall listing repair'
-                    : entry.category === 'app_paths'
-                      ? 'Protected application path repair'
-                      : 'Protected startup change'}
+            {entry.category === 'application_commands'
+              ? 'Protected application suggestion repair'
+              : entry.category === 'services'
+                ? 'Protected service startup repair'
+                : entry.category === 'com'
+                  ? 'Protected COM mapping repair'
+                  : entry.category === 'file_associations'
+                    ? 'Protected Open with repair'
+                    : entry.category === 'uninstall'
+                      ? 'Protected uninstall listing repair'
+                      : entry.category === 'app_paths'
+                        ? 'Protected application path repair'
+                        : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'services'
-              ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
-              : entry.category === 'com'
-                ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
-                : entry.category === 'file_associations'
-                  ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
-                  : entry.category === 'uninstall'
-                    ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
-                    : entry.category === 'app_paths'
-                      ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-                      : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'application_commands'
+              ? 'Review a verified backup before hiding this broken application suggestion. Its open command and default selections stay intact; no command is run.'
+              : entry.category === 'services'
+                ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
+                : entry.category === 'com'
+                  ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
+                  : entry.category === 'file_associations'
+                    ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
+                    : entry.category === 'uninstall'
+                      ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+                      : entry.category === 'app_paths'
+                        ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                        : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy

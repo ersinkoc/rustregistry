@@ -1,3 +1,5 @@
+#[path = "windows_applications.rs"]
+mod applications;
 #[path = "windows_associations.rs"]
 mod associations;
 #[path = "windows_com.rs"]
@@ -136,6 +138,20 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_application(
+        &self,
+        name: &str,
+    ) -> Result<crate::applications::ApplicationSnapshot, String> {
+        self.application_state(name)
+    }
+    fn set_application_hidden(
+        &self,
+        name: &str,
+        original: &crate::applications::ApplicationSnapshot,
+        hide: bool,
+    ) -> Result<(), String> {
+        self.change_application_hidden(name, original, hide)
+    }
     fn read_service(&self, name: &str) -> Result<crate::services::ServiceState, String> {
         self.service_state(name)
     }
@@ -499,6 +515,9 @@ mod tests {
             com_state: None,
             com_repairable: false,
             service_state: None,
+            application_snapshot: None,
+            application_repairable: false,
+            application_hidden: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -608,6 +627,9 @@ mod tests {
             com_state: None,
             com_repairable: false,
             service_state: None,
+            application_snapshot: None,
+            application_repairable: false,
+            application_hidden: false,
             service_repairable: false,
         };
         let mut manager =
@@ -768,6 +790,9 @@ mod tests {
                 com_state: None,
                 com_repairable: false,
                 service_state: None,
+                application_snapshot: None,
+                application_repairable: false,
+                application_hidden: false,
                 service_repairable: false,
             };
             let mut manager =

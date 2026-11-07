@@ -22,11 +22,12 @@ export interface ChangePlan {
   originalValue: string;
   valueType: string;
   expiresAt: number;
-  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com' | 'service';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com' | 'service' | 'application';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
   serviceExecutable?: string | null;
+  applicationCommand?: string | null;
 }
 export interface ChangeResult {
   backupId: string;
@@ -40,7 +41,7 @@ interface Backup {
   createdAt: number;
   state: 'restore_available' | 'original_present' | 'conflict' | 'unverified';
   note: string;
-  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com' | 'service';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com' | 'service' | 'application';
   registryPath: string;
   registryView?: string;
 }
@@ -51,6 +52,20 @@ interface Inventory {
 }
 
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'application_commands')
+    return (
+      entry.hive === 'HKCU' &&
+      entry.view === 'shared' &&
+      entry.valueName === '' &&
+      entry.applicationRepairable === true &&
+      entry.applicationHidden !== true &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'target_missing' &&
+      ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
+      /^software\\classes\\applications\\[a-z0-9][^\\/:*?"<>|\x00-\x1f\x7f-\uffff]*\.exe\\shell\\open\\command$/i.test(
+        entry.keyPath,
+      )
+    );
   if (entry.category === 'services')
     return (
       ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
@@ -141,6 +156,7 @@ export function ChangeConfirmation({
       ? 'COM handler mapping'
       : 'COM DLL mapping';
   const service = plan.scope === 'service';
+  const application = plan.scope === 'application';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -176,54 +192,62 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {service
+        {application
           ? restore
-            ? 'Restore service startup?'
-            : 'Disable this missing-target service?'
-          : com
+            ? 'Restore application suggestion?'
+            : 'Hide broken application suggestion?'
+          : service
             ? restore
-              ? `Restore ${comLabel}?`
-              : `Repair broken ${comLabel}?`
-            : association
+              ? 'Restore service startup?'
+              : 'Disable this missing-target service?'
+            : com
               ? restore
-                ? 'Restore Open with suggestion?'
-                : 'Repair orphaned file association?'
-              : uninstall
+                ? `Restore ${comLabel}?`
+                : `Repair broken ${comLabel}?`
+              : association
                 ? restore
-                  ? 'Restore uninstall entry visibility?'
-                  : 'Repair orphaned uninstall entry?'
-                : appPath
+                  ? 'Restore Open with suggestion?'
+                  : 'Repair orphaned file association?'
+                : uninstall
                   ? restore
-                    ? 'Restore application path?'
-                    : 'Repair broken application path?'
-                  : restore
-                    ? 'Restore startup entry?'
-                    : 'Disable this startup entry?'}
+                    ? 'Restore uninstall entry visibility?'
+                    : 'Repair orphaned uninstall entry?'
+                  : appPath
+                    ? restore
+                      ? 'Restore application path?'
+                      : 'Repair broken application path?'
+                    : restore
+                      ? 'Restore startup entry?'
+                      : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {service
+        {application
           ? restore
-            ? 'This restores the original Manual startup type through Windows Service Control Manager. The service remains stopped. Its executable, account, permissions, and configuration must still match the backup.'
-            : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
-          : com
+            ? 'This removes the backed-up NoOpenWith flag only when all guarded application metadata and the original command still match. The application may appear in optional suggestions again.'
+            : 'The executable in this simple open command is missing. After a verified backup, only an empty NoOpenWith flag is added to the application registration. The exact open command, keys, and default application selections are preserved.'
+          : service
             ? restore
-              ? `This restores the exact original 64-bit ${comLocal ? 'server command' : 'DLL mapping'}. Applications may use it through COM later. The class and server metadata must still match the backup.`
-              : `The explicit local ${comLocal ? 'executable' : 'DLL'} is missing. After a verified backup, only the default ${comServer} value is removed. The registration keys and permissions are preserved; no COM object is activated and no command is run.`
-            : association
+              ? 'This restores the original Manual startup type through Windows Service Control Manager. The service remains stopped. Its executable, account, permissions, and configuration must still match the backup.'
+              : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
+            : com
               ? restore
-                ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
-                : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
-              : uninstall
+                ? `This restores the exact original 64-bit ${comLocal ? 'server command' : 'DLL mapping'}. Applications may use it through COM later. The class and server metadata must still match the backup.`
+                : `The explicit local ${comLocal ? 'executable' : 'DLL'} is missing. After a verified backup, only the default ${comServer} value is removed. The registration keys and permissions are preserved; no COM object is activated and no command is run.`
+              : association
                 ? restore
-                  ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
-                  : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
-                : appPath
+                  ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
+                  : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
+                : uninstall
                   ? restore
-                    ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
-                    : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
-                  : restore
-                    ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-                    : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+                    ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
+                    : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
+                  : appPath
+                    ? restore
+                      ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+                      : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+                    : restore
+                      ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+                      : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -250,23 +274,44 @@ export function ChangeConfirmation({
         </div>
         <div className="full-field">
           <dt>
-            {service
-              ? 'Original startup type'
-              : com
-                ? comLocal
-                  ? 'Exact original COM server command'
-                  : 'Exact original COM DLL path'
-                : association
-                  ? 'Original suggestion data'
-                  : uninstall
-                    ? 'Original installation folder'
-                    : appPath
-                      ? 'Exact original executable path'
-                      : 'Exact original command'}
+            {application
+              ? 'Original NoOpenWith flag'
+              : service
+                ? 'Original startup type'
+                : com
+                  ? comLocal
+                    ? 'Exact original COM server command'
+                    : 'Exact original COM DLL path'
+                  : association
+                    ? 'Original suggestion data'
+                    : uninstall
+                      ? 'Original installation folder'
+                      : appPath
+                        ? 'Exact original executable path'
+                        : 'Exact original command'}
           </dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
       </dl>
+      {application && (
+        <>
+          <dl className="detail-fields">
+            <div className="full-field">
+              <dt>Original open command · preserved, never executed</dt>
+              <dd className="code-field">{plan.applicationCommand}</dd>
+            </div>
+            <div className="full-field">
+              <dt>NoOpenWith change</dt>
+              <dd>{restore ? 'Empty REG_SZ → absent' : 'Absent → empty REG_SZ'}</dd>
+            </div>
+          </dl>
+          <p className="change-intro">
+            All {plan.preservedValues} original values are backed up. Explicit Open with lists can
+            still show this application. This flag also limits recent-file Jump List tracking for
+            unregistered file types. It does not repair missing files or disable the open command.
+          </p>
+        </>
+      )}
       {service && (
         <>
           <dl className="detail-fields uninstall-evidence">
@@ -332,17 +377,19 @@ export function ChangeConfirmation({
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
-          {service
-            ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
-            : com
-              ? 'No DLL is loaded or registered, no COM object is activated, no command is run, and no key, file, or permission is changed. A verified backup is required before removing this one value.'
-              : association
-                ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
-                : uninstall
-                  ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
-                  : restore
-                    ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
-                    : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
+          {application
+            ? 'Only suggestion visibility changes. The original open command, default application selections, registry keys, files, and permissions are preserved.'
+            : service
+              ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
+              : com
+                ? 'No DLL is loaded or registered, no COM object is activated, no command is run, and no key, file, or permission is changed. A verified backup is required before removing this one value.'
+                : association
+                  ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
+                  : uninstall
+                    ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
+                    : restore
+                      ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
+                      : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
         </p>
       </div>
       <label className="confirmation-check">
@@ -353,17 +400,19 @@ export function ChangeConfirmation({
           onChange={(event) => setAgreed(event.target.checked)}
         />
         <span>
-          {service
-            ? 'I reviewed this service and understand that only its startup type changes.'
-            : com
-              ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
-              : association
-                ? 'I reviewed this exact suggestion and understand the file association change.'
-                : uninstall
-                  ? 'I reviewed this entry and understand this only changes listing visibility.'
-                  : appPath
-                    ? 'I reviewed this exact value and understand the application path change.'
-                    : 'I reviewed this exact value and understand the startup change.'}
+          {application
+            ? 'I reviewed the original command and understand the suggestion visibility change.'
+            : service
+              ? 'I reviewed this service and understand that only its startup type changes.'
+              : com
+                ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
+                : association
+                  ? 'I reviewed this exact suggestion and understand the file association change.'
+                  : uninstall
+                    ? 'I reviewed this entry and understand this only changes listing visibility.'
+                    : appPath
+                      ? 'I reviewed this exact value and understand the application path change.'
+                      : 'I reviewed this exact value and understand the startup change.'}
         </span>
       </label>
       {expired && (
@@ -383,27 +432,31 @@ export function ChangeConfirmation({
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
           {busy
             ? 'Applying…'
-            : service
+            : application
               ? restore
-                ? 'Restore Manual startup'
-                : 'Back up & disable service'
-              : com
+                ? 'Restore suggestion visibility'
+                : 'Back up & hide suggestion'
+              : service
                 ? restore
-                  ? 'Restore original value'
-                  : 'Back up & disable mapping'
-                : association
+                  ? 'Restore Manual startup'
+                  : 'Back up & disable service'
+                : com
                   ? restore
                     ? 'Restore original value'
-                    : 'Back up & remove suggestion'
-                  : uninstall
+                    : 'Back up & disable mapping'
+                  : association
                     ? restore
-                      ? 'Restore original visibility'
-                      : 'Back up & hide entry'
-                    : restore
                       ? 'Restore original value'
-                      : appPath
-                        ? 'Back up & repair'
-                        : 'Back up & disable'}
+                      : 'Back up & remove suggestion'
+                    : uninstall
+                      ? restore
+                        ? 'Restore original visibility'
+                        : 'Back up & hide entry'
+                      : restore
+                        ? 'Restore original value'
+                        : appPath
+                          ? 'Back up & repair'
+                          : 'Back up & disable'}
         </button>
       </div>
     </dialog>
@@ -516,17 +569,19 @@ export function BackupsPanel({
                     {new Date(backup.createdAt).toLocaleString('en-US')}
                     <span>
                       ·{' '}
-                      {backup.scope === 'service'
-                        ? 'Service startup'
-                        : backup.scope === 'com'
-                          ? `COM mapping · ${backup.registryView} bit`
-                          : backup.scope === 'association'
-                            ? 'File association'
-                            : backup.scope === 'uninstall'
-                              ? 'Uninstall'
-                              : backup.scope === 'app_path'
-                                ? 'Application path'
-                                : 'Startup'}{' '}
+                      {backup.scope === 'application'
+                        ? 'Application suggestion'
+                        : backup.scope === 'service'
+                          ? 'Service startup'
+                          : backup.scope === 'com'
+                            ? `COM mapping · ${backup.registryView} bit`
+                            : backup.scope === 'association'
+                              ? 'File association'
+                              : backup.scope === 'uninstall'
+                                ? 'Uninstall'
+                                : backup.scope === 'app_path'
+                                  ? 'Application path'
+                                  : 'Startup'}{' '}
                       · {backup.valueName || '(Default)'}
                     </span>
                   </small>

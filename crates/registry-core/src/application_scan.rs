@@ -1,28 +1,6 @@
 use super::*;
 
-pub(super) const APPLICATIONS_KEY: &str = r"Software\Classes\Applications";
-
-pub(super) fn assess_command(
-    raw: &str,
-    environment: &Environment,
-    probe: &impl PathProbe,
-) -> Assessment {
-    let raw = raw.trim();
-    // Shell argument placeholders such as "%1" and %* are not environment
-    // variables. Only interpret the executable expression; never expand arguments.
-    let executable = if raw.contains('\0') {
-        raw
-    } else if let Some(rest) = raw.strip_prefix('"') {
-        rest.find('"')
-            .filter(|end| {
-                rest[end + 1..].is_empty() || rest[end + 1..].starts_with(char::is_whitespace)
-            })
-            .map_or(raw, |end| &raw[..end + 2])
-    } else {
-        raw.split_whitespace().next().unwrap_or(raw)
-    };
-    analyze_target(executable, TargetKind::Command, environment, probe)
-}
+pub(super) use crate::applications::{assess_command, APPLICATIONS_KEY};
 
 struct CommandProbe<'a, P> {
     inner: &'a P,
@@ -138,7 +116,29 @@ pub(super) fn scan_applications(
                     target: None,
                 };
             } else {
-                entry.assessment.explanation.push_str(" This inventories the registered open command only; application commands remain read-only and default application selections are not tested.");
+                entry.assessment.explanation.push_str(" This inventories the registered open command only; default application selections are not tested.");
+            }
+            if source.hive == "HKCU" && !alternate {
+                use crate::changes::RegistryStore;
+                if let Ok(snapshot) =
+                    crate::windows_changes::WindowsRegistryStore::default().read_application(&name)
+                {
+                    entry.application_hidden = snapshot.is_hidden();
+                    if entry.application_hidden {
+                        entry.assessment = Assessment { status: EntryStatus::Unknown, code: "application_hidden".into(), explanation: "This application is marked NoOpenWith. Its command is preserved; a matching backup can restore optional suggestion visibility. It is not offered for another cleaning.".into(), target: entry.assessment.target.clone() };
+                    } else {
+                        entry.application_repairable = entry.assessment.code == "target_missing"
+                            && snapshot.command().is_ok_and(|v| {
+                                v.text().as_deref() == Ok(entry.raw_value.as_str())
+                                    && crate::applications::verify_missing_command(
+                                        v,
+                                        &LocalPathProbe,
+                                    )
+                                    .is_ok()
+                            });
+                    }
+                    entry.application_snapshot = Some(snapshot);
+                }
             }
             Ok(Some(entry))
         })();
@@ -174,6 +174,7 @@ mod tests {
     }
     #[test]
     fn application_commands_inventory_is_read_only_and_alternate_activation_is_not_probed() {
+        let prefix = uuid::Uuid::new_v4();
         let fixture = Fixture(format!(
             r"Software\RustRegistryTests\{}",
             uuid::Uuid::new_v4()
@@ -189,26 +190,28 @@ mod tests {
             "dde.exe",
             "ambiguous.exe",
         ] {
+            let name = format!("{prefix}-{name}");
             let (key, _) = root
                 .create_subkey(format!(r"{name}\shell\open\command"))
                 .unwrap();
             key.set_value(
                 "",
-                &if name == "found.exe" {
+                &if name.ends_with("-found.exe") {
                     r"C:\Apps\found.exe"
-                } else if name == "ambiguous.exe" {
+                } else if name.ends_with("-ambiguous.exe") {
                     r"C:\Missing App\ambiguous.exe"
                 } else {
                     original
                 },
             )
             .unwrap();
-            if name == "delegate.exe" {
+            if name.ends_with("-delegate.exe") {
                 key.set_value("DelegateExecute", &"{11111111-1111-4111-8111-111111111111}")
                     .unwrap();
             }
-            if name == "dde.exe" {
-                root.create_subkey(r"dde.exe\shell\open\ddeexec").unwrap();
+            if name.ends_with("-dde.exe") {
+                root.create_subkey(format!(r"{name}\shell\open\ddeexec"))
+                    .unwrap();
             }
         }
         let source = Source {
@@ -244,7 +247,7 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .find(|e| e.name == "missing.exe")
+                .find(|e| e.name == format!("{prefix}-missing.exe"))
                 .unwrap()
                 .assessment
                 .status,
@@ -253,7 +256,7 @@ mod tests {
         assert_eq!(
             entries
                 .iter()
-                .find(|e| e.name == "found.exe")
+                .find(|e| e.name == format!("{prefix}-found.exe"))
                 .unwrap()
                 .assessment
                 .status,
@@ -263,7 +266,7 @@ mod tests {
             assert_eq!(
                 entries
                     .iter()
-                    .find(|e| e.name == name)
+                    .find(|e| e.name == format!("{prefix}-{name}"))
                     .unwrap()
                     .assessment
                     .status,
