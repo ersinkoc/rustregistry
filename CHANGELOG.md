@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.9 — 2026-11-07
+
+- Add backed-up, reversible removal of confirmed missing literal local DLL references with exact DWORD zero counts in HKLM's 64-bit SharedDLLs key. Include eligible references in individual repair, Quick Clean, and selected Clean.
+- Preserve positive/malformed counters, 32-bit references, Windows-directory paths, aliases, environment-dependent or ambiguous paths, network/reparse targets, keys, permissions, and all files. Never decrement counters or load, unregister, replace, or delete DLLs.
+- Require existing key write access at review, before any backup or mutation. Scanning still opens registry handles only for reading; the production app and normal smoke command never request elevation or alter permissions automatically.
+- Use conditional Windows registry transactions to remove one expected zero value or restore its exact DWORD type/bytes only while its name remains absent and the DLL is still missing. Block new counters, reappearing files, changed structure, and corrupted or mismatched backups.
+- Save checksum-protected schema 9 backups without rewriting formats 1–8. Add a fixed legacy 0.1.8 application backup fixture and restore test. Allow independent zero-count references from one shared key in a cleaning batch.
+- Add native policy/access/conflict/batch/restart/restore tests, a read-only raw-registry fixture ABI check, and explicit same-account elevated desktop test tooling. Verify only owned 32/64-bit controls, inert files, positive counts, unrelated raw values, and key permissions; remove only owned fixtures and matching test backups.
+
 ## 0.1.8 — 2026-11-07
 
 - Add backed-up, reversible application suggestion quarantine for simple current-user application open commands with confirmed missing literal local executables. Include eligible entries in individual repair, Quick Clean, and selected Clean; already-hidden registrations remain inventoried without another repair.

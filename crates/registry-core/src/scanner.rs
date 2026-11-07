@@ -254,6 +254,7 @@ fn make_entry(
         application_snapshot: None,
         application_repairable: false,
         application_hidden: false,
+        shared_dll_repairable: false,
         service_repairable: false,
     }
 }
@@ -295,7 +296,10 @@ fn scan_source(
     // Scanning opens handles only with KEY_READ; protected mutations live in windows_changes.
     let key = match hive.open_subkey_with_options_flags(
         source.path,
-        if source.category == Category::ApplicationCommands {
+        if matches!(
+            source.category,
+            Category::ApplicationCommands | Category::SharedDlls
+        ) {
             REG_OPTION_OPEN_LINK
         } else {
             0
@@ -314,10 +318,12 @@ fn scan_source(
             return scope;
         }
     };
-    if source.category == Category::ApplicationCommands
-        && key
-            .get_raw_value("SymbolicLinkValue")
-            .is_ok_and(|v| v.vtype == REG_LINK)
+    if matches!(
+        source.category,
+        Category::ApplicationCommands | Category::SharedDlls
+    ) && key
+        .get_raw_value("SymbolicLinkValue")
+        .is_ok_and(|v| v.vtype == REG_LINK)
     {
         scope.status = "partial".into();
         scope.notes.push("Registry root link not followed.".into());

@@ -13,6 +13,7 @@ import { verifyCleaning } from './clean-smoke.mjs';
 import { verifyServiceRecovery } from './service-smoke.mjs';
 import { verifyDisplayScale } from './display-smoke.mjs';
 import { verifyApplicationRecovery } from './application-smoke.mjs';
+import { verifySharedDllRecovery } from './shared-dll-smoke.mjs';
 
 if (process.platform !== 'win32')
   throw new Error('Desktop smoke verification requires Windows x64.');
@@ -20,7 +21,10 @@ const root = resolve(import.meta.dirname, '..');
 const serviceOnly = process.argv.includes('--service-only');
 const expandedOnly = process.argv.includes('--expanded-only');
 const applicationOnly = process.argv.includes('--application-only');
-if ([serviceOnly, expandedOnly, applicationOnly].filter(Boolean).length > 1)
+const sharedDllOnly = process.argv.includes('--shared-dll-only');
+if (sharedDllOnly && !process.env.RUSTREGISTRY_SHARED_DLL_FIXTURE_TOKEN)
+  throw new Error('An explicitly elevated owned SharedDLLs fixture session is required.');
+if ([serviceOnly, expandedOnly, applicationOnly, sharedDllOnly].filter(Boolean).length > 1)
   throw new Error('Choose only one focused verification mode.');
 if (serviceOnly && !process.env.RUSTREGISTRY_SERVICE_FIXTURE_TOKEN)
   throw new Error('A prepared owned service fixture is required for service-only verification.');
@@ -36,16 +40,52 @@ await new Promise((resolve, reject) =>
 );
 
 const executable = resolve(root, process.env.RUSTREGISTRY_EXE || 'target/release/rustregistry.exe');
+const profile = resolve(output, `webview-smoke-profile-${process.pid}-${Date.now()}`);
+const policyToken = process.env.RUSTREGISTRY_ELEVATED_WEBVIEW_TOKEN;
+let policyAttempted = false;
+const testPolicy = async (action) => {
+  const shell = resolve(
+    process.env.SystemRoot || 'C:\\Windows',
+    'System32/WindowsPowerShell/v1.0/powershell.exe',
+  );
+  const { stdout } = await promisify(execFile)(
+    shell,
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-File',
+      resolve(root, 'scripts/webview-test-policy.ps1'),
+      '-Action',
+      action,
+      '-Token',
+      policyToken,
+      '-Executable',
+      executable,
+      '-Port',
+      String(port),
+      '-UserDataFolder',
+      profile,
+    ],
+    { windowsHide: true, timeout: 10_000, encoding: 'utf8' },
+  );
+  return JSON.parse(stdout.replace(/^\uFEFF/, '').trim());
+};
+if (policyToken) {
+  policyAttempted = true;
+  try {
+    await testPolicy('create');
+  } catch (error) {
+    await testPolicy('cleanup').catch(() => {});
+    throw error;
+  }
+}
 const child = spawn(executable, [], {
   cwd: root,
   windowsHide: true,
   env: {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`,
-    WEBVIEW2_USER_DATA_FOLDER: resolve(
-      output,
-      `webview-smoke-profile-${process.pid}-${Date.now()}`,
-    ),
+    WEBVIEW2_USER_DATA_FOLDER: profile,
   },
   stdio: 'ignore',
 });
@@ -56,6 +96,7 @@ child.on('error', (error) => {
 let browser;
 const summary = {
   executable,
+  sourceExecutable: process.env.RUSTREGISTRY_SOURCE_EXE || executable,
   version: appVersion,
   mode: serviceOnly
     ? 'service-only'
@@ -63,7 +104,9 @@ const summary = {
       ? 'expanded-only'
       : applicationOnly
         ? 'application-only'
-        : 'full',
+        : sharedDllOnly
+          ? 'shared-dll-only'
+          : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -127,7 +170,11 @@ try {
   expect(total).toBeGreaterThan(0);
   summary.entries = total;
   checked('Real registry scan completes through native IPC and populates the paginated table');
-  if (applicationOnly) {
+  if (sharedDllOnly) {
+    await verifySharedDllRecovery(page, output, checked, summary);
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (applicationOnly) {
     await verifyApplicationRecovery(page, executable, checked, summary);
     expect(summary.errors).toEqual([]);
     summary.passed = true;
@@ -244,7 +291,7 @@ try {
     checked('Session history reopens the completed scan');
     for (const category of ['shared_dlls']) {
       await page.getByRole('combobox', { name: 'Filter by category' }).selectOption(category);
-      await page.getByRole('combobox', { name: 'Filter by status' }).selectOption('all');
+      await page.getByRole('combobox', { name: 'Filter by status' }).selectOption('unknown');
       if (await page.locator('.entry-button').count()) {
         await page.locator('.entry-button').first().click();
         await expect(page.getByRole('button', { name: 'Review repair', exact: true })).toHaveCount(
@@ -260,7 +307,7 @@ try {
         ).toBeVisible();
     }
     checked(
-      'Shared DLL inventory shows real records or an honest empty state and offers no repair',
+      'Unverified shared DLL inventory shows real records or an honest empty state without offering repair',
     );
 
     await page
@@ -327,6 +374,7 @@ try {
     await verifyComRecovery(page, output, checked, summary, 'LocalServer32');
     await verifyCleaning(page, output, checked, summary);
     await verifyServiceRecovery(page, output, checked, summary);
+    await verifySharedDllRecovery(page, output, checked, summary);
 
     await page.getByRole('link', { name: 'RustRegistry overview', exact: true }).click();
     await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
@@ -435,6 +483,24 @@ try {
       process.exitCode = 1;
     }
   }
+  if (browser) await browser.close().catch(() => {});
+  if (child.exitCode === null) {
+    const exited = once(child, 'exit');
+    child.kill();
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+  }
+  if (policyAttempted) {
+    try {
+      const result = await testPolicy('cleanup');
+      if (!result.cleaned) throw new Error('Owned WebView2 test policy was not cleaned.');
+      summary.webviewTestPolicyCleanup = true;
+    } catch (error) {
+      summary.errors.push(String(error));
+      summary.webviewTestPolicyCleanup = false;
+      summary.passed = false;
+      process.exitCode = 1;
+    }
+  }
   await writeFile(
     resolve(
       output,
@@ -444,10 +510,10 @@ try {
           ? 'desktop-expanded-verification.json'
           : applicationOnly
             ? 'desktop-application-verification.json'
-            : 'desktop-verification.json',
+            : sharedDllOnly
+              ? 'desktop-shared-dll-verification.json'
+              : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );
-  if (browser) await browser.close().catch(() => {});
-  if (child.exitCode === null) child.kill();
 }

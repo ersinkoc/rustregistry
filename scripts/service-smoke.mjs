@@ -34,6 +34,7 @@ export async function verifyServiceRecovery(page, output, checked, summary) {
     return JSON.parse(stdout.replace(/^\uFEFF/, '').trim());
   };
   await page.locator('nav').getByRole('button', { name: 'Backups & restore', exact: true }).click();
+  await expect(page.locator('.backup-location .mono')).toHaveText(/^[a-z]:\\/i);
   const storagePath = await page.locator('.backup-location .mono').innerText();
   let failure;
   const cleanupErrors = [];

@@ -27,6 +27,7 @@ export interface RegistryEntry {
   serviceRepairable?: boolean;
   applicationRepairable?: boolean;
   applicationHidden?: boolean;
+  sharedDllRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -79,7 +80,7 @@ export const categories: Record<Category, { label: string; description: string; 
   },
   shared_dlls: {
     label: 'Shared DLL references',
-    description: 'Read-only file usage registrations',
+    description: 'File usage checks and zero-count reference repair',
     short: 'Shared DLL',
   },
   com: {

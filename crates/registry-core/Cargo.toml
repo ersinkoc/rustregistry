@@ -17,7 +17,7 @@ tempfile = "3"
 
 [target.'cfg(windows)'.dependencies]
 winreg = { version = "0.56", default-features = false, features = ["transactions"] }
-windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_Services", "Win32_Security"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_Services", "Win32_System_SystemInformation", "Win32_Security"] }
 
 [[bin]]
 name = "registry-scan"

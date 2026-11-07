@@ -243,19 +243,21 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'application'
-                  ? 'Hide broken application suggestion · NoOpenWith'
-                  : item.scope === 'service'
-                    ? 'Disable stopped service · Manual → Disabled'
-                    : item.scope === 'uninstall'
-                      ? 'Hide orphaned listing · SystemComponent → 1'
-                      : item.scope === 'association'
-                        ? 'Remove Open with suggestion'
-                        : item.scope === 'com'
-                          ? 'Disable COM mapping'
-                          : item.scope === 'app_path'
-                            ? 'Remove broken application path'
-                            : 'Disable startup value'}
+                {item.scope === 'shared_dll'
+                  ? 'Remove missing zero-count DLL reference · 64 bit'
+                  : item.scope === 'application'
+                    ? 'Hide broken application suggestion · NoOpenWith'
+                    : item.scope === 'service'
+                      ? 'Disable stopped service · Manual → Disabled'
+                      : item.scope === 'uninstall'
+                        ? 'Hide orphaned listing · SystemComponent → 1'
+                        : item.scope === 'association'
+                          ? 'Remove Open with suggestion'
+                          : item.scope === 'com'
+                            ? 'Disable COM mapping'
+                            : item.scope === 'app_path'
+                              ? 'Remove broken application path'
+                              : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -317,6 +319,13 @@ export function CleanConfirmation({
           Application suggestion repair adds NoOpenWith while preserving the original command and
           default selections. Explicit Open with lists may still show the application; recent-file
           Jump List tracking for unregistered file types is also limited.
+        </p>
+      )}
+      {plan.items.some((item) => item.scope === 'shared_dll') && (
+        <p className="change-intro">
+          Shared DLL cleanup removes only confirmed missing zero-count references in the 64-bit
+          machine view. Positive counters and files are preserved. Existing Windows write access is
+          required, and restore is blocked if a new counter or file appears.
         </p>
       )}
       <label className="confirmation-check">

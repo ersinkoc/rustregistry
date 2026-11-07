@@ -6,6 +6,10 @@ use crate::services::{
     validate_service_name, verify_missing_service, ServiceBackup, ServiceSnapshot, ServiceState,
     SERVICES_KEY,
 };
+use crate::shared_dlls::{
+    validate_shared_dll_path, validate_zero_count, verify_missing_shared_dll, SharedDllBackup,
+    SHARED_DLLS_KEY,
+};
 #[path = "batch.rs"]
 mod batch;
 use crate::associations::{
@@ -153,6 +157,20 @@ struct AppPathBackup {
 }
 
 pub trait RegistryStore {
+    fn read_shared_dll(&self, _path: &str) -> Result<Option<StoredValue>, String> {
+        Err("Shared DLL recovery is unavailable in this registry store.".into())
+    }
+    fn check_shared_dll_write_access(&self) -> Result<(), String> {
+        Err("Shared DLL recovery is unavailable in this registry store.".into())
+    }
+    fn compare_exchange_shared_dll(
+        &self,
+        _path: &str,
+        _expected: Option<&StoredValue>,
+        _replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        Err("Shared DLL recovery is unavailable in this registry store.".into())
+    }
     fn read_application(&self, _name: &str) -> Result<ApplicationSnapshot, String> {
         Err("Application recovery is unavailable in this registry store.".into())
     }
@@ -280,6 +298,8 @@ struct BackupRecord {
     service: Option<ServiceBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     application: Option<ApplicationBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shared_dll: Option<SharedDllBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -383,14 +403,17 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.com,
             &record.service,
             &record.application,
+            &record.shared_dll,
             record.schema_version,
         ) {
-            (None, None, None, None, None, None, 1) => validate_value_name(&record.value_name)?,
-            (Some(app), None, None, None, None, None, 2) if record.value_name.is_empty() => {
+            (None, None, None, None, None, None, None, 1) => {
+                validate_value_name(&record.value_name)?
+            }
+            (Some(app), None, None, None, None, None, None, 2) if record.value_name.is_empty() => {
                 validate_app_path_name(&app.executable)?;
                 app.guard.validate()?;
             }
-            (None, Some(uninstall), None, None, None, None, 3)
+            (None, Some(uninstall), None, None, None, None, None, 3)
                 if record.value_name == COMPONENT =>
             {
                 validate_uninstall_name(&uninstall.key_name)?;
@@ -401,34 +424,46 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     );
                 }
             }
-            (None, None, Some(association), None, None, None, 4) => {
+            (None, None, Some(association), None, None, None, None, 4) => {
                 validate_extension(&association.extension)?;
                 association.guard.validate(&record.value_name)?;
                 validate_suggestion(&record.original)?;
             }
-            (None, None, None, Some(com), None, None, 5 | 7) if record.value_name.is_empty() => {
+            (None, None, None, Some(com), None, None, None, 5 | 7)
+                if record.value_name.is_empty() =>
+            {
                 if (record.schema_version == 5) != (com.server == INPROC_SERVER) {
                     return Err("COM backup version and server scope do not match.".into());
                 }
                 com.validate()?;
             }
-            (None, None, None, None, Some(service), None, 6) if record.value_name == "Start" => {
+            (None, None, None, None, Some(service), None, None, 6)
+                if record.value_name == "Start" =>
+            {
                 validate_service_name(&service.service_name)?;
                 service.snapshot.validate_original()?;
                 if service.snapshot.get("Start") != Some(&record.original) {
                     return Err("Service backup startup evidence does not match.".into());
                 }
             }
-            (None, None, None, None, None, Some(app), 8) if record.value_name == NO_OPEN_WITH => {
+            (None, None, None, None, None, Some(app), None, 8)
+                if record.value_name == NO_OPEN_WITH =>
+            {
                 validate_application_name(&app.executable)?;
                 app.snapshot.validate_original()?;
                 if app.snapshot.command()? != &record.original {
                     return Err("Application backup command evidence does not match.".into());
                 }
             }
+            (None, None, None, None, None, None, Some(shared), 9)
+                if record.value_name == shared.path && shared.view == "64" =>
+            {
+                validate_shared_dll_path(&shared.path)?;
+                validate_zero_count(&record.original)?;
+            }
             _ => return Err("Unsupported backup format or registry scope.".into()),
         }
-        if record.association.is_none() && record.service.is_none() {
+        if record.association.is_none() && record.service.is_none() && record.shared_dll.is_none() {
             record.original.text()?;
         }
         if record.integrity_sha256 != Self::checksum(record)? {
@@ -455,6 +490,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             serde_json::to_vec(&(bytes, &record.association)).map_err(|e| e.to_string())?
         } else if matches!(record.schema_version, 5 | 7) {
             serde_json::to_vec(&(bytes, &record.com)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 9 {
+            serde_json::to_vec(&(bytes, &record.shared_dll)).map_err(|e| e.to_string())?
         } else if record.schema_version == 8 {
             serde_json::to_vec(&(bytes, &record.application)).map_err(|e| e.to_string())?
         } else if record.schema_version == 6 {
@@ -554,6 +591,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     pub fn prepare_quarantine(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
         self.pending = None;
         self.batch_pending = None;
+        if entry.category == Category::SharedDlls {
+            return self.prepare_shared_dll(entry);
+        }
         if entry.category == Category::Services {
             return self.prepare_service(entry);
         }
@@ -650,6 +690,49 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             com: None,
             service: None,
             application: None,
+            shared_dll: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_shared_dll(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        if entry.hive != "HKLM"
+            || entry.view != "64"
+            || entry.key_path != SHARED_DLLS_KEY
+            || entry.assessment.status != EntryStatus::Review
+            || entry.assessment.code != "target_missing"
+        {
+            return Err("Only confirmed missing DLL references in the fixed HKLM 64-bit SharedDLLs location support repair.".into());
+        }
+        let original = entry
+            .snapshot
+            .clone()
+            .ok_or("Shared DLL scan evidence is unavailable. Run a fresh scan.")?;
+        verify_missing_shared_dll(&entry.value_name, &original, &self.probe)?;
+        if entry.raw_value != "Reference count: 0"
+            || self.store.read_shared_dll(&entry.value_name)?.as_ref() != Some(&original)
+        {
+            return Err("The shared DLL counter changed after scanning. Run a fresh scan.".into());
+        }
+        let mut record = BackupRecord {
+            schema_version: 9,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: entry.value_name.clone(),
+            created_at: now()?,
+            original,
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: None,
+            association: None,
+            com: None,
+            service: None,
+            application: None,
+            shared_dll: Some(SharedDllBackup {
+                path: entry.value_name.clone(),
+                view: "64".into(),
+            }),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -688,6 +771,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             association: None,
             com: None,
             service: None,
+            shared_dll: None,
             application: Some(ApplicationBackup {
                 executable: name.into(),
                 snapshot,
@@ -744,6 +828,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             com: None,
             service: None,
             application: None,
+            shared_dll: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -791,6 +876,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             com: None,
             service: None,
             application: None,
+            shared_dll: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -840,6 +926,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }),
             service: None,
             application: None,
+            shared_dll: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -890,6 +977,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             association: None,
             com: None,
             application: None,
+            shared_dll: None,
             service: Some(ServiceBackup {
                 service_name: name.into(),
                 snapshot: evidence.snapshot,
@@ -910,14 +998,24 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn prepare(&mut self, record: BackupRecord, restore: bool) -> Result<ChangePlan, String> {
+        if record.shared_dll.is_some() {
+            self.store.check_shared_dll_write_access()?;
+        }
         let plan = ChangePlan {
             token: Uuid::new_v4().to_string(),
             action: if restore { "restore" } else { "quarantine" }.into(),
             name: record.name.clone(),
             value_name: record.value_name.clone(),
             registry_path: Self::registry_path(&record),
-            registry_view: if record.com.is_some() { "64" } else { "shared" }.into(),
-            original_value: if record.application.is_some() {
+            registry_view: if record.com.is_some() || record.shared_dll.is_some() {
+                "64"
+            } else {
+                "shared"
+            }
+            .into(),
+            original_value: if record.shared_dll.is_some() {
+                "0".into()
+            } else if record.application.is_some() {
                 "(absent)".into()
             } else if record.service.is_some() {
                 "3 (Manual)".into()
@@ -928,7 +1026,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             },
             value_type: if record.application.is_some() {
                 "REG_SZ"
-            } else if record.service.is_some() {
+            } else if record.service.is_some() || record.shared_dll.is_some() {
                 "REG_DWORD"
             } else if record.association.is_some() && record.original.kind == 0 {
                 "REG_NONE"
@@ -941,7 +1039,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.application.is_some() {
+            scope: if record.shared_dll.is_some() {
+                "shared_dll"
+            } else if record.application.is_some() {
                 "application"
             } else if record.service.is_some() {
                 "service"
@@ -1014,6 +1114,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if record.shared_dll.is_some() {
+            return format!("HKLM\\{SHARED_DLLS_KEY}");
+        }
         if let Some(app) = &record.application {
             return format!("HKCU\\{APPLICATIONS_KEY}\\{}", app.executable);
         }
@@ -1039,6 +1142,10 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
+        if record.shared_dll.is_some() {
+            verify_missing_shared_dll(&record.value_name, &record.original, &self.probe)?;
+            return self.store.read_shared_dll(&record.value_name);
+        }
         if let Some(app) = &record.application {
             let state = self.store.read_application(&app.executable)?;
             if state == app.snapshot {
@@ -1103,6 +1210,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         expected: Option<StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if record.shared_dll.is_some() {
+            return self.store.compare_exchange_shared_dll(
+                &record.value_name,
+                expected.as_ref(),
+                replacement,
+            );
+        }
         if let Some(app) = &record.application {
             return self.store.set_application_hidden(
                 &app.executable,
@@ -1182,7 +1296,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             self.read_record(&record)?;
             self.exchange_record(&record, None, Some(&record.original))?;
         } else {
-            if record.application.is_some() {
+            if record.shared_dll.is_some() {
+                verify_missing_shared_dll(&record.value_name, &record.original, &self.probe)?;
+            } else if record.application.is_some() {
                 verify_missing_command(&record.original, &self.probe)?;
             } else if let Some(service) = &record.service {
                 verify_missing_service(&service.snapshot, &self.probe)?;
@@ -1213,7 +1329,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
+            message: if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
                 if restore {"Original 64-bit COM mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
@@ -1283,7 +1399,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.application.is_some() {
+            let scope = if record.shared_dll.is_some() {
+                "shared_dll"
+            } else if record.application.is_some() {
                 "application"
             } else if record.service.is_some() {
                 "service"
@@ -1300,7 +1418,12 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into();
             let registry_path = Self::registry_path(&record);
-            let registry_view = if record.com.is_some() { "64" } else { "shared" }.into();
+            let registry_view = if record.com.is_some() || record.shared_dll.is_some() {
+                "64"
+            } else {
+                "shared"
+            }
+            .into();
             inventory.backups.push(BackupSummary {
                 id: record.id.to_string(),
                 name: record.name,
@@ -1540,6 +1663,7 @@ mod tests {
             application_snapshot: None,
             application_repairable: false,
             application_hidden: false,
+            shared_dll_repairable: false,
             service_repairable: false,
         }
     }

@@ -279,6 +279,7 @@ mod tests {
                 application_snapshot: Some(snapshot),
                 application_repairable: true,
                 application_hidden: false,
+                shared_dll_repairable: false,
             }
         }
     }
@@ -514,5 +515,44 @@ mod tests {
             first.store().read_application(&first.name).unwrap(),
             original
         );
+    }
+
+    #[test]
+    fn restores_unchanged_v018_application_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let legacy = include_str!("../tests/fixtures/application-backup-v8.json");
+        let record: serde_json::Value = serde_json::from_str(legacy).unwrap();
+        let name = record["application"]["executable"].as_str().unwrap();
+        let original: StoredValue = serde_json::from_value(record["original"].clone()).unwrap();
+        let original_snapshot: ApplicationSnapshot =
+            serde_json::from_value(record["application"]["snapshot"].clone()).unwrap();
+        let (app, _) = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!(r"{}\Applications\{name}", fixture.classes))
+            .unwrap();
+        app.set_value(NO_OPEN_WITH, &"").unwrap();
+        let (command, _) = app.create_subkey(OPEN_COMMAND).unwrap();
+        command
+            .set_raw_value(
+                "",
+                &RegValue {
+                    vtype: REG_EXPAND_SZ,
+                    bytes: Cow::Borrowed(&original.bytes),
+                },
+            )
+            .unwrap();
+        let id = record["id"].as_str().unwrap();
+        let path = directory.path().join(format!("{id}.json"));
+        std::fs::write(&path, legacy).unwrap();
+        let mut manager =
+            ChangeManager::new(fixture.store(), directory.path().into(), LocalPathProbe);
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "application");
+        manager.apply(&plan.token).unwrap();
+        assert_eq!(
+            fixture.store().read_application(name).unwrap(),
+            original_snapshot
+        );
+        assert_eq!(std::fs::read_to_string(path).unwrap(), legacy);
     }
 }

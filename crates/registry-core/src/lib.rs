@@ -9,6 +9,7 @@ mod scan_probe;
 #[cfg(windows)]
 mod scanner;
 pub mod services;
+pub mod shared_dlls;
 pub mod uninstall;
 #[cfg(windows)]
 pub mod windows_changes;

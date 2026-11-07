@@ -19,6 +19,7 @@ export async function verifyComRecovery(page, output, checked, summary, server =
   const clsid = `{${token}}`;
   const name = `RustRegistry E2E COM ${token}${expanded ? ` ${server}` : ''}`;
   await page.locator('nav').getByRole('button', { name: 'Backups & restore', exact: true }).click();
+  await expect(page.locator('.backup-location .mono')).toHaveText(/^[a-z]:\\/i);
   const storagePath = await page.locator('.backup-location .mono').innerText();
   const shell = join(
     process.env.SystemRoot || 'C:\\Windows',

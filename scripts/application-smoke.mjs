@@ -34,6 +34,7 @@ export async function verifyApplicationRecovery(page, executable, checked, summa
   };
   const name = `RustRegistry-E2E-App-${token}-Missing.exe`;
   await page.locator('nav').getByRole('button', { name: 'Backups & restore', exact: true }).click();
+  await expect(page.locator('.backup-location .mono')).toHaveText(/^[a-z]:\\/i);
   const storagePath = await page.locator('.backup-location .mono').innerText();
   const backups = async () => {
     const matches = [];

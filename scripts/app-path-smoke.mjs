@@ -11,6 +11,7 @@ const fixtureScript = resolve(import.meta.dirname, 'app-path-fixture.ps1');
 export async function verifyAppPathRecovery(page, output, checked, summary) {
   const token = randomUUID();
   const name = `RustRegistry-E2E-${token}.exe`;
+  await expect(page.locator('.backup-location .mono')).toHaveText(/^[a-z]:\\/i);
   const storagePath = await page.locator('.backup-location .mono').innerText();
   const shell = join(
     process.env.SystemRoot || 'C:\\Windows',

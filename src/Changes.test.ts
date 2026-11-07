@@ -22,6 +22,31 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers shared DLL repair only for verified zero-count machine-wide 64-bit references', () => {
+    const shared: RegistryEntry = {
+      ...entry,
+      category: 'shared_dlls',
+      hive: 'HKLM',
+      view: '64',
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\SharedDLLs',
+      valueName: 'C:\\RustRegistryMissing\\zero.dll',
+      valueType: 'REG_DWORD',
+      rawValue: 'Reference count: 0',
+      sharedDllRepairable: true,
+    };
+    expect(canQuarantine(shared)).toBe(true);
+    for (const changed of [
+      { ...shared, sharedDllRepairable: false },
+      { ...shared, hive: 'HKCU' },
+      { ...shared, view: '32' },
+      { ...shared, valueType: 'REG_SZ' },
+      { ...shared, rawValue: 'Reference count: 1' },
+      { ...shared, valueName: 'relative.dll' },
+      { ...shared, keyPath: `${shared.keyPath}\\Nested` },
+      { ...shared, assessment: { ...entry.assessment, status: 'unknown' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers backed-up application suggestion repair only for verified current-user open commands', () => {
     const application: RegistryEntry = {
       ...entry,

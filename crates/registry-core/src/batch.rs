@@ -29,6 +29,12 @@ pub(super) struct PendingBatch {
 }
 
 pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
+    if entry.category == Category::SharedDlls {
+        return entry.hive == "HKLM"
+            && entry.view == "64"
+            && entry.shared_dll_repairable
+            && entry.assessment.status == EntryStatus::Review;
+    }
     if entry.category == Category::Services {
         return entry.hive == "HKLM"
             && entry.view == "shared"
@@ -80,10 +86,15 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 return Err("Duplicate entries are not allowed in one cleaning review.".into());
             }
             let location = format!(
-                "{}|{}|{}",
+                "{}|{}|{}|{}",
                 entry.hive,
                 entry.view,
-                entry.key_path.to_ascii_lowercase()
+                entry.key_path.to_ascii_lowercase(),
+                if entry.category == Category::SharedDlls {
+                    entry.value_name.to_ascii_lowercase()
+                } else {
+                    String::new()
+                }
             );
             if entry.category != Category::Startup && guarded_locations.contains(&location) {
                 skipped.push(CleanSkipped {name: entry.name.clone(), reason: "Another change to this guarded registration is already included. Scan again after cleaning to review the remaining value.".into()});

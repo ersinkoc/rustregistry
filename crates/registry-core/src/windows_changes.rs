@@ -6,6 +6,8 @@ mod associations;
 mod com;
 #[path = "windows_services.rs"]
 mod services;
+#[path = "windows_shared_dlls.rs"]
+mod shared_dlls;
 use crate::changes::{
     validate_app_path_name, validate_value_name, AppPathGuard, AppPathState, NamedValue,
     RegistryStore, StoredValue, APP_PATHS_KEY, STARTUP_KEY,
@@ -24,6 +26,9 @@ pub struct WindowsRegistryStore {
     com_path: String,
     machine_com_path: String,
     services_path: String,
+    shared_dll_path: String,
+    #[cfg(test)]
+    shared_dll_test_user: bool,
 }
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
@@ -37,6 +42,9 @@ impl Default for WindowsRegistryStore {
             com_path: crate::com::CLSID_KEY.into(),
             machine_com_path: crate::com::CLSID_KEY.into(),
             services_path: crate::services::SERVICES_KEY.into(),
+            shared_dll_path: crate::shared_dlls::SHARED_DLLS_KEY.into(),
+            #[cfg(test)]
+            shared_dll_test_user: false,
         }
     }
 }
@@ -138,6 +146,20 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_shared_dll(&self, path: &str) -> Result<Option<StoredValue>, String> {
+        self.shared_dll_value(path)
+    }
+    fn check_shared_dll_write_access(&self) -> Result<(), String> {
+        self.shared_dll_write_access()
+    }
+    fn compare_exchange_shared_dll(
+        &self,
+        path: &str,
+        expected: Option<&StoredValue>,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_shared_dll(path, expected, replacement)
+    }
     fn read_application(
         &self,
         name: &str,
@@ -518,6 +540,7 @@ mod tests {
             application_snapshot: None,
             application_repairable: false,
             application_hidden: false,
+            shared_dll_repairable: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -630,6 +653,7 @@ mod tests {
             application_snapshot: None,
             application_repairable: false,
             application_hidden: false,
+            shared_dll_repairable: false,
             service_repairable: false,
         };
         let mut manager =
@@ -793,6 +817,7 @@ mod tests {
                 application_snapshot: None,
                 application_repairable: false,
                 application_hidden: false,
+                shared_dll_repairable: false,
                 service_repairable: false,
             };
             let mut manager =

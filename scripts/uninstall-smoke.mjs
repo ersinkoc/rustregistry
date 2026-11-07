@@ -11,6 +11,7 @@ export async function verifyUninstallRecovery(page, output, checked, summary) {
   const token = randomUUID();
   const name = `RustRegistry-E2E-Uninstall-${token}`;
   await page.locator('nav').getByRole('button', { name: 'Backups & restore', exact: true }).click();
+  await expect(page.locator('.backup-location .mono')).toHaveText(/^[a-z]:\\/i);
   const storagePath = await page.locator('.backup-location .mono').innerText();
   const shell = join(
     process.env.SystemRoot || 'C:\\Windows',

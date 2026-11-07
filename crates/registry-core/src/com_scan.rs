@@ -142,6 +142,7 @@ pub(super) fn scan_com(
                 application_snapshot: None,
                 application_repairable: false,
                 application_hidden: false,
+                shared_dll_repairable: false,
                 service_repairable: false,
                 com_state: state,
             });

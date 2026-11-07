@@ -67,6 +67,7 @@ pub struct RegistryEntry {
     pub application_snapshot: Option<crate::applications::ApplicationSnapshot>,
     pub application_repairable: bool,
     pub application_hidden: bool,
+    pub shared_dll_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
