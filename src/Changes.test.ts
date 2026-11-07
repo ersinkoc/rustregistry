@@ -22,6 +22,27 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers backed-up recovery for guarded folder and all-filesystem menu commands', () => {
+    for (const root of ['AllFileSystemObjects', 'Folder']) {
+      const menu = {
+        ...entry,
+        category: 'shell_menus' as const,
+        keyPath: `Software\\Classes\\${root}\\shell\\Example.Custom\\command`,
+        valueName: '',
+        menuRepairable: true,
+        menuHidden: false,
+      };
+      expect(canQuarantine(menu)).toBe(true);
+      for (const changed of [
+        { ...menu, hive: 'HKLM' },
+        { ...menu, view: '64' },
+        { ...menu, menuHidden: true },
+        { ...menu, menuRepairable: false },
+        { ...menu, keyPath: `${menu.keyPath}\\nested` },
+      ])
+        expect(canQuarantine(changed)).toBe(false);
+    }
+  });
   it('offers individual TreatAs recovery only for verified native current-user REG_SZ references', () => {
     const redirection = {
       ...entry,

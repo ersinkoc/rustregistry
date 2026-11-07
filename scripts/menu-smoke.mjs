@@ -70,10 +70,10 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
         continue;
       }
       if (
-        record.schemaVersion === 16 &&
+        [16, 18].includes(record.schemaVersion) &&
         original?.fixtures.some(
           (f) =>
-            ['One', 'Two'].includes(f.kind) &&
+            ['One', 'Two', 'Three', 'Four'].includes(f.kind) &&
             record.menu?.verbName === f.verb &&
             record.menu?.location === f.location,
         )
@@ -139,7 +139,7 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
     await scan();
     await results();
     await page.getByRole('combobox', { name: 'Filter by status' }).selectOption('review');
-    await expect(page.locator('tbody tr')).toHaveCount(3);
+    await expect(page.locator('tbody tr')).toHaveCount(6);
     for (let index = 0; index < 2; index++) {
       const previous = exported.at(-1);
       await page.getByRole('button', { name: 'Export filtered JSON', exact: true }).click();
@@ -165,12 +165,14 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
         category: 'shell_menus',
         status: 'review',
       });
-      expect(document.exportedEntries).toBe(3);
-      expect(document.entries).toHaveLength(3);
-      expect(document.totalEntries).toBeGreaterThan(3);
+      expect(document.exportedEntries).toBe(6);
+      expect(document.entries).toHaveLength(6);
+      expect(document.totalEntries).toBeGreaterThan(6);
       expect(document.scan.cancelled).toBe(false);
       expect(document.entries.map((e) => e.name).sort()).toEqual(
-        ['One', 'Two', 'Protected'].map((k) => info(k).name).sort(),
+        ['One', 'Two', 'Three', 'Four', 'Protected', 'FolderProtected']
+          .map((k) => info(k).name)
+          .sort(),
       );
       expect(
         document.entries.every(
@@ -192,10 +194,16 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
     checked(
       'Filtered JSON exports save exactly the selected category/status/search results, preserve both previous reports, disable empty exports, and never alter registry data or backups',
     );
-    await expect(page.locator('tbody tr')).toHaveCount(7);
+    await expect(page.locator('tbody tr')).toHaveCount(13);
     for (const [kind, status] of [
       ['One', 'Review'],
       ['Two', 'Review'],
+      ['Three', 'Review'],
+      ['Four', 'Review'],
+      ['FilesystemFound', 'Found'],
+      ['FilesystemDelegated', 'Unverified'],
+      ['FolderHidden', 'Unverified'],
+      ['FolderProtected', 'Review'],
       ['Found', 'Found'],
       ['Protected', 'Review'],
       ['Empty', 'Unverified'],
@@ -207,7 +215,7 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
       });
       await expect(row.locator('.status-badge')).toHaveText(status);
       await row.locator('.entry-button').click();
-      if (['One', 'Two'].includes(kind))
+      if (['One', 'Two', 'Three', 'Four'].includes(kind))
         await expect(
           page.getByRole('button', { name: 'Review repair', exact: true }),
         ).toBeEnabled();
@@ -221,7 +229,7 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
       'Static menu inventory distinguishes missing/found commands, delegated and absent commands, protected verbs and already-hidden entries; only guarded custom user menus offer repair',
     );
 
-    const entryId = `HKCU|shared|Software\\Classes\\*\\shell\\${info('One').verb}\\command|`;
+    const entryId = `HKCU|shared|Software\\Classes\\AllFileSystemObjects\\shell\\${info('Three').verb}\\command|`;
     const plan = await page.evaluate(
       (id) => window.__TAURI_INTERNALS__.invoke('prepare_quarantine', { entryId: id }),
       entryId,
@@ -252,9 +260,19 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
 
     await page.locator('nav').getByRole('button', { name: 'Clean registry', exact: true }).click();
     await page.getByRole('button', { name: 'Review Quick Clean', exact: true }).click();
-    for (const kind of ['One', 'Two'])
+    for (const kind of ['One', 'Two', 'Three', 'Four'])
       await expect(page.getByRole('dialog')).toContainText(info(kind).name);
-    for (const kind of ['Found', 'Protected', 'Empty', 'Delegated', 'Hidden'])
+    for (const kind of [
+      'Found',
+      'Protected',
+      'Empty',
+      'Delegated',
+      'Hidden',
+      'FilesystemFound',
+      'FilesystemDelegated',
+      'FolderHidden',
+      'FolderProtected',
+    ])
       await expect(page.getByRole('dialog')).not.toContainText(info(kind).name);
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(await fixture('inspect')).toEqual(original);
@@ -263,11 +281,11 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
       'Quick Clean includes only verified custom missing-target menus; cancellation preserves all raw mappings, descriptions, control records, unrelated names, and permissions without backups',
     );
     for (const mode of ['single', 'selected']) {
-      const targets = mode === 'single' ? ['One'] : ['One', 'Two'];
+      const targets = mode === 'single' ? ['Three'] : ['One', 'Two', 'Three', 'Four'];
       if (mode === 'single') {
         await results();
         await page
-          .getByRole('button', { name: `${info('One').name} details`, exact: true })
+          .getByRole('button', { name: `${info('Three').name} details`, exact: true })
           .click();
         await page.getByRole('button', { name: 'Review repair', exact: true }).click();
         await expect(
@@ -276,7 +294,7 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
             exact: true,
           }),
         ).toBeVisible();
-        await expect(page.getByRole('dialog')).toContainText(info('One').command);
+        await expect(page.getByRole('dialog')).toContainText(info('Three').command);
         await expect(
           page.getByRole('button', { name: 'Back up & hide menu entry', exact: true }),
         ).toBeDisabled();
@@ -287,7 +305,7 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
           'Menu review displays the exact preserved command and current-user scope, requires confirmation, and cancels without mutation',
         );
         await page
-          .getByRole('button', { name: `${info('One').name} details`, exact: true })
+          .getByRole('button', { name: `${info('Three').name} details`, exact: true })
           .click();
         await page.getByRole('button', { name: 'Review repair', exact: true }).click();
       } else {
@@ -299,13 +317,13 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
         await page
           .getByRole('textbox', { name: 'Search cleaning candidates' })
           .fill(original.search);
-        await expect(page.locator('.clean-candidate')).toHaveCount(2);
+        await expect(page.locator('.clean-candidate')).toHaveCount(4);
         for (const kind of targets)
           await page
             .getByRole('checkbox', { name: `Select ${info(kind).name}`, exact: true })
             .check();
-        await page.getByRole('button', { name: 'Review selected (2)', exact: true }).click();
-        await expect(page.locator('.clean-review-items details')).toHaveCount(2);
+        await page.getByRole('button', { name: 'Review selected (4)', exact: true }).click();
+        await expect(page.locator('.clean-review-items details')).toHaveCount(4);
         await page.locator('.clean-review-items details summary').first().click();
       }
       await page.getByRole('dialog').getByRole('checkbox').check();
@@ -315,7 +333,7 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
       });
       await page
         .getByRole('button', {
-          name: mode === 'single' ? 'Back up & hide menu entry' : 'Back up & clean 2 entries',
+          name: mode === 'single' ? 'Back up & hide menu entry' : 'Back up & clean 4 entries',
           exact: true,
         })
         .click();
@@ -325,10 +343,13 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
       });
       expect(await fixture('inspect')).toEqual(removed(targets));
       const records = await backups();
-      expect(records).toHaveLength(mode === 'single' ? 1 : 3);
+      expect(records).toHaveLength(mode === 'single' ? 1 : 5);
       for (const { record } of records) {
         const fixtureInfo = original.fixtures.find(
           (f) => f.verb === record.menu.verbName && f.location === record.menu.location,
+        );
+        expect(record.schemaVersion).toBe(
+          ['all_file_system_objects', 'folder'].includes(fixtureInfo.location) ? 18 : 16,
         );
         const root = original.views[0].roots.find((r) => r.location === fixtureInfo.location);
         const menu = root.menus.find((m) => m.verb === fixtureInfo.verb);
@@ -349,8 +370,57 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
           commandValues: convert(menu.nodes.find((n) => n.path === 'command').values),
         });
       }
+      if (mode === 'single') {
+        await page
+          .locator('nav')
+          .getByRole('button', { name: 'Backups & restore', exact: true })
+          .click();
+        const search = page.getByRole('textbox', { name: 'Search backups', exact: true });
+        const state = page.getByRole('combobox', { name: 'Filter backups by state', exact: true });
+        await search.fill(original.search);
+        await state.selectOption('restore_available');
+        await expect(page.locator('.backup-item')).toHaveCount(1);
+        await expect(page.locator('.backup-item')).toContainText(info('Three').name);
+        await search.fill(records[0].record.id.toUpperCase());
+        await expect(page.locator('.backup-item')).toHaveCount(1);
+        await search.fill(`Software\\Classes\\AllFileSystemObjects\\shell\\${info('Three').verb}`);
+        await expect(page.locator('.backup-item')).toHaveCount(1);
+        await search.fill('Context-menu visibility');
+        const inventory = await page.evaluate(() =>
+          window.__TAURI_INTERNALS__.invoke('list_backups'),
+        );
+        await expect(page.locator('.backup-item')).toHaveCount(
+          inventory.backups.filter(
+            (b) => b.scope === 'shell_menu' && b.state === 'restore_available',
+          ).length,
+        );
+        await search.fill(original.search);
+        await state.selectOption('conflict');
+        await expect(
+          page.getByRole('heading', { name: 'No matching backups', exact: true }),
+        ).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Review restore', exact: true })).toHaveCount(
+          0,
+        );
+        await page.getByRole('button', { name: 'Clear backup filters', exact: true }).click();
+        await expect(search).toHaveValue('');
+        await expect(state).toHaveValue('all');
+        await expect(page.locator('.backup-item')).toHaveCount(inventory.backups.length);
+        await page.screenshot({
+          path: resolve(output, 'desktop-backup-discovery.png'),
+          fullPage: true,
+        });
+        expect(await fixture('inspect')).toEqual(removed(targets));
+        expect(await backups()).toEqual(records);
+        summary.backupSearchVerified = true;
+        checked(
+          'Backup search finds saved entries by ID, registry path and displayed scope; state filters combine with search, show honest empty results, clear back to the complete inventory and never alter registry data, backup bytes or restore eligibility',
+        );
+      }
       await results();
-      await page.getByRole('button', { name: `${info('One').name} details`, exact: true }).click();
+      await page
+        .getByRole('button', { name: `${info('Three').name} details`, exact: true })
+        .click();
       await expect(page.getByRole('dialog')).toContainText('shell_menu_hidden');
       await expect(page.getByRole('button', { name: 'Review repair', exact: true })).toHaveCount(0);
       await page.keyboard.press('Escape');
@@ -359,6 +429,36 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
       );
       for (const kind of targets) await restore(kind);
       expect(await fixture('inspect')).toEqual(original);
+      if (mode === 'single') {
+        await page
+          .locator('nav')
+          .getByRole('button', { name: 'Backups & restore', exact: true })
+          .click();
+        const search = page.getByRole('textbox', { name: 'Search backups', exact: true });
+        const state = page.getByRole('combobox', { name: 'Filter backups by state', exact: true });
+        await search.fill(original.search);
+        await state.selectOption('original_present');
+        await expect(page.locator('.backup-item')).toHaveCount(1);
+        await expect(
+          page
+            .locator('.backup-item')
+            .getByRole('button', { name: 'Original present', exact: true }),
+        ).toBeDisabled();
+        await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+        await expect(search).toHaveValue(original.search);
+        await expect(state).toHaveValue('original_present');
+        await expect(page.locator('.backup-item')).toHaveCount(1);
+        await state.selectOption('restore_available');
+        await expect(
+          page.getByRole('heading', { name: 'No matching backups', exact: true }),
+        ).toBeVisible();
+        await page.getByRole('button', { name: 'Clear backup filters', exact: true }).click();
+        summary.backupStateFilterVerified = true;
+        checked(
+          'After restoring a new filesystem-menu backup, Original present is disabled, Restore available excludes it, and refresh preserves the selected search/state without changing eligibility',
+        );
+      }
       checked(
         `${mode}: Menu backups survive reload and restore exact original REG_SZ/REG_EXPAND_SZ bytes and metadata without executing commands, loading icons, or changing defaults`,
       );

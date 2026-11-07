@@ -174,10 +174,7 @@ fn sources() -> Vec<Source> {
         });
     }
     for hive in ["HKCU", "HKLM"] {
-        for location in [
-            crate::shell_menus::MenuLocation::Files,
-            crate::shell_menus::MenuLocation::DirectoryBackground,
-        ] {
+        for location in crate::shell_menus::MenuLocation::ALL {
             result.push(Source {
                 category: Category::ShellMenus,
                 hive,

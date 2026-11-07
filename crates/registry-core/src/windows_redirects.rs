@@ -426,4 +426,36 @@ mod tests {
         assert!(!backups.exists());
         assert_eq!(read_value(&f.leaf(0), "").unwrap(), Some(f.original(0)));
     }
+    #[test]
+    fn restores_frozen_v0117_redirection_backup_without_migration_or_class_activation() {
+        let f = Fixture::new();
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = include_bytes!("../tests/fixtures/redirection-backup-v17.json");
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let id = record["id"].as_str().unwrap();
+        let app: RedirectionBackup = serde_json::from_value(record["redirection"].clone()).unwrap();
+        let original: StoredValue = serde_json::from_value(record["original"].clone()).unwrap();
+        let parent = f.create(&format!(r"User\CLSID\{}", app.owner));
+        for item in &app.guard.values {
+            parent
+                .set_raw_value(
+                    &item.name,
+                    &RegValue {
+                        vtype: REG_SZ,
+                        bytes: Cow::Borrowed(&item.value.bytes),
+                    },
+                )
+                .unwrap();
+        }
+        let leaf = parent.create_subkey("TreatAs").unwrap().0;
+        let file = dir.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut m = ChangeManager::new(f.store(), dir.path().to_path_buf(), NoProbe);
+        let p = m.prepare_restore(id).unwrap();
+        assert_eq!(p.scope, "com_redirection");
+        m.apply(&p.token).unwrap();
+        assert_eq!(read_value(&leaf, "").unwrap(), Some(original));
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+        assert_eq!(read_value(&f.leaf(0), "").unwrap(), Some(f.original(0)));
+    }
 }

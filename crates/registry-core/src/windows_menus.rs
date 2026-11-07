@@ -155,7 +155,7 @@ mod tests {
                 files: tempfile::tempdir().unwrap(),
             };
             for scope in ["User", "Machine"] {
-                for location in [MenuLocation::Files, MenuLocation::DirectoryBackground] {
+                for location in MenuLocation::ALL {
                     RegKey::predef(HKEY_CURRENT_USER)
                         .create_subkey(format!(
                             r"{}\{scope}\{}",
@@ -165,7 +165,7 @@ mod tests {
                         .unwrap();
                 }
             }
-            for i in 0..2 {
+            for i in 0..4 {
                 let key = f.create(i);
                 key.set_value("MUIVerb", &"Owned menu description").unwrap();
                 key.set_value("Icon", &r"C:\Preserved\icon.exe,0").unwrap();
@@ -185,11 +185,7 @@ mod tests {
             f
         }
         fn location(&self, i: usize) -> MenuLocation {
-            if i == 0 {
-                MenuLocation::Files
-            } else {
-                MenuLocation::DirectoryBackground
-            }
+            MenuLocation::ALL[i]
         }
         fn name(&self, i: usize) -> String {
             format!("RustRegistry.Custom{i}")
@@ -489,5 +485,232 @@ mod tests {
             Some(original)
         );
         assert_eq!(std::fs::read(file).unwrap(), bytes);
+    }
+    #[test]
+    fn folder_and_filesystem_menus_support_individual_and_batch_exact_recovery_after_restart() {
+        for (mode, start) in [("single", 2), ("single", 3), ("quick", 2), ("selected", 2)] {
+            let f = Fixture::new();
+            let dir = tempfile::tempdir().unwrap();
+            let backups = dir.path().join("backups");
+            let entries = [f.entry(start), f.entry(3)];
+            let originals = [
+                entries[0].menu_snapshot.clone().unwrap(),
+                entries[1].menu_snapshot.clone().unwrap(),
+            ];
+            let mut m = ChangeManager::new(f.store(), backups.clone(), LocalPathProbe);
+            let ids = if mode == "single" {
+                let p = m.prepare_quarantine(&entries[0]).unwrap();
+                m.cancel();
+                assert!(m.apply(&p.token).is_err());
+                let p = m.prepare_quarantine(&entries[0]).unwrap();
+                vec![m.apply(&p.token).unwrap().backup_id]
+            } else {
+                let p = m.prepare_clean(&entries, mode).unwrap();
+                m.cancel();
+                assert!(m.apply_clean(&p.token).is_err());
+                let p = m.prepare_clean(&entries, mode).unwrap();
+                let r = m.apply_clean(&p.token).unwrap();
+                assert!(r.failed.is_none());
+                assert_eq!(r.completed.len(), 2);
+                r.completed.into_iter().map(|v| v.backup_id).collect()
+            };
+            drop(m);
+            let mut m = ChangeManager::new(f.store(), backups.clone(), LocalPathProbe);
+            for (index, id) in ids.iter().enumerate() {
+                let i = index + start;
+                let bytes = std::fs::read(backups.join(format!("{id}.json"))).unwrap();
+                let record: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(record["schemaVersion"], 18);
+                assert_eq!(
+                    record["original"],
+                    serde_json::to_value(f.command(i)).unwrap()
+                );
+                assert_eq!(
+                    f.store().menu_snapshot(&f.selector(i)).unwrap(),
+                    originals[index].hidden().unwrap()
+                );
+                let p = m.prepare_restore(id).unwrap();
+                assert_eq!(p.scope, "shell_menu");
+                m.apply(&p.token).unwrap();
+                assert_eq!(
+                    f.store().menu_snapshot(&f.selector(i)).unwrap(),
+                    originals[index]
+                );
+                assert_eq!(
+                    std::fs::read(backups.join(format!("{id}.json"))).unwrap(),
+                    bytes
+                );
+            }
+            assert_eq!(
+                f.key(0, "command")
+                    .get_raw_value("")
+                    .unwrap()
+                    .bytes
+                    .as_ref(),
+                f.command(0).bytes
+            );
+            assert_eq!(
+                f.key(1, "command")
+                    .get_raw_value("")
+                    .unwrap()
+                    .bytes
+                    .as_ref(),
+                f.command(1).bytes
+            );
+        }
+    }
+    #[test]
+    fn new_menu_roots_block_conflicting_repair_and_restore_without_touching_commands_or_other_scopes(
+    ) {
+        for i in [2, 3] {
+            for restore in [false, true] {
+                for scenario in 0..11 {
+                    let f = Fixture::new();
+                    let dir = tempfile::tempdir().unwrap();
+                    let backups = dir.path().join("backups");
+                    let mut m = ChangeManager::new(f.store(), backups.clone(), LocalPathProbe);
+                    let mut p = m.prepare_quarantine(&f.entry(i)).unwrap();
+                    let mut id = None;
+                    if restore {
+                        let result = m.apply(&p.token).unwrap();
+                        id = Some(result.backup_id.clone());
+                        p = m.prepare_restore(&result.backup_id).unwrap();
+                    }
+                    match scenario {
+                        0 => std::fs::write(f.file(i), b"owned inert file").unwrap(),
+                        1 => {
+                            RegKey::predef(HKEY_CURRENT_USER)
+                                .create_subkey(format!(
+                                    r"{}\Machine\{}\{}",
+                                    f.base,
+                                    f.location(i).components().join("\\"),
+                                    f.name(i)
+                                ))
+                                .unwrap();
+                        }
+                        2 => f
+                            .key(i, "command")
+                            .set_value("", &"changed command")
+                            .unwrap(),
+                        3 => f
+                            .key(i, "")
+                            .set_value("MUIVerb", &"changed display")
+                            .unwrap(),
+                        4 => {
+                            f.key(i, "").create_subkey("ddeexec").unwrap();
+                        }
+                        5 => f.key(i, "").delete_subkey("command").unwrap(),
+                        6 => f
+                            .key(i, "")
+                            .set_value(PROGRAMMATIC_ONLY, &"changed flag")
+                            .unwrap(),
+                        7 | 8 => {
+                            RegKey::predef(HKEY_CURRENT_USER)
+                                .open_subkey_with_flags(
+                                    format!(
+                                        r"{}\{}\{}",
+                                        f.base,
+                                        if scenario == 7 { "User" } else { "Machine" },
+                                        f.location(i).components().join("\\")
+                                    ),
+                                    KEY_ALL_ACCESS,
+                                )
+                                .unwrap()
+                                .set_value("", &f.name(i))
+                                .unwrap();
+                        }
+                        9 => f
+                            .key(i, "command")
+                            .set_value("DelegateExecute", &"unknown activation")
+                            .unwrap(),
+                        10 => {
+                            if let Some(id) = id {
+                                let path = backups.join(format!("{id}.json"));
+                                let mut record: serde_json::Value =
+                                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                                record["menu"]["location"] = serde_json::json!("files");
+                                std::fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+                            } else {
+                                std::fs::write(&backups, b"not a directory").unwrap();
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                    assert!(
+                        m.apply(&p.token).is_err(),
+                        "root={i}, restore={restore}, scenario={scenario}"
+                    );
+                    if scenario != 2 && scenario != 5 {
+                        assert_eq!(
+                            f.key(i, "command")
+                                .get_raw_value("")
+                                .unwrap()
+                                .bytes
+                                .as_ref(),
+                            f.command(i).bytes
+                        );
+                    }
+                    assert_eq!(
+                        f.key(5 - i, "command")
+                            .get_raw_value("")
+                            .unwrap()
+                            .bytes
+                            .as_ref(),
+                        f.command(5 - i).bytes
+                    );
+                    assert_eq!(
+                        f.key(0, "command")
+                            .get_raw_value("")
+                            .unwrap()
+                            .bytes
+                            .as_ref(),
+                        f.command(0).bytes
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn menu_backup_schema_cannot_reinterpret_new_namespaces_as_legacy_even_with_recomputed_integrity(
+    ) {
+        use sha2::{Digest, Sha256};
+        let f = Fixture::new();
+        let dir = tempfile::tempdir().unwrap();
+        let mut m = ChangeManager::new(f.store(), dir.path().to_path_buf(), LocalPathProbe);
+        let p = m.prepare_quarantine(&f.entry(2)).unwrap();
+        let r = m.apply(&p.token).unwrap();
+        let path = dir.path().join(format!("{}.json", r.backup_id));
+        let mut record: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        record["schemaVersion"] = serde_json::json!(16);
+        let menu: MenuBackup = serde_json::from_value(record["menu"].clone()).unwrap();
+        let original: StoredValue = serde_json::from_value(record["original"].clone()).unwrap();
+        let bytes = serde_json::to_vec(&(
+            16u32,
+            uuid::Uuid::parse_str(&r.backup_id).unwrap(),
+            record["name"].as_str().unwrap(),
+            record["valueName"].as_str().unwrap(),
+            record["createdAt"].as_u64().unwrap(),
+            &original,
+        ))
+        .unwrap();
+        record["integritySha256"] = serde_json::json!(format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&(bytes, Some(menu))).unwrap())
+        ));
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(m
+            .prepare_restore(&r.backup_id)
+            .unwrap_err()
+            .contains("does not match its backup format"));
+        assert!(f.store().menu_snapshot(&f.selector(2)).unwrap().is_hidden());
+        assert_eq!(
+            f.key(2, "command")
+                .get_raw_value("")
+                .unwrap()
+                .bytes
+                .as_ref(),
+            f.command(2).bytes
+        );
     }
 }

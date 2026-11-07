@@ -380,7 +380,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 47,
+    total: 51,
     entries: 0,
     current: '',
   });
@@ -444,7 +444,7 @@ export default function App() {
     setExportReceipt(null);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 47, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 51, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -1257,7 +1257,7 @@ export default function App() {
                 <div>
                   <h2>Focused scope. Transparent results.</h2>
                   <p>
-                    This release checks 47 scan sections, including separate 32-bit and 64-bit COM
+                    This release checks 51 scan sections, including separate 32-bit and 64-bit COM
                     views in both hives. ProgID and file association checks share Classes roots and
                     inspect different children. Services use the shared system view. Other
                     application locations use their documented 32-bit, 64-bit, or shared views.
@@ -1354,7 +1354,7 @@ export default function App() {
                         </strong>
                         <small>
                           {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/47 scan sections
+                          {formatDuration(item.durationMs)} · {item.scopes.length}/51 scan sections
                         </small>
                       </span>
                       <span className="readonly-pill">
@@ -1447,18 +1447,18 @@ export default function App() {
                     handlers and full system configuration are outside scan scope. COM checks cover
                     DLL, handler, and local-server mappings. Registered applications check bounded
                     Capabilities references. COM redirection diagnostics inspect TreatAs targets
-                    without activation. Context-menu diagnostics cover static file and
-                    folder-background commands, with protected visibility recovery for supported
-                    user entries. Application icon checks cover literal .ico files; protected
-                    recovery preserves the open command and metadata. Resource expressions remain
-                    unverified. COM proxy references check class registrations across both hives and
-                    views; simple native user orphans support backed-up recovery. COM interfaces
-                    check TypeLib references in both hives and architecture views; only guarded
-                    current-user 64-bit orphans support recovery. COM ProgID references check for
-                    registered CLSIDs in both hives and views. Type library checks inventory
-                    win32/win64 mappings; guarded neutral win64 user mappings support reversible
-                    repair. Guarded service and zero-count shared DLL repairs require existing
-                    Windows write access; 32-bit file targets remain unverified.
+                    without activation. Context-menu diagnostics cover static file, folder,
+                    filesystem-wide and folder-background commands, with protected visibility
+                    recovery for supported user entries. Application icon checks cover literal .ico
+                    files; protected recovery preserves the open command and metadata. Resource
+                    expressions remain unverified. COM proxy references check class registrations
+                    across both hives and views; simple native user orphans support backed-up
+                    recovery. COM interfaces check TypeLib references in both hives and architecture
+                    views; only guarded current-user 64-bit orphans support recovery. COM ProgID
+                    references check for registered CLSIDs in both hives and views. Type library
+                    checks inventory win32/win64 mappings; guarded neutral win64 user mappings
+                    support reversible repair. Guarded service and zero-count shared DLL repairs
+                    require existing Windows write access; 32-bit file targets remain unverified.
                   </li>
                   <li>
                     <ArrowDownLeft size={17} />

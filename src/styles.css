@@ -2117,3 +2117,15 @@ tr:hover td {
   display: block;
   margin-top: 6px;
 }
+
+.backup-filters {
+  flex-wrap: wrap;
+}
+.backup-filters .search-field {
+  flex-basis: 240px;
+}
+.backup-filter-count {
+  padding: 0 24px 12px;
+  color: var(--muted);
+  font-size: 11px;
+}

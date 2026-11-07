@@ -358,10 +358,10 @@ try {
     checked('Search empty state is honest and clearing filters restores real entries');
 
     await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-    await expect(page.locator('.scope-item')).toHaveCount(47);
+    await expect(page.locator('.scope-item')).toHaveCount(51);
     await page.locator('.scope-item summary').first().click();
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-    checked('Coverage lists all 47 registry scan sections with expandable read results');
+    checked('Coverage lists all 51 registry scan sections with expandable read results');
 
     await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
     await expect(page.locator('.history-item')).toHaveCount(1);

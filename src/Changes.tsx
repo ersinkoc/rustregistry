@@ -6,11 +6,13 @@ import {
   Info,
   LockKeyhole,
   RotateCw,
+  Search,
   ShieldCheck,
   TriangleAlert,
   X,
 } from 'lucide-react';
 import type { RegistryEntry } from './model';
+import { backupScopeLabel, filterBackups, type BackupStateFilter } from './backups';
 
 export interface ChangePlan {
   token: string;
@@ -108,7 +110,7 @@ export function canQuarantine(entry: RegistryEntry) {
       ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
       entry.assessment.status === 'review' &&
       entry.assessment.code === 'target_missing' &&
-      /^software\\classes\\(?:\*|directory\\background)\\shell\\[a-z0-9][a-z0-9._-]{0,127}\\command$/i.test(
+      /^software\\classes\\(?:\*|directory\\background|allfilesystemobjects|folder)\\shell\\[a-z0-9][a-z0-9._-]{0,127}\\command$/i.test(
         entry.keyPath,
       )
     );
@@ -867,6 +869,8 @@ export function BackupsPanel({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [query, setQuery] = useState('');
+  const [stateFilter, setStateFilter] = useState<BackupStateFilter>('all');
   useEffect(() => {
     let active = true;
     if (!isTauri()) return;
@@ -888,6 +892,7 @@ export function BackupsPanel({
       active = false;
     };
   }, [revision, refresh]);
+  const shownBackups = filterBackups(inventory?.backups ?? [], query, stateFilter);
   return (
     <>
       <div className="coverage-intro">
@@ -934,6 +939,47 @@ export function BackupsPanel({
             Refresh
           </button>
         </div>
+        {!!inventory?.backups.length && (
+          <>
+            <div className="table-toolbar backup-filters">
+              <label className="search-field">
+                <Search size={15} />
+                <input
+                  aria-label="Search backups"
+                  placeholder="Search name, location, value, scope or backup ID…"
+                  value={query}
+                  disabled={busy}
+                  onChange={(event) => setQuery(event.target.value)}
+                />
+              </label>
+              <select
+                aria-label="Filter backups by state"
+                value={stateFilter}
+                disabled={busy}
+                onChange={(event) => setStateFilter(event.target.value as BackupStateFilter)}
+              >
+                <option value="all">All states</option>
+                <option value="restore_available">Restore available</option>
+                <option value="original_present">Original present</option>
+                <option value="conflict">Conflict blocked</option>
+                <option value="unverified">Unverified</option>
+              </select>
+              <button
+                className="secondary-button"
+                disabled={busy || (!query && stateFilter === 'all')}
+                onClick={() => {
+                  setQuery('');
+                  setStateFilter('all');
+                }}
+              >
+                Clear backup filters
+              </button>
+            </div>
+            <p className="backup-filter-count" aria-live="polite">
+              Showing {shownBackups.length} of {inventory.backups.length} backups
+            </p>
+          </>
+        )}
         {!inventory?.backups.length ? (
           <div className="empty-state">
             <div className="empty-icon">
@@ -945,9 +991,20 @@ export function BackupsPanel({
               alone never creates a backup or changes the registry.
             </p>
           </div>
+        ) : !shownBackups.length ? (
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Search size={29} />
+            </div>
+            <h3>No matching backups</h3>
+            <p>
+              Change the search or state filter to find a saved backup. Filtering never changes a
+              backup or its restore eligibility.
+            </p>
+          </div>
         ) : (
           <div className="backup-list">
-            {inventory.backups.map((backup) => (
+            {shownBackups.map((backup) => (
               <article className="backup-item" key={backup.id}>
                 <span className={`history-icon ${backup.state === 'conflict' ? 'amber' : ''}`}>
                   <ArchiveRestore size={20} />
@@ -959,39 +1016,8 @@ export function BackupsPanel({
                     <Clock3 size={12} />
                     {new Date(backup.createdAt).toLocaleString('en-US')}
                     <span>
-                      ·{' '}
-                      {backup.scope === 'com_redirection'
-                        ? 'COM class redirection'
-                        : backup.scope === 'shell_menu'
-                          ? 'Context-menu visibility'
-                          : backup.scope === 'application_icon'
-                            ? 'Application icon reference'
-                            : backup.scope === 'com_proxy'
-                              ? 'COM proxy reference'
-                              : backup.scope === 'interface'
-                                ? 'COM interface TypeLib reference'
-                                : backup.scope === 'prog_id'
-                                  ? 'COM ProgID mapping'
-                                  : backup.scope === 'type_library'
-                                    ? 'Type library · win64'
-                                    : backup.scope === 'registered_app'
-                                      ? 'Application registration'
-                                      : backup.scope === 'shared_dll'
-                                        ? 'Shared DLL reference · 64 bit'
-                                        : backup.scope === 'application'
-                                          ? 'Application suggestion'
-                                          : backup.scope === 'service'
-                                            ? 'Service startup'
-                                            : backup.scope === 'com'
-                                              ? `COM mapping · ${backup.registryView} bit`
-                                              : backup.scope === 'association'
-                                                ? 'File association'
-                                                : backup.scope === 'uninstall'
-                                                  ? 'Uninstall'
-                                                  : backup.scope === 'app_path'
-                                                    ? 'Application path'
-                                                    : 'Startup'}{' '}
-                      · {backup.valueName || '(Default)'}
+                      · {backupScopeLabel(backup.scope, backup.registryView)} ·{' '}
+                      {backup.valueName || '(Default)'}
                     </span>
                   </small>
                   <code>{backup.id}</code>

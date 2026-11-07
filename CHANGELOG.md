@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.18 — 2026-11-07
+
+- Expand context-menu diagnostics to shared HKCU/HKLM AllFileSystemObjects and Folder static-command roots, bringing coverage from 47 to 51 logical sections. Include found, missing, delegated, already-hidden and protected controls without executing commands, loading icons or activating handlers.
+- Add individually reviewed, backed-up visibility recovery for guarded custom current-user commands in both new namespaces, plus selected Clean and Quick Clean support. Preserve exact commands/arguments, display metadata, existing defaults, keys, permissions and files; add only an empty ProgrammaticAccessOnly flag. Programmatic invocation remains possible, and Explorer presentation/caching is not promised.
+- Use integrity-protected schema 18 backups for the two new menu namespaces; retain unchanged schema 16 for file/background menus and formats 1–17 overall. Bind each menu namespace to its supported schema, rejecting format/scope mismatches even when a checksum is recomputed. Restore only while the missing-target evidence and complete supported live snapshot still match.
+- Add backup discovery search across name, registry path, value name, displayed scope and backup ID, combined with live-state filters. Show matched/total counts, an honest no-match state, and a clear-filters action. Preserve search/state on refresh and keep native restore eligibility unchanged.
+- Add four-root individual/batch restart/restore, new-root conflict, format-boundary and frozen v0.1.17 TreatAs restoration tests. Expand owned packaged checks to mixed legacy/new menu backups, four-location selected recovery, new-namespace controls, filtered findings reports, backup search/state/refresh and complete cleanup of owned namespace components, files, reports and backups.
+
 ## 0.1.17 — 2026-11-07
 
 - Expand diagnostics from 43 to 47 logical scan sections with COM class TreatAs redirections under HKCU/HKLM in both architecture views. Check target CLSID-key existence in all four views without activation, resolution APIs, redirection-chain traversal, library loading, or file probes. Distinguish existing, locally missing, malformed, absent, unsupported-type, and self-referencing mappings.

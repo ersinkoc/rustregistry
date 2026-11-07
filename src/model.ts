@@ -92,7 +92,8 @@ export const categories: Record<Category, { label: string; description: string; 
   },
   shell_menus: {
     label: 'Context-menu commands',
-    description: 'File and folder-background menu diagnostics and protected visibility recovery',
+    description:
+      'File, folder, filesystem-wide and background menu diagnostics with protected visibility recovery',
     short: 'Context menu',
   },
   application_icons: {

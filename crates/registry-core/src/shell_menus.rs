@@ -6,30 +6,49 @@ use crate::{
 use serde::{Deserialize, Serialize};
 pub const FILE_MENUS_KEY: &str = r"Software\Classes\*\shell";
 pub const BACKGROUND_MENUS_KEY: &str = r"Software\Classes\Directory\Background\shell";
+pub const FILESYSTEM_MENUS_KEY: &str = r"Software\Classes\AllFileSystemObjects\shell";
+pub const FOLDER_MENUS_KEY: &str = r"Software\Classes\Folder\shell";
 pub const PROGRAMMATIC_ONLY: &str = "ProgrammaticAccessOnly";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MenuLocation {
     Files,
     DirectoryBackground,
+    AllFileSystemObjects,
+    Folder,
 }
 impl MenuLocation {
+    pub const ALL: [Self; 4] = [
+        Self::Files,
+        Self::DirectoryBackground,
+        Self::AllFileSystemObjects,
+        Self::Folder,
+    ];
+    pub fn backup_schema(self) -> u32 {
+        match self {
+            Self::Files | Self::DirectoryBackground => 16,
+            Self::AllFileSystemObjects | Self::Folder => 18,
+        }
+    }
+
     pub fn path(self) -> &'static str {
         match self {
             Self::Files => FILE_MENUS_KEY,
             Self::DirectoryBackground => BACKGROUND_MENUS_KEY,
+            Self::AllFileSystemObjects => FILESYSTEM_MENUS_KEY,
+            Self::Folder => FOLDER_MENUS_KEY,
         }
     }
     pub fn components(self) -> &'static [&'static str] {
         match self {
             Self::Files => &["*", "shell"],
             Self::DirectoryBackground => &["Directory", "Background", "shell"],
+            Self::AllFileSystemObjects => &["AllFileSystemObjects", "shell"],
+            Self::Folder => &["Folder", "shell"],
         }
     }
     pub fn from_path(path: &str) -> Option<Self> {
-        [Self::Files, Self::DirectoryBackground]
-            .into_iter()
-            .find(|p| p.path() == path)
+        Self::ALL.into_iter().find(|p| p.path() == path)
     }
 }
 pub fn validate_custom_verb(name: &str) -> Result<(), String> {
@@ -209,6 +228,16 @@ pub struct MenuBackup {
     pub snapshot: MenuSnapshot,
 }
 impl MenuBackup {
+    pub fn validate_schema(&self, version: u32) -> Result<(), String> {
+        self.validate()?;
+        if self.location.backup_schema() != version {
+            return Err(
+                "The menu location does not match its backup format. Restore is blocked.".into(),
+            );
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         validate_custom_verb(&self.verb_name)?;
         self.snapshot.validate_original()
@@ -217,6 +246,21 @@ impl MenuBackup {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn menu_locations_include_folder_and_all_filesystem_static_commands() {
+        for path in [
+            r"Software\Classes\AllFileSystemObjects\shell",
+            r"Software\Classes\Folder\shell",
+        ] {
+            let location = MenuLocation::from_path(path);
+            assert!(
+                location.is_some(),
+                "Static menu root was not recognized: {path}"
+            );
+            assert_eq!(location.unwrap().path(), path);
+        }
+        assert!(MenuLocation::from_path(r"Software\Classes\Unknown\shell").is_none());
+    }
     pub(super) fn value(name: &str, text: &str) -> NamedValue {
         NamedValue {
             name: name.into(),

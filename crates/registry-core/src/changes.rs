@@ -890,9 +890,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 None,
                 Some(app),
                 None,
-                16,
+                16 | 18,
             ) if record.value_name == PROGRAMMATIC_ONLY => {
-                app.validate()?;
+                app.validate_schema(record.schema_version)?;
                 if app.snapshot.command()? != &record.original {
                     return Err("Menu command backup evidence does not match.".into());
                 }
@@ -951,7 +951,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             serde_json::to_vec(&(bytes, &record.com)).map_err(|e| e.to_string())?
         } else if record.schema_version == 17 {
             serde_json::to_vec(&(bytes, &record.redirection)).map_err(|e| e.to_string())?
-        } else if record.schema_version == 16 {
+        } else if matches!(record.schema_version, 16 | 18) {
             serde_json::to_vec(&(bytes, &record.menu)).map_err(|e| e.to_string())?
         } else if record.schema_version == 15 {
             serde_json::to_vec(&(bytes, &record.icon)).map_err(|e| e.to_string())?
@@ -1720,7 +1720,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     .into(),
             );
         }
-        let (location, verb_name) = [MenuLocation::Files, MenuLocation::DirectoryBackground]
+        let (location, verb_name) = MenuLocation::ALL
             .into_iter()
             .find_map(|location| {
                 entry
@@ -1746,7 +1746,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             return Err("Menu evidence changed after scanning. Scan again.".into());
         }
         let mut record = BackupRecord {
-            schema_version: 16,
+            schema_version: location.backup_schema(),
             id: Uuid::new_v4(),
             name: entry.name.clone(),
             value_name: PROGRAMMATIC_ONLY.into(),
