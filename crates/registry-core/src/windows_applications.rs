@@ -280,6 +280,7 @@ mod tests {
                 application_repairable: true,
                 application_hidden: false,
                 shared_dll_repairable: false,
+                registered_app_repairable: false,
             }
         }
     }

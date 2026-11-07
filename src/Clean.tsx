@@ -243,21 +243,23 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'shared_dll'
-                  ? 'Remove missing zero-count DLL reference · 64 bit'
-                  : item.scope === 'application'
-                    ? 'Hide broken application suggestion · NoOpenWith'
-                    : item.scope === 'service'
-                      ? 'Disable stopped service · Manual → Disabled'
-                      : item.scope === 'uninstall'
-                        ? 'Hide orphaned listing · SystemComponent → 1'
-                        : item.scope === 'association'
-                          ? 'Remove Open with suggestion'
-                          : item.scope === 'com'
-                            ? 'Disable COM mapping'
-                            : item.scope === 'app_path'
-                              ? 'Remove broken application path'
-                              : 'Disable startup value'}
+                {item.scope === 'registered_app'
+                  ? 'Remove orphaned application registration'
+                  : item.scope === 'shared_dll'
+                    ? 'Remove missing zero-count DLL reference · 64 bit'
+                    : item.scope === 'application'
+                      ? 'Hide broken application suggestion · NoOpenWith'
+                      : item.scope === 'service'
+                        ? 'Disable stopped service · Manual → Disabled'
+                        : item.scope === 'uninstall'
+                          ? 'Hide orphaned listing · SystemComponent → 1'
+                          : item.scope === 'association'
+                            ? 'Remove Open with suggestion'
+                            : item.scope === 'com'
+                              ? 'Disable COM mapping'
+                              : item.scope === 'app_path'
+                                ? 'Remove broken application path'
+                                : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -326,6 +328,13 @@ export function CleanConfirmation({
           Shared DLL cleanup removes only confirmed missing zero-count references in the 64-bit
           machine view. Positive counters and files are preserved. Existing Windows write access is
           required, and restore is blocked if a new counter or file appears.
+        </p>
+      )}
+      {plan.items.some((item) => item.scope === 'registered_app') && (
+        <p className="change-intro">
+          Application registration cleanup removes only current-user values with confirmed missing
+          Capabilities and no machine counterpart. Default selections, UserChoice, other keys,
+          commands, and files are preserved. New targets or registrations block repair and restore.
         </p>
       )}
       <label className="confirmation-check">

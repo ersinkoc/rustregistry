@@ -11,6 +11,7 @@ pub enum Category {
     Com,
     Services,
     SharedDlls,
+    RegisteredApplications,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +69,7 @@ pub struct RegistryEntry {
     pub application_repairable: bool,
     pub application_hidden: bool,
     pub shared_dll_repairable: bool,
+    pub registered_app_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

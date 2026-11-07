@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.10 — 2026-11-07
+
+- Expand read-only coverage from 23 to 25 registry locations with shared HKCU/HKLM RegisteredApplications inventory. Check literal supported Capabilities registry references without probing files or running application commands; distinguish existing, missing, and unverified targets.
+- Add separately reviewed, backed-up removal of orphaned current-user RegisteredApplications values, including Quick Clean and selected Clean. Require a missing user target, no same-named machine registration, no matching machine target in either view, exact live value evidence, and existing write access.
+- Preserve default application selections, UserChoice, ProgIDs, Capabilities keys, existing child trees including PackagedApps, unrelated registrations, raw control values, permissions, and all files. Machine registrations, protected namespaces, links, environment expressions, unsupported types, and uncertain evidence remain read-only.
+- Flush and verify a separate schema 10 backup before conditionally removing one named value in a Windows registry transaction. Restore its exact REG_SZ bytes only if still absent and all orphan/counterpart guards continue to hold. New targets or registrations, missing roots, or corrupted/mismatched backups block changes.
+- Permit multiple independent registration values in one batch with individual backups, stop on the first conflict, and keep earlier completed changes independently restorable. Preserve formats 1–9 without migration, with a fixed legacy 0.1.9 backup restoration test.
+- Add native policy, inventory, write-access, transactional conflict, batch, restart/restore, and compatibility tests plus owned-fixture packaged UI checks for Quick Clean review, single and two-entry selected repair, exact reload/restore, control data, root permissions, and cleanup.
+
 ## 0.1.9 — 2026-11-07
 
 - Add backed-up, reversible removal of confirmed missing literal local DLL references with exact DWORD zero counts in HKLM's 64-bit SharedDLLs key. Include eligible references in individual repair, Quick Clean, and selected Clean.

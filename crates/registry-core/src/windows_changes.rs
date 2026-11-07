@@ -4,6 +4,8 @@ mod applications;
 mod associations;
 #[path = "windows_com.rs"]
 mod com;
+#[path = "windows_registered_apps.rs"]
+mod registered_apps;
 #[path = "windows_services.rs"]
 mod services;
 #[path = "windows_shared_dlls.rs"]
@@ -13,6 +15,7 @@ use crate::changes::{
     RegistryStore, StoredValue, APP_PATHS_KEY, STARTUP_KEY,
 };
 use crate::uninstall::{validate_uninstall_name, UninstallSnapshot, COMPONENT, UNINSTALL_KEY};
+pub(crate) use registered_apps::open_registration_path;
 use std::borrow::Cow;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
@@ -26,6 +29,10 @@ pub struct WindowsRegistryStore {
     com_path: String,
     machine_com_path: String,
     services_path: String,
+    registered_app_path: String,
+    machine_registered_app_path: String,
+    #[cfg(test)]
+    registered_app_test_machine: Option<String>,
     shared_dll_path: String,
     #[cfg(test)]
     shared_dll_test_user: bool,
@@ -42,6 +49,10 @@ impl Default for WindowsRegistryStore {
             com_path: crate::com::CLSID_KEY.into(),
             machine_com_path: crate::com::CLSID_KEY.into(),
             services_path: crate::services::SERVICES_KEY.into(),
+            registered_app_path: crate::registered_apps::REGISTERED_APPS_KEY.into(),
+            machine_registered_app_path: crate::registered_apps::REGISTERED_APPS_KEY.into(),
+            #[cfg(test)]
+            registered_app_test_machine: None,
             shared_dll_path: crate::shared_dlls::SHARED_DLLS_KEY.into(),
             #[cfg(test)]
             shared_dll_test_user: false,
@@ -146,6 +157,26 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_registered_app(
+        &self,
+        name: &str,
+        original: &StoredValue,
+    ) -> Result<Option<StoredValue>, String> {
+        self.registration_value(name, original)
+    }
+    fn check_registered_app_write_access(&self) -> Result<(), String> {
+        self.registration_write_access()
+    }
+    fn compare_exchange_registered_app(
+        &self,
+        name: &str,
+        original: &StoredValue,
+        expected: Option<&StoredValue>,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_registration(name, original, expected, replacement)
+    }
+
     fn read_shared_dll(&self, path: &str) -> Result<Option<StoredValue>, String> {
         self.shared_dll_value(path)
     }
@@ -541,6 +572,7 @@ mod tests {
             application_repairable: false,
             application_hidden: false,
             shared_dll_repairable: false,
+            registered_app_repairable: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -654,6 +686,7 @@ mod tests {
             application_repairable: false,
             application_hidden: false,
             shared_dll_repairable: false,
+            registered_app_repairable: false,
             service_repairable: false,
         };
         let mut manager =
@@ -818,6 +851,7 @@ mod tests {
                 application_repairable: false,
                 application_hidden: false,
                 shared_dll_repairable: false,
+                registered_app_repairable: false,
                 service_repairable: false,
             };
             let mut manager =

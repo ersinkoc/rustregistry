@@ -22,6 +22,29 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only verified current-user orphaned registered applications', () => {
+    const registration = {
+      ...entry,
+      category: 'registered_applications' as const,
+      keyPath: 'Software\\RegisteredApplications',
+      valueName: 'Example.Player',
+      valueType: 'REG_SZ',
+      rawValue: 'Software\\Example\\Player\\Capabilities',
+      registeredAppRepairable: true,
+      assessment: { ...entry.assessment, code: 'capabilities_missing' },
+    };
+    expect(canQuarantine(registration)).toBe(true);
+    for (const changed of [
+      { ...registration, hive: 'HKLM' },
+      { ...registration, view: '32' },
+      { ...registration, registeredAppRepairable: false },
+      { ...registration, valueType: 'REG_EXPAND_SZ' },
+      { ...registration, keyPath: `${registration.keyPath}\\Nested` },
+      { ...registration, valueName: '' },
+      { ...registration, assessment: { ...registration.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers shared DLL repair only for verified zero-count machine-wide 64-bit references', () => {
     const shared: RegistryEntry = {
       ...entry,

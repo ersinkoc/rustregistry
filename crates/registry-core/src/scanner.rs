@@ -56,6 +56,13 @@ fn sources() -> Vec<Source> {
     }
     for hive in ["HKCU", "HKLM"] {
         result.push(Source {
+            category: Category::RegisteredApplications,
+            hive,
+            path: crate::registered_apps::REGISTERED_APPS_KEY,
+            flag: 0,
+            view: "shared",
+        });
+        result.push(Source {
             category: Category::ApplicationCommands,
             hive,
             path: application_scan::APPLICATIONS_KEY,
@@ -166,8 +173,9 @@ fn make_entry(
         .ok()
         .filter(|value| {
             source.hive == "HKCU"
-                && ((source.category == Category::Startup
-                    && source.path == crate::changes::STARTUP_KEY)
+                && ((source.category == Category::RegisteredApplications)
+                    || (source.category == Category::Startup
+                        && source.path == crate::changes::STARTUP_KEY)
                     || (source.category == Category::AppPaths
                         && source.path == crate::changes::APP_PATHS_KEY))
                 && value.bytes.len() <= MAX_VALUE_BYTES
@@ -193,9 +201,10 @@ fn make_entry(
                         }
                         Category::AppPaths => TargetKind::File,
                         Category::Uninstall => TargetKind::Directory,
-                        Category::FileAssociations | Category::Com | Category::SharedDlls => {
-                            TargetKind::File
-                        }
+                        Category::FileAssociations
+                        | Category::Com
+                        | Category::SharedDlls
+                        | Category::RegisteredApplications => TargetKind::File,
                     };
                     let assessment = if source.category == Category::ApplicationCommands {
                         application_scan::assess_command(&raw, environment, probe)
@@ -255,6 +264,7 @@ fn make_entry(
         application_repairable: false,
         application_hidden: false,
         shared_dll_repairable: false,
+        registered_app_repairable: false,
         service_repairable: false,
     }
 }
@@ -270,6 +280,8 @@ mod extra_scan;
 use extra_scan::scan_shared_dlls;
 #[path = "application_scan.rs"]
 mod application_scan;
+#[path = "registered_apps_scan.rs"]
+mod registered_apps_scan;
 
 fn scan_source(
     source: &Source,
@@ -298,7 +310,7 @@ fn scan_source(
         source.path,
         if matches!(
             source.category,
-            Category::ApplicationCommands | Category::SharedDlls
+            Category::ApplicationCommands | Category::SharedDlls | Category::RegisteredApplications
         ) {
             REG_OPTION_OPEN_LINK
         } else {
@@ -320,7 +332,7 @@ fn scan_source(
     };
     if matches!(
         source.category,
-        Category::ApplicationCommands | Category::SharedDlls
+        Category::ApplicationCommands | Category::SharedDlls | Category::RegisteredApplications
     ) && key
         .get_raw_value("SymbolicLinkValue")
         .is_ok_and(|v| v.vtype == REG_LINK)
@@ -330,7 +342,17 @@ fn scan_source(
         return scope;
     }
     let start_count = entries.len();
-    if source.category == Category::ApplicationCommands {
+    if source.category == Category::RegisteredApplications {
+        registered_apps_scan::scan_registered_applications(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::ApplicationCommands {
         application_scan::scan_applications(
             source,
             &key,

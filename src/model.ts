@@ -6,7 +6,8 @@ export type Category =
   | 'file_associations'
   | 'com'
   | 'services'
-  | 'shared_dlls';
+  | 'shared_dlls'
+  | 'registered_applications';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -28,6 +29,7 @@ export interface RegistryEntry {
   applicationRepairable?: boolean;
   applicationHidden?: boolean;
   sharedDllRepairable?: boolean;
+  registeredAppRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -68,6 +70,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  registered_applications: {
+    label: 'Registered applications',
+    description: 'Capabilities references and orphaned registration repair',
+    short: 'App registration',
+  },
   application_commands: {
     label: 'Application commands',
     description: 'Open commands and guarded suggestion repair',

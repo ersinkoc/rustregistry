@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 9,
+  "id": "99999999-9999-4999-8999-999999999999",
+  "name": "Legacy shared DLL reference",
+  "valueName": "C:\\RustRegistryMissing\\legacy-shared-dll.dll",
+  "createdAt": 9,
+  "original": {
+    "kind": 4,
+    "bytes": [0, 0, 0, 0]
+  },
+  "sharedDll": {
+    "path": "C:\\RustRegistryMissing\\legacy-shared-dll.dll",
+    "view": "64"
+  },
+  "integritySha256": "ce519a0c06f0e302c8678783e016cd9890b2906675a42abbad8338f29de667dd"
+}

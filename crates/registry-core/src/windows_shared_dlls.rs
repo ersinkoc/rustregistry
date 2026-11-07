@@ -173,6 +173,7 @@ mod tests {
                 application_repairable: false,
                 application_hidden: false,
                 shared_dll_repairable: true,
+                registered_app_repairable: false,
             }
         }
         fn assert_controls(&self) {
@@ -194,6 +195,33 @@ mod tests {
         fn drop(&mut self) {
             let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(&self.key);
         }
+    }
+
+    #[test]
+    fn restores_unchanged_v019_shared_dll_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let bytes = include_bytes!("../tests/fixtures/shared-dll-backup-v9.json");
+        let id = "99999999-9999-4999-8999-999999999999";
+        let file = directory.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut manager = ChangeManager::new(
+            fixture.store(),
+            directory.path().to_path_buf(),
+            LocalPathProbe,
+        );
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "shared_dll");
+        manager.apply(&plan.token).unwrap();
+        assert_eq!(
+            fixture
+                .key()
+                .get_value::<u32, _>(r"C:\RustRegistryMissing\legacy-shared-dll.dll")
+                .unwrap(),
+            0
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+        fixture.assert_controls();
     }
 
     #[test]

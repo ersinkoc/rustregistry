@@ -50,6 +50,9 @@ pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
                 && entry.key_path.eq_ignore_ascii_case(STARTUP_KEY)
                 && entry.snapshot.is_some()
         }
+        Category::RegisteredApplications => {
+            entry.view == "shared" && entry.registered_app_repairable
+        }
         Category::AppPaths => entry.app_path_repairable,
         Category::ApplicationCommands => {
             entry.view == "shared" && entry.application_repairable && !entry.application_hidden
@@ -90,7 +93,10 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 entry.hive,
                 entry.view,
                 entry.key_path.to_ascii_lowercase(),
-                if entry.category == Category::SharedDlls {
+                if matches!(
+                    entry.category,
+                    Category::SharedDlls | Category::RegisteredApplications
+                ) {
                     entry.value_name.to_ascii_lowercase()
                 } else {
                     String::new()
