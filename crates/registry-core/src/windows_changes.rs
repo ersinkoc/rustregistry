@@ -2,6 +2,8 @@
 mod associations;
 #[path = "windows_com.rs"]
 mod com;
+#[path = "windows_services.rs"]
+mod services;
 use crate::changes::{
     validate_app_path_name, validate_value_name, AppPathGuard, AppPathState, NamedValue,
     RegistryStore, StoredValue, APP_PATHS_KEY, STARTUP_KEY,
@@ -19,6 +21,7 @@ pub struct WindowsRegistryStore {
     file_exts_path: String,
     com_path: String,
     machine_com_path: String,
+    services_path: String,
 }
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
@@ -31,6 +34,7 @@ impl Default for WindowsRegistryStore {
             file_exts_path: crate::associations::FILE_EXTS_KEY.into(),
             com_path: crate::com::CLSID_KEY.into(),
             machine_com_path: crate::com::CLSID_KEY.into(),
+            services_path: crate::services::SERVICES_KEY.into(),
         }
     }
 }
@@ -132,6 +136,18 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_service(&self, name: &str) -> Result<crate::services::ServiceState, String> {
+        self.service_state(name)
+    }
+    fn set_service_disabled(
+        &self,
+        name: &str,
+        original: &crate::services::ServiceSnapshot,
+        disabled: bool,
+    ) -> Result<(), String> {
+        self.change_service_start(name, original, disabled)
+    }
+
     fn read_com(&self, clsid: &str) -> Result<crate::com::ComState, String> {
         self.com_state(clsid)
     }
@@ -481,6 +497,8 @@ mod tests {
             association_repairable: false,
             com_state: None,
             com_repairable: false,
+            service_state: None,
+            service_repairable: false,
         };
         let mut manager = ChangeManager::new(
             WindowsRegistryStore {
@@ -588,6 +606,8 @@ mod tests {
             association_repairable: false,
             com_state: None,
             com_repairable: false,
+            service_state: None,
+            service_repairable: false,
         };
         let mut manager =
             ChangeManager::new(store(), directory.path().join("backups"), LocalPathProbe);
@@ -746,6 +766,8 @@ mod tests {
                 association_repairable: false,
                 com_state: None,
                 com_repairable: false,
+                service_state: None,
+                service_repairable: false,
             };
             let mut manager =
                 ChangeManager::new(store(), directory.path().join("backups"), LocalPathProbe);

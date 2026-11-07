@@ -7,6 +7,7 @@ pub(super) fn scan_shared_dlls(
     environment: &Environment,
     entries: &mut Vec<RegistryEntry>,
     scope: &mut ScopeResult,
+    probe: &impl PathProbe,
 ) {
     for (index, item) in root.enum_values().enumerate() {
         if cancel.load(Ordering::Relaxed) {
@@ -38,7 +39,7 @@ pub(super) fn scan_shared_dlls(
         } else if source.view == "32" {
             Assessment {status: EntryStatus::Unknown, code: "shared_dll_32bit_unverified".into(), explanation: "This 32-bit shared-file reference was inventoried without probing its target in a 64-bit filesystem context. Usage counts are never changed.".into(), target: None}
         } else {
-            analyze_target(&path, TargetKind::File, environment, &LocalPathProbe)
+            analyze_target(&path, TargetKind::File, environment, probe)
         };
         entries.push(RegistryEntry {
             id: format!("{}|{}|{}|{path}", source.hive, source.view, source.path),
@@ -63,6 +64,8 @@ pub(super) fn scan_shared_dlls(
             association_repairable: false,
             com_state: None,
             com_repairable: false,
+            service_state: None,
+            service_repairable: false,
         });
     }
 }

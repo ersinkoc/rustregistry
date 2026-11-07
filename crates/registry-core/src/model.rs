@@ -59,6 +59,9 @@ pub struct RegistryEntry {
     #[serde(skip)]
     pub com_state: Option<crate::com::ComState>,
     pub com_repairable: bool,
+    #[serde(skip)]
+    pub service_state: Option<crate::services::ServiceState>,
+    pub service_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

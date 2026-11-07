@@ -247,6 +247,16 @@ async fn list_backups(changes: State<'_, Changes>) -> Result<BackupInventory, St
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+fn set_display_scale(window: tauri::WebviewWindow, percent: u32) -> Result<(), String> {
+    if ![100, 125, 150, 175, 200].contains(&percent) {
+        return Err("Unsupported interface size.".into());
+    }
+    window
+        .set_zoom(f64::from(percent) / 100.0)
+        .map_err(|error| error.to_string())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(ScanControl::default())
@@ -260,6 +270,7 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_display_scale,
             scan_registry,
             cancel_scan,
             prepare_quarantine,

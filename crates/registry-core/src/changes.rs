@@ -1,3 +1,7 @@
+use crate::services::{
+    validate_service_name, verify_missing_service, ServiceBackup, ServiceSnapshot, ServiceState,
+    SERVICES_KEY,
+};
 #[path = "batch.rs"]
 mod batch;
 use crate::associations::{
@@ -144,6 +148,18 @@ struct AppPathBackup {
 }
 
 pub trait RegistryStore {
+    fn read_service(&self, _name: &str) -> Result<ServiceState, String> {
+        Err("Service recovery is unavailable in this registry store.".into())
+    }
+    fn set_service_disabled(
+        &self,
+        _name: &str,
+        _original: &ServiceSnapshot,
+        _disabled: bool,
+    ) -> Result<(), String> {
+        Err("Service recovery is unavailable in this registry store.".into())
+    }
+
     fn read_com(&self, _clsid: &str) -> Result<ComState, String> {
         Err("COM recovery is unavailable in this registry store.".into())
     }
@@ -221,6 +237,7 @@ pub struct ChangePlan {
     pub preserved_values: usize,
     pub uninstall_command: Option<String>,
     pub component_was_present: bool,
+    pub service_executable: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,6 +258,8 @@ struct BackupRecord {
     association: Option<AssociationBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     com: Option<ComBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    service: Option<ServiceBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -342,14 +361,15 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.uninstall,
             &record.association,
             &record.com,
+            &record.service,
             record.schema_version,
         ) {
-            (None, None, None, None, 1) => validate_value_name(&record.value_name)?,
-            (Some(app), None, None, None, 2) if record.value_name.is_empty() => {
+            (None, None, None, None, None, 1) => validate_value_name(&record.value_name)?,
+            (Some(app), None, None, None, None, 2) if record.value_name.is_empty() => {
                 validate_app_path_name(&app.executable)?;
                 app.guard.validate()?;
             }
-            (None, Some(uninstall), None, None, 3) if record.value_name == COMPONENT => {
+            (None, Some(uninstall), None, None, None, 3) if record.value_name == COMPONENT => {
                 validate_uninstall_name(&uninstall.key_name)?;
                 uninstall.snapshot.validate_original()?;
                 if uninstall.snapshot.get("InstallLocation") != Some(&record.original) {
@@ -358,17 +378,24 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     );
                 }
             }
-            (None, None, Some(association), None, 4) => {
+            (None, None, Some(association), None, None, 4) => {
                 validate_extension(&association.extension)?;
                 association.guard.validate(&record.value_name)?;
                 validate_suggestion(&record.original)?;
             }
-            (None, None, None, Some(com), 5) if record.value_name.is_empty() => {
+            (None, None, None, Some(com), None, 5) if record.value_name.is_empty() => {
                 com.validate()?;
+            }
+            (None, None, None, None, Some(service), 6) if record.value_name == "Start" => {
+                validate_service_name(&service.service_name)?;
+                service.snapshot.validate_original()?;
+                if service.snapshot.get("Start") != Some(&record.original) {
+                    return Err("Service backup startup evidence does not match.".into());
+                }
             }
             _ => return Err("Unsupported backup format or registry scope.".into()),
         }
-        if record.association.is_none() {
+        if record.association.is_none() && record.service.is_none() {
             record.original.text()?;
         }
         if record.integrity_sha256 != Self::checksum(record)? {
@@ -395,6 +422,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             serde_json::to_vec(&(bytes, &record.association)).map_err(|e| e.to_string())?
         } else if record.schema_version == 5 {
             serde_json::to_vec(&(bytes, &record.com)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 6 {
+            serde_json::to_vec(&(bytes, &record.service)).map_err(|e| e.to_string())?
         } else {
             bytes
         };
@@ -490,6 +519,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     pub fn prepare_quarantine(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
         self.pending = None;
         self.batch_pending = None;
+        if entry.category == Category::Services {
+            return self.prepare_service(entry);
+        }
         if entry.hive != "HKCU"
             || (if entry.category == Category::Com {
                 entry.view != "64"
@@ -578,6 +610,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             uninstall: None,
             association: None,
             com: None,
+            service: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -628,6 +661,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }),
             association: None,
             com: None,
+            service: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -673,6 +707,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 guard: state.guard,
             }),
             com: None,
+            service: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -719,6 +754,60 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 view: "64".into(),
                 guard: state.guard,
             }),
+            service: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_service(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        if entry.hive != "HKLM"
+            || entry.view != "shared"
+            || entry.value_name != "ImagePath"
+            || entry.assessment.status != EntryStatus::Review
+            || entry.assessment.code != "target_missing"
+        {
+            return Err("Only a verified missing service image in the fixed shared service location is supported.".into());
+        }
+        let name = entry
+            .key_path
+            .strip_prefix(&format!("{SERVICES_KEY}\\"))
+            .ok_or("Unsupported service registry location.")?;
+        validate_service_name(name)?;
+        let evidence = entry
+            .service_state
+            .clone()
+            .ok_or("Service configuration evidence is unavailable. Scan again.")?;
+        evidence.validate_change()?;
+        verify_missing_service(&evidence.snapshot, &self.probe)?;
+        let current = self.store.read_service(name)?;
+        current.validate_change()?;
+        if current.snapshot != evidence.snapshot
+            || entry.raw_value != evidence.snapshot.config.binary_path
+            || entry.name != evidence.snapshot.config.display_name
+        {
+            return Err("The service changed after scanning. Nothing was changed.".into());
+        }
+        let mut record = BackupRecord {
+            schema_version: 6,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: "Start".into(),
+            created_at: now()?,
+            original: evidence
+                .snapshot
+                .get("Start")
+                .cloned()
+                .ok_or("Missing startup evidence.")?,
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: None,
+            association: None,
+            com: None,
+            service: Some(ServiceBackup {
+                service_name: name.into(),
+                snapshot: evidence.snapshot,
+            }),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -742,12 +831,16 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             value_name: record.value_name.clone(),
             registry_path: Self::registry_path(&record),
             registry_view: if record.com.is_some() { "64" } else { "shared" }.into(),
-            original_value: if record.association.is_some() {
+            original_value: if record.service.is_some() {
+                "3 (Manual)".into()
+            } else if record.association.is_some() {
                 "(empty)".into()
             } else {
                 record.original.text()?
             },
-            value_type: if record.association.is_some() && record.original.kind == 0 {
+            value_type: if record.service.is_some() {
+                "REG_DWORD"
+            } else if record.association.is_some() && record.original.kind == 0 {
                 "REG_NONE"
             } else if record.uninstall.is_some() {
                 "REG_DWORD"
@@ -758,7 +851,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.com.is_some() {
+            scope: if record.service.is_some() {
+                "service"
+            } else if record.com.is_some() {
                 "com"
             } else if record.association.is_some() {
                 "association"
@@ -770,7 +865,14 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "startup"
             }
             .into(),
-            preserved_values: if let Some(com) = &record.com {
+            preserved_values: if let Some(service) = &record.service {
+                service.snapshot.values.len()
+                    + service
+                        .snapshot
+                        .security_values
+                        .as_ref()
+                        .map_or(0, Vec::len)
+            } else if let Some(com) = &record.com {
                 com.guard.class_values.len() + com.guard.server_values.len()
             } else if let Some(association) = &record.association {
                 association.guard.suggestions.len()
@@ -787,6 +889,10 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 .as_ref()
                 .map(|uninstall| uninstall.snapshot.text("UninstallString"))
                 .transpose()?,
+            service_executable: record
+                .service
+                .as_ref()
+                .map(|service| service.snapshot.config.binary_path.clone()),
             component_was_present: record
                 .uninstall
                 .as_ref()
@@ -809,6 +915,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if let Some(service) = &record.service {
+            return format!("HKLM\\{SERVICES_KEY}\\{}", service.service_name);
+        }
         if let Some(com) = &record.com {
             return format!("HKCU\\{CLSID_KEY}\\{}\\{INPROC_SERVER}", com.clsid);
         }
@@ -828,6 +937,17 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
+        if let Some(service) = &record.service {
+            let state = self.store.read_service(&service.service_name)?;
+            state.validate_change()?;
+            if state.snapshot == service.snapshot {
+                return Ok(Some(record.original.clone()));
+            }
+            if state.snapshot == service.snapshot.disabled()? {
+                return Ok(None);
+            }
+            return Err("The service metadata, security, or startup configuration changed. Repair or restore is blocked.".into());
+        }
         if let Some(com) = &record.com {
             let state = self.store.read_com(&com.clsid)?;
             if state.guard != com.guard {
@@ -871,6 +991,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         expected: Option<StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if let Some(service) = &record.service {
+            return self.store.set_service_disabled(
+                &service.service_name,
+                &service.snapshot,
+                replacement.is_none(),
+            );
+        }
         if let Some(com) = &record.com {
             return self.store.compare_exchange_com(
                 &com.clsid,
@@ -935,7 +1062,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             self.read_record(&record)?;
             self.exchange_record(&record, None, Some(&record.original))?;
         } else {
-            if let Some(uninstall) = &record.uninstall {
+            if let Some(service) = &record.service {
+                verify_missing_service(&service.snapshot, &self.probe)?;
+            } else if let Some(uninstall) = &record.uninstall {
                 verify_orphan(&uninstall.snapshot, &self.probe)?;
             } else if record.com.is_some() {
                 verify_missing_dll(&record.original, &self.probe)?;
@@ -962,7 +1091,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.com.is_some() {
+            message: if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
                 if restore {"Original 64-bit COM DLL mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM DLL mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
@@ -1020,7 +1149,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             let (state, note) = match self.read_record(&record) {
                 Ok(None) => (
                     "restore_available",
-                    if record.uninstall.is_some() { "The uninstall entry matches its backed-up hidden state. Its original visibility can be restored." } else { "The value is absent. Its original can be reviewed for restore." }.into(),
+                    if record.service.is_some() { "The service matches its backed-up Disabled state. Its original Manual startup can be restored." } else if record.uninstall.is_some() { "The uninstall entry matches its backed-up hidden state. Its original visibility can be restored." } else { "The value is absent. Its original can be reviewed for restore." }.into(),
                 ),
                 Ok(Some(value)) if value == record.original => (
                     "original_present",
@@ -1032,7 +1161,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.com.is_some() {
+            let scope = if record.service.is_some() {
+                "service"
+            } else if record.com.is_some() {
                 "com"
             } else if record.association.is_some() {
                 "association"
@@ -1081,8 +1212,63 @@ mod tests {
         Rc<RefCell<HashMap<String, AppPathState>>>,
         Rc<RefCell<HashMap<String, UninstallSnapshot>>>,
         Rc<RefCell<HashMap<(String, String), AssociationState>>>,
+        Rc<RefCell<HashMap<String, ServiceState>>>,
+        Rc<RefCell<HashMap<String, ComState>>>,
     );
     impl RegistryStore for Memory {
+        fn read_service(&self, name: &str) -> Result<ServiceState, String> {
+            self.4
+                .borrow()
+                .get(name)
+                .cloned()
+                .ok_or("Service missing".into())
+        }
+        fn set_service_disabled(
+            &self,
+            name: &str,
+            original: &ServiceSnapshot,
+            disabled: bool,
+        ) -> Result<(), String> {
+            let mut services = self.4.borrow_mut();
+            let state = services.get_mut(name).ok_or("Service missing")?;
+            state.validate_change()?;
+            let expected = if disabled {
+                original.clone()
+            } else {
+                original.disabled()?
+            };
+            if state.snapshot != expected {
+                return Err("Service conflict".into());
+            }
+            state.snapshot = if disabled {
+                original.disabled()?
+            } else {
+                original.clone()
+            };
+            Ok(())
+        }
+        fn read_com(&self, name: &str) -> Result<ComState, String> {
+            self.5
+                .borrow()
+                .get(name)
+                .cloned()
+                .ok_or("COM key missing".into())
+        }
+        fn compare_exchange_com(
+            &self,
+            name: &str,
+            expected: &ComState,
+            replacement: Option<&StoredValue>,
+        ) -> Result<(), String> {
+            let mut records = self.5.borrow_mut();
+            let current = records.get_mut(name).ok_or("COM key missing")?;
+            if current != expected {
+                return Err("COM conflict".into());
+            }
+            current.value = replacement.cloned();
+            Ok(())
+        }
+
         fn read_association(
             &self,
             extension: &str,
@@ -1225,6 +1411,8 @@ mod tests {
             association_repairable: false,
             com_state: None,
             com_repairable: false,
+            service_state: None,
+            service_repairable: false,
         }
     }
     fn setup(path: &Path) -> (Memory, Rc<Cell<ProbeResult>>, ChangeManager<Memory, Probe>) {
@@ -1933,5 +2121,232 @@ mod tests {
                 .value,
             Some(original)
         );
+    }
+    fn service_entry(snapshot: ServiceSnapshot) -> RegistryEntry {
+        let mut record = entry();
+        record.id = "service".into();
+        record.name = "Example service".into();
+        record.category = Category::Services;
+        record.hive = "HKLM".into();
+        record.key_path = format!("{SERVICES_KEY}\\ExampleService");
+        record.value_name = "ImagePath".into();
+        record.raw_value = snapshot.config.binary_path.clone();
+        record.snapshot = None;
+        record.service_state = Some(ServiceState {
+            snapshot,
+            stopped: true,
+            has_dependents: false,
+            change_allowed: true,
+        });
+        record.service_repairable = true;
+        record
+    }
+    #[test]
+    fn service_quick_clean_backup_restart_and_restore_preserve_full_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let backups = dir.path().join("backups");
+        let (store, _, mut manager) = setup(&backups);
+        let snapshot = crate::services::fixture_snapshot();
+        let entry = service_entry(snapshot.clone());
+        store.4.borrow_mut().insert(
+            "ExampleService".into(),
+            entry.service_state.clone().unwrap(),
+        );
+        assert!(is_repair_candidate(&entry));
+        let plan = manager
+            .prepare_clean(std::slice::from_ref(&entry), "quick")
+            .unwrap();
+        assert_eq!(plan.items[0].scope, "service");
+        assert!(!backups.exists());
+        manager.cancel();
+        assert!(manager.apply_clean(&plan.token).is_err());
+        let plan = manager.prepare_clean(&[entry], "quick").unwrap();
+        let result = manager.apply_clean(&plan.token).unwrap();
+        assert!(result.failed.is_none());
+        assert_eq!(result.completed.len(), 1);
+        assert_eq!(
+            store.read_service("ExampleService").unwrap().snapshot,
+            snapshot.disabled().unwrap()
+        );
+        let id = &result.completed[0].backup_id;
+        let path = backups.join(format!("{id}.json"));
+        let record: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(record["schemaVersion"], 6);
+        assert_eq!(
+            record["service"]["snapshot"],
+            serde_json::to_value(&snapshot).unwrap()
+        );
+        drop(manager);
+        let mut manager = ChangeManager::new(
+            store.clone(),
+            backups,
+            Probe(Rc::new(Cell::new(ProbeResult::Missing))),
+        );
+        let restore = manager.prepare_restore(id).unwrap();
+        manager.apply(&restore.token).unwrap();
+        let state = store.read_service("ExampleService").unwrap();
+        assert_eq!(state.snapshot, snapshot);
+        assert!(state.stopped);
+    }
+    #[test]
+    fn service_repair_refuses_status_rights_dependency_target_and_backup_conflicts() {
+        for scenario in 0..6 {
+            let dir = tempfile::tempdir().unwrap();
+            let backups = dir.path().join("backups");
+            let (store, probe, mut manager) = setup(&backups);
+            let entry = service_entry(crate::services::fixture_snapshot());
+            store.4.borrow_mut().insert(
+                "ExampleService".into(),
+                entry.service_state.clone().unwrap(),
+            );
+            let plan = manager.prepare_quarantine(&entry).unwrap();
+            match scenario {
+                0 => {
+                    store
+                        .4
+                        .borrow_mut()
+                        .get_mut("ExampleService")
+                        .unwrap()
+                        .stopped = false
+                }
+                1 => {
+                    store
+                        .4
+                        .borrow_mut()
+                        .get_mut("ExampleService")
+                        .unwrap()
+                        .change_allowed = false
+                }
+                2 => {
+                    store
+                        .4
+                        .borrow_mut()
+                        .get_mut("ExampleService")
+                        .unwrap()
+                        .has_dependents = true
+                }
+                3 => store
+                    .4
+                    .borrow_mut()
+                    .get_mut("ExampleService")
+                    .unwrap()
+                    .snapshot
+                    .config
+                    .security
+                    .push(1),
+                4 => probe.set(ProbeResult::Found),
+                5 => fs::write(&backups, b"not a directory").unwrap(),
+                _ => unreachable!(),
+            }
+            assert!(manager.apply(&plan.token).is_err(), "scenario {scenario}");
+            assert_eq!(
+                store
+                    .read_service("ExampleService")
+                    .unwrap()
+                    .snapshot
+                    .config
+                    .start_type,
+                3
+            );
+        }
+    }
+    #[test]
+    fn service_restore_rejects_changed_security_missing_services_and_corrupted_backups() {
+        for scenario in 0..5 {
+            let dir = tempfile::tempdir().unwrap();
+            let (store, _, mut manager) = setup(dir.path());
+            let entry = service_entry(crate::services::fixture_snapshot());
+            store.4.borrow_mut().insert(
+                "ExampleService".into(),
+                entry.service_state.clone().unwrap(),
+            );
+            let plan = manager.prepare_quarantine(&entry).unwrap();
+            let result = manager.apply(&plan.token).unwrap();
+            match scenario {
+                0 => store
+                    .4
+                    .borrow_mut()
+                    .get_mut("ExampleService")
+                    .unwrap()
+                    .snapshot
+                    .config
+                    .security
+                    .push(1),
+                1 => {
+                    store
+                        .4
+                        .borrow_mut()
+                        .get_mut("ExampleService")
+                        .unwrap()
+                        .stopped = false
+                }
+                2 => {
+                    store
+                        .4
+                        .borrow_mut()
+                        .get_mut("ExampleService")
+                        .unwrap()
+                        .change_allowed = false
+                }
+                3 => {
+                    store.4.borrow_mut().clear();
+                }
+                4 => {
+                    let path = dir.path().join(format!("{}.json", result.backup_id));
+                    let mut record: serde_json::Value =
+                        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                    record["service"]["serviceName"] = serde_json::json!("OtherService");
+                    fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                manager.prepare_restore(&result.backup_id).is_err(),
+                "scenario {scenario}"
+            );
+            if scenario != 3 {
+                assert_eq!(
+                    store
+                        .read_service("ExampleService")
+                        .unwrap()
+                        .snapshot
+                        .config
+                        .start_type,
+                    4
+                );
+            }
+        }
+    }
+    #[test]
+    fn restores_unchanged_v015_com_backup_without_migration() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(dir.path());
+        let id = "55555555-5555-4555-8555-555555555555";
+        let clsid = "{55555555-5555-4555-8555-555555555555}";
+        let guard = crate::com::ComGuard {
+            class_values: vec![],
+            server_values: vec![],
+        };
+        store
+            .5
+            .borrow_mut()
+            .insert(clsid.into(), ComState { value: None, guard });
+        let legacy = include_str!("../tests/fixtures/com-backup-v5.json");
+        let path = dir.path().join(format!("{id}.json"));
+        fs::write(&path, legacy).unwrap();
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "com");
+        manager.apply(&plan.token).unwrap();
+        assert_eq!(
+            store
+                .read_com(clsid)
+                .unwrap()
+                .value
+                .unwrap()
+                .text()
+                .unwrap(),
+            r"C:\RustRegistryMissing\server.dll"
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), legacy);
     }
 }

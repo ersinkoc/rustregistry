@@ -157,6 +157,8 @@ pub(super) fn scan_associations(
                 association_repairable: state.is_some(),
                 com_state: None,
                 com_repairable: false,
+                service_state: None,
+                service_repairable: false,
                 association_state: state,
             });
         }

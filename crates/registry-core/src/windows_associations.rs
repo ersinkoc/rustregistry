@@ -327,6 +327,8 @@ mod tests {
                 association_repairable: true,
                 com_state: None,
                 com_repairable: false,
+                service_state: None,
+                service_repairable: false,
             }
         }
     }

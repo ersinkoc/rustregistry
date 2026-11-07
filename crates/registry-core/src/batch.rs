@@ -29,6 +29,12 @@ pub(super) struct PendingBatch {
 }
 
 pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
+    if entry.category == Category::Services {
+        return entry.hive == "HKLM"
+            && entry.view == "shared"
+            && entry.service_repairable
+            && entry.assessment.status == EntryStatus::Review;
+    }
     if entry.hive != "HKCU" || entry.assessment.status != EntryStatus::Review {
         return false;
     }

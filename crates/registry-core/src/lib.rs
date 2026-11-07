@@ -4,7 +4,10 @@ pub mod changes;
 pub mod com;
 mod model;
 #[cfg(windows)]
+mod scan_probe;
+#[cfg(windows)]
 mod scanner;
+pub mod services;
 pub mod uninstall;
 #[cfg(windows)]
 pub mod windows_changes;

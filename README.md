@@ -1,6 +1,6 @@
 # RustRegistry
 
-A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup, application path, orphaned uninstall-listing, Open with suggestion, and guarded COM DLL mapping changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
+A Windows registry health explorer with read-only scanning and separately reviewed, reversible startup, application path, orphaned uninstall-listing, Open with suggestion, guarded COM DLL mapping, and supported service startup changes. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
 
 Open source under the [MIT license](LICENSE). See the [changelog](CHANGELOG.md) and [GitHub releases](https://github.com/ersinkoc/rustregistry/releases) for version history and Windows downloads.
 
@@ -20,7 +20,7 @@ npm run desktop:build
 .\target\release\rustregistry.exe
 ```
 
-The executable requires WebView2 on the target computer. This first release does not create an installer or request administrator access.
+The executable requires WebView2 on the target computer. This release does not create an installer or automatically request administrator access. Service repair requires existing SCM configuration rights; read-only scanning does not require elevation.
 
 `npm run dev` starts a **browser preview only**. It cannot access the registry and explicitly shows that the desktop connection is unavailable. No sample records are substituted for live data.
 
@@ -34,7 +34,7 @@ The scanner has a fixed scope of 21 registry locations:
 | Application paths | `App Paths`                                                | Default executable path                  |
 | Uninstall records | `Uninstall`                                                | `InstallLocation` folder, when provided  |
 
-The four locations above are each read once under HKCU (shared view) and twice under HKLM (32-bit and 64-bit views), giving 12 scopes. Two additional scopes read `Software\Classes\.extension\OpenWithProgids` under HKCU and HKLM once each: these extension/ProgID keys are shared on supported Windows. See [Microsoft’s registry view table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Four more scopes inventory `Software\Classes\CLSID\{GUID}\InprocServer32` under HKCU and HKLM in separate 32-bit and 64-bit views. COM inventory also includes LocalServer32 and InprocHandler32 mappings. Three more scopes cover shared-system Services ImagePath values and 32/64-bit SharedDLLs reference counts. Services and shared-file registrations are always read-only. COM and shared-file target probing is limited to 64-bit mappings; 32-bit targets remain unverified because their filesystem/environment resolution requires a 32-bit context. Uninstall records also show their reported display name, publisher, and version when available.
+The four locations above are each read once under HKCU (shared view) and twice under HKLM (32-bit and 64-bit views), giving 12 scopes. Two additional scopes read `Software\Classes\.extension\OpenWithProgids` under HKCU and HKLM once each: these extension/ProgID keys are shared on supported Windows. See [Microsoft’s registry view table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Four more scopes inventory `Software\Classes\CLSID\{GUID}\InprocServer32` under HKCU and HKLM in separate 32-bit and 64-bit views. COM inventory also includes LocalServer32 and InprocHandler32 mappings. Three more scopes cover shared-system Services ImagePath values and 32/64-bit SharedDLLs reference counts. Shared-file registrations remain read-only. Service repair in 0.1.6 is limited to the guarded policy described below. COM and shared-file target probing is limited to 64-bit mappings; 32-bit targets remain unverified because their filesystem/environment resolution requires a 32-bit context. Uninstall records also show their reported display name, publisher, and version when available.
 
 - **Found:** the expected local file, directory, or suggested file-type registration existed at scan time.
 - **Review:** an unambiguously resolved local target was not found. A disconnected drive or uninstalled application may explain this; this is not a recommendation to delete the record.
@@ -72,7 +72,7 @@ Scanning runs in a blocking worker outside the UI thread. Commands found in regi
 
 Scan results remain in memory. Confirmed changes save their backups locally, and the theme is saved in WebView local storage. No telemetry or remote content is used by the production frontend. Developer package installation and the development server naturally require their normal build-time connections.
 
-The engine checks up to 10,000 entries per location (and at most 20,000 direct Classes child keys while discovering file extensions) and interprets string values up to 32 KiB. Limits are reported in coverage. The scan is a point-in-time inventory rather than an atomic registry snapshot. It does not inspect all registry hives, COM activation functionality, default application handlers, application functionality, malware, or overall Windows performance.
+The engine checks up to 10,000 entries per location (and at most 20,000 direct Classes child keys while discovering file extensions) and interprets string values up to 32 KiB. Limits are reported in coverage. The scan is a point-in-time inventory rather than an atomic registry snapshot. Exact duplicate found targets reuse their first positive observation only within that scan; missing/uncertain targets and every repair verification remain uncached. It does not inspect all registry hives, COM activation functionality, default application handlers, application functionality, malware, or overall Windows performance.
 
 ## Uninstall listing repair in 0.1.3
 
@@ -108,11 +108,25 @@ COM backups use a new integrity-protected format alongside all four earlier form
 
 ## Quick Clean and selected cleaning in 0.1.5
 
-Use **Clean registry** to review supported current-user repair candidates after a completed scan. **Quick Clean** proposes up to 100 candidates from the latest backend-cached report. **Clean selected** lets you search and choose exact entries, up to the same limit. A review shows every entry, action, original value, registry path, architecture, and any skipped entry before an explicit confirmation. Scanning and preparing/cancelling a cleaning review never modify registry values or create backups.
+Use **Clean registry** to review supported registry/service repair candidates after a completed scan. **Quick Clean** proposes up to 100 candidates from the latest backend-cached report. **Clean selected** lets you search and choose exact entries, up to the same limit. A review shows every entry, action, original value, registry path, architecture, and any skipped entry before an explicit confirmation. Scanning and preparing/cancelling a cleaning review never modify registry values or create backups.
 
 Each change uses the same scope-specific rechecks, verified backup, and conditional registry transaction as an individual repair. Cleaning is sequential and stops at the first failed entry; it is not atomic across the batch. Earlier successes remain individually restorable from **Backups & restore**, and unattempted entries are reported. Sibling values in one guarded registration are deferred to a later scan to avoid invalidating one another’s metadata guards. Expired reviews, duplicate IDs, unknown IDs, stale scans, and unsupported scopes are rejected or explicitly skipped. Quick Clean never treats every review finding as eligible.
 
 Additional read-only inventory includes service/driver `ImagePath` values under `HKLM\SYSTEM\CurrentControlSet\Services` and both views of `HKLM\Software\Microsoft\Windows\CurrentVersion\SharedDLLs`. It does not start/stop services, change driver configuration, alter reference counts, or delete files. Relative kernel paths, ambiguous commands, and 32-bit shared-file targets remain unverified. See Microsoft’s [Services registry documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/install/hklm-system-currentcontrolset-services-registry-tree) and [shared-file usage count documentation](https://learn.microsoft.com/en-us/sql/odbc/reference/install/usage-counting?view=sql-server-ver17).
+
+## Service startup repair in 0.1.6
+
+A service is eligible only when its executable is a confirmed missing **literal absolute local `.exe` outside Windows**, it is stopped, has no dependent services or dependencies, uses its own process and the built-in LocalService account, and its startup type is Manual. Existing `SERVICE_CHANGE_CONFIG` and read/security permissions must be granted to the process. The app never changes permissions or requests elevation automatically. Drivers, Auto/Boot/System startup, LocalSystem/custom accounts, shared processes, critical error handling, protected services, triggers, recovery actions, load groups, custom/nested parameters, unknown metadata, environment-dependent commands, and uncertain paths remain read-only.
+
+**Review repair → Back up & disable service** stores the original Start DWORD, full supported registry/security value snapshot, SCM configuration, and service security descriptor in an integrity-checked local backup. It then uses **ChangeServiceConfigW** to change only startup from Manual (`3`) to Disabled (`4`), preserving every other configuration field. It does not remove a service, change its executable/account, or start/stop it. **Review restore → Restore Manual startup** requires the stopped service and all guarded metadata to still match the disabled state; it restores startup only and never starts the service. Deleted services are not recreated. A later explicit start may run the configured executable.
+
+Service changes use the supported SCM API rather than direct registry edits. The configuration, status, dependents, access, security, and metadata are checked before and after. SCM provides no atomic compare-and-swap; do not run another service configuration tool concurrently. A detected conflict blocks or reports the operation and preserves the backup. See Microsoft’s [service configuration guidance](https://learn.microsoft.com/en-us/windows/win32/services/service-configuration-programs), [startup-only configuration API](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-changeserviceconfigw), and [database-lock limitation](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-lockservicedatabase).
+
+Quick Clean and selected Clean include only eligible services with existing configuration rights. All other machine-wide areas retain their earlier restrictions. New service backups retain unchanged support for all five earlier formats, verified using fixed legacy fixtures.
+
+## Readable interface on 4K
+
+The top toolbar’s **Interface size** selector scales text and controls together from **100% to 200%** using the native WebView zoom. Your choice is saved locally and survives app restarts. The first launch on a 4K display at near-100% Windows scaling uses **150%**; existing Windows DPI scaling is not automatically boosted again. A saved preference always takes precedence. Browser preview uses CSS zoom and has no registry access.
 
 ## Verify
 
@@ -129,7 +143,7 @@ npm run test:desktop
 
 `test:desktop` launches the **built release app** with a temporary local WebView2 debugging connection and verifies real native IPC scanning, filters, search, pagination, details, coverage, history, themes, the minimum desktop layout, cancellation, backup discovery, and review/cancel controls. It never confirms changes to the user's actual startup entries. For App Paths it creates one uniquely named, owned `RustRegistry-E2E-<uuid>.exe` test registration, runs repair and restore through the real UI, independently reads the resulting registry state, then removes only its own registration and test backup. Existing user registrations and backups are not edited. The helper requires an existing current-user App Paths root and does not change PowerShell execution policy. The debugging connection is enabled only for that test process. Results and screenshots are written to the ignored `.temp_files/` directory; an interactive Windows desktop is required.
 
-Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and fixed `0.1.1`/`0.1.2`/`0.1.3`/`0.1.4` backup fixtures. Ten Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. Uninstall tests cover both an originally absent flag and an originally zero flag, including exact raw metadata preservation. They never modify the user's real startup list.
+Rust tests cover backup failure, stale evidence, changed targets, metadata conflicts, expiry, invalid tokens, corrupted backups, and fixed `0.1.1`/`0.1.2`/`0.1.3`/`0.1.4`/`0.1.5` backup fixtures. Ten Windows integration tests create uniquely named **non-startup** keys under `HKCU\\Software\\RustRegistryTests`, exercise transactions and backup/repair/restart/restore round trips, and remove their own test keys afterward. Uninstall tests cover both an originally absent flag and an originally zero flag, including exact raw metadata preservation. They never modify the user's real startup list.
 
 The desktop suite also creates one uniquely named `RustRegistry-E2E-Uninstall-<uuid>` registration in the existing current-user Uninstall root. It verifies review/cancel, full-backup hide, hidden-state diagnostics, reload and restore through the packaged UI. A separate PowerShell reader checks all fixture values, types, and owner/group/DACL permissions before and after. The suite cleans only its own registration and matching backup; existing entries and user backups are not edited. No Windows Settings/Control Panel list UI assertion is made.
 
@@ -157,3 +171,18 @@ The repository includes dependency lockfiles and checks version consistency befo
 ## Upstream dependency notice
 
 The cross-platform Tauri dependency lockfile includes Linux-only `glib` 0.18.5, which has upstream advisory [RUSTSEC-2024-0429](https://rustsec.org/advisories/RUSTSEC-2024-0429.html). It is absent from this application's Windows x64 dependency graph. Linux builds are not supported by this project; revisit the upstream dependency before adding Linux support. This notice does not represent a full security audit.
+
+## Explicit owned-service test setup
+
+Live SCM mutation tests require an administrator to create two uniquely named, never-started fixtures: one Manual service and an already-Disabled control. The setup delegates query/configure/delete rights only for those fixtures to the invoking user, plus read-only access to their registry metadata. It does not change any existing service or global SCM permissions. The main app and smoke suite do not launch administrator prompts.
+
+After reviewing `scripts/service-fixture.ps1`, an explicitly approved Windows administrator can prepare the fixture from a normal Windows PowerShell session (this one setup action displays UAC):
+
+```powershell
+$fixtureToken = [Guid]::NewGuid().ToString('D')
+powershell.exe -NoProfile -File scripts/service-fixture.ps1 -Action prepare -Token $fixtureToken
+$env:RUSTREGISTRY_SERVICE_FIXTURE_TOKEN = $fixtureToken
+npm run test:desktop
+```
+
+The service UI suite verifies control exclusion, review/cancel, SCM-backed disable, independent ServiceController/registry/security observations, restart/restore, Quick Clean inclusion, and selected cleaning. It deletes only the owned fixtures and their matching backups afterward. It never starts either fixture or writes an executable. Without an approved token, this live service mutation check is explicitly skipped; pure policy/recovery tests and existing native tests still run. If a test is interrupted before cleanup, use `powershell.exe -NoProfile -File scripts/service-fixture.ps1 -Action cleanup -Token <the-owned-token>`; identity/state checks guard cleanup.

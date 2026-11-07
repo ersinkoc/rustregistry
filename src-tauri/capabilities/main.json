@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Local scanning and explicitly reviewed changes to fixed current-user Run, App Paths, and orphaned Uninstall listing visibility. No shell or unrestricted filesystem plugins.",
+  "description": "Local scanning, interface sizing, and explicitly reviewed fixed-scope registry/SCM repairs with backups. No shell, unrestricted filesystem, elevation, or service start/stop plugins.",
   "windows": ["main"],
   "permissions": []
 }

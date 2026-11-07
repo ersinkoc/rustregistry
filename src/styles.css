@@ -2074,3 +2074,30 @@ tr:hover td {
     display: none;
   }
 }
+
+.display-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.display-size select {
+  color: var(--text);
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  cursor: pointer;
+}
+@media (max-width: 1100px) {
+  .display-size > span {
+    display: none;
+  }
+}
+@media (max-width: 600px) {
+  .topbar-actions .readonly-pill,
+  .topbar-divider {
+    display: none;
+  }
+}

@@ -17,6 +17,7 @@ export interface RegistryEntry {
   uninstallHidden?: boolean;
   associationRepairable?: boolean;
   comRepairable?: boolean;
+  serviceRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -59,7 +60,7 @@ export interface ScanProgress {
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
   services: {
     label: 'Services & drivers',
-    description: 'Read-only ImagePath inventory',
+    description: 'ImagePath checks and guarded startup repair',
     short: 'Service',
   },
   shared_dlls: {
@@ -69,7 +70,7 @@ export const categories: Record<Category, { label: string; description: string; 
   },
   com: {
     label: 'COM registrations',
-    description: 'InprocServer32 DLL mappings by registry view',
+    description: 'DLL, handler, and local-server mappings',
     short: 'COM DLL',
   },
   startup: {

@@ -2,6 +2,17 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.6 — 2026-11-07
+
+- Avoid repeated filesystem queries for duplicate found targets within a read-only scan. Missing/uncertain targets and all repair checks remain uncached.
+
+- Add backed-up service startup repair through Windows Service Control Manager for verified stopped, independent, Manual, own-process LocalService registrations with missing literal local executables outside Windows.
+- Change only Manual startup to Disabled and restore only the original Manual type. Never start, stop, delete, recreate, elevate, or change a service's executable, account, permissions, or files automatically.
+- Include eligible, configuration-authorized services in Quick Clean and selected Clean; drivers, Windows/shared/protected/privileged services, dependencies, triggers, recovery, unknown metadata, environment-dependent paths, and uncertain targets remain excluded.
+- Save full guarded registry/security metadata and SCM configuration before the supported startup-only API update. Recheck before and after, block changed evidence, and retain all five earlier backup formats without rewriting them. SCM changes are not registry transactions or an atomic compare-and-swap.
+- Add persistent 100–200% interface sizing and a 150% default on 4K displays at 100% Windows scaling, without adding another automatic boost over Windows DPI scaling.
+- Add service eligibility, backup/restart/restore, access/status/conflict tests, a fixed v0.1.5 COM backup fixture, and owned-service UI verification tooling with explicit administrator setup.
+
 ## 0.1.5 — 2026-11-07
 
 - Add Quick Clean and selected Clean with a full review, up to 100 protected candidates, separate verified backups, and individual restore. Stop at the first failed change and report completed, failed, skipped, and unattempted entries.

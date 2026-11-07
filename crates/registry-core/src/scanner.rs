@@ -152,6 +152,7 @@ fn make_entry(
     value_name: &str,
     raw: Result<RegValue<'_>, String>,
     environment: &Environment,
+    probe: &impl PathProbe,
 ) -> RegistryEntry {
     let snapshot = raw
         .as_ref()
@@ -187,7 +188,7 @@ fn make_entry(
                             TargetKind::File
                         }
                     };
-                    let assessment = analyze_target(&raw, kind, environment, &LocalPathProbe);
+                    let assessment = analyze_target(&raw, kind, environment, probe);
                     (raw, value_type, assessment)
                 }
                 Err(reason) => (
@@ -236,6 +237,8 @@ fn make_entry(
         association_repairable: false,
         com_state: None,
         com_repairable: false,
+        service_state: None,
+        service_repairable: false,
     }
 }
 
@@ -254,6 +257,7 @@ fn scan_source(
     cancel: &AtomicBool,
     environment: &Environment,
     entries: &mut Vec<RegistryEntry>,
+    probe: &impl PathProbe,
 ) -> ScopeResult {
     let mut scope = ScopeResult {
         id: format!("{}|{}|{}", source.hive, source.view, source.path),
@@ -286,11 +290,27 @@ fn scan_source(
     };
     let start_count = entries.len();
     if source.category == Category::Com {
-        scan_com(source, &key, cancel, environment, entries, &mut scope);
+        scan_com(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
     } else if source.category == Category::FileAssociations {
         scan_associations(source, &key, cancel, entries, &mut scope);
     } else if source.category == Category::SharedDlls {
-        scan_shared_dlls(source, &key, cancel, environment, entries, &mut scope);
+        scan_shared_dlls(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
     } else if source.category == Category::Startup {
         for (index, result) in key.enum_values().enumerate() {
             if cancel.load(Ordering::Relaxed) {
@@ -309,6 +329,7 @@ fn scan_source(
                     &name,
                     Ok(value),
                     environment,
+                    probe,
                 )),
                 Err(error) => scope.notes.push(format!(
                     "A startup value could not be read: {}",
@@ -372,7 +393,37 @@ fn scan_source(
                     "This record does not define a target path. Missing path information alone does not mean the record is broken.".into()
                 } else { format!("The target value could not be read: {}", read_error(&error)) }
             });
-            let mut entry = make_entry(source, &name, display_name, value_name, raw, environment);
+            let mut entry = make_entry(
+                source,
+                &name,
+                display_name,
+                value_name,
+                raw,
+                environment,
+                probe,
+            );
+            if source.category == Category::Services && entry.assessment.code == "target_missing" {
+                use crate::changes::RegistryStore;
+                let store = crate::windows_changes::WindowsRegistryStore::default();
+                match store.read_service(&name) {
+                    Ok(state) => {
+                        entry.service_repairable = state.validate_change().is_ok()
+                            && crate::services::verify_missing_service(
+                                &state.snapshot,
+                                &LocalPathProbe,
+                            )
+                            .is_ok();
+                        if !entry.service_repairable {
+                            entry.assessment.explanation.push_str(" Service repair is unavailable: the service does not meet the stopped/manual/independent LocalService policy or Windows has not granted configuration access.");
+                        }
+                        entry.service_state = Some(state);
+                    }
+                    Err(reason) => entry
+                        .assessment
+                        .explanation
+                        .push_str(&format!(" Service repair unavailable: {reason}")),
+                }
+            }
             if source.category == Category::AppPaths
                 && source.hive == "HKCU"
                 && entry.assessment.status == EntryStatus::Review
@@ -431,6 +482,7 @@ pub fn scan(cancel: &AtomicBool, progress: impl Fn(ScanProgress)) -> Result<Scan
         .as_millis() as u64;
     let timer = Instant::now();
     let environment = Environment::current();
+    let probe = crate::scan_probe::ScanProbe::new(LocalPathProbe);
     let sources = sources();
     let mut entries = Vec::new();
     let mut scopes = Vec::new();
@@ -444,7 +496,13 @@ pub fn scan(cancel: &AtomicBool, progress: impl Fn(ScanProgress)) -> Result<Scan
             entries: entries.len(),
             current: format!("{}\\{}", source.hive, source.path),
         });
-        scopes.push(scan_source(source, cancel, &environment, &mut entries));
+        scopes.push(scan_source(
+            source,
+            cancel,
+            &environment,
+            &mut entries,
+            &probe,
+        ));
     }
     progress(ScanProgress {
         completed: scopes.len(),

@@ -45,8 +45,8 @@ export function CleanPanel({
           <span className="eyebrow">PROTECTED REGISTRY CLEANING</span>
           <h2>Clear the leftovers. Keep a way back.</h2>
           <p>
-            Only verified, supported current-user entries can be cleaned. Every change is reviewed,
-            backed up, and checked again before it is applied.
+            Only verified, supported entries with existing configuration access can be cleaned.
+            Every change is reviewed, backed up, and checked again before it is applied.
           </p>
         </div>
         <ShieldCheck size={42} />
@@ -56,8 +56,8 @@ export function CleanPanel({
           <Zap size={25} />
           <h2>Quick Clean</h2>
           <p>
-            Review up to 100 eligible entries from your latest scan. Unverified and machine-wide
-            records are excluded.
+            Review up to 100 eligible entries from your latest scan. Unverified entries are
+            excluded. Service repairs require existing Windows configuration access.
           </p>
           <button
             className="primary-button"
@@ -243,15 +243,17 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'uninstall'
-                  ? 'Hide orphaned listing · SystemComponent → 1'
-                  : item.scope === 'association'
-                    ? 'Remove Open with suggestion'
-                    : item.scope === 'com'
-                      ? 'Disable COM DLL mapping'
-                      : item.scope === 'app_path'
-                        ? 'Remove broken application path'
-                        : 'Disable startup value'}
+                {item.scope === 'service'
+                  ? 'Disable stopped service · Manual → Disabled'
+                  : item.scope === 'uninstall'
+                    ? 'Hide orphaned listing · SystemComponent → 1'
+                    : item.scope === 'association'
+                      ? 'Remove Open with suggestion'
+                      : item.scope === 'com'
+                        ? 'Disable COM DLL mapping'
+                        : item.scope === 'app_path'
+                          ? 'Remove broken application path'
+                          : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -271,6 +273,12 @@ export function CleanConfirmation({
                 <dt>Original value</dt>
                 <dd className="code-field">{item.originalValue}</dd>
               </div>
+              {item.serviceExecutable && (
+                <div className="full-field">
+                  <dt>Service executable · never executed</dt>
+                  <dd className="code-field">{item.serviceExecutable}</dd>
+                </div>
+              )}
               {item.uninstallCommand && (
                 <div className="full-field">
                   <dt>Uninstall command · never executed</dt>

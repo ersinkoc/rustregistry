@@ -22,6 +22,26 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers service repair only with verified fixed-scope SCM configuration access', () => {
+    const service = {
+      ...entry,
+      category: 'services' as const,
+      hive: 'HKLM',
+      keyPath: 'SYSTEM\\CurrentControlSet\\Services\\ExampleService',
+      valueName: 'ImagePath',
+      serviceRepairable: true,
+    };
+    expect(canQuarantine(service)).toBe(true);
+    for (const changed of [
+      { ...service, serviceRepairable: false },
+      { ...service, hive: 'HKCU' },
+      { ...service, view: '64' },
+      { ...service, valueName: 'Start' },
+      { ...service, keyPath: `${service.keyPath}\\Parameters` },
+      { ...service, assessment: { ...entry.assessment, status: 'unknown' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers COM repair only for a verified current-user 64-bit default DLL mapping', () => {
     const com = {
       ...entry,

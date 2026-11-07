@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import packageInfo from '../package.json';
+import { displayScales, initialDisplayScale } from './display';
 import { BackupsPanel, canQuarantine, ChangeConfirmation } from './Changes';
 import type { ChangePlan, ChangeResult } from './Changes';
 import { CleanPanel, CleanConfirmation, type CleanPlan, type CleanResult } from './Clean';
@@ -231,26 +232,30 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'com'
-              ? 'Protected COM DLL mapping repair'
-              : entry.category === 'file_associations'
-                ? 'Protected Open with repair'
-                : entry.category === 'uninstall'
-                  ? 'Protected uninstall listing repair'
-                  : entry.category === 'app_paths'
-                    ? 'Protected application path repair'
-                    : 'Protected startup change'}
+            {entry.category === 'services'
+              ? 'Protected service startup repair'
+              : entry.category === 'com'
+                ? 'Protected COM DLL mapping repair'
+                : entry.category === 'file_associations'
+                  ? 'Protected Open with repair'
+                  : entry.category === 'uninstall'
+                    ? 'Protected uninstall listing repair'
+                    : entry.category === 'app_paths'
+                      ? 'Protected application path repair'
+                      : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'com'
-              ? 'Review a backup before disabling this missing 64-bit DLL mapping. The class and threading metadata stay in place. No DLL is loaded or registered.'
-              : entry.category === 'file_associations'
-                ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
-                : entry.category === 'uninstall'
-                  ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
-                  : entry.category === 'app_paths'
-                    ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-                    : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'services'
+              ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
+              : entry.category === 'com'
+                ? 'Review a backup before disabling this missing 64-bit DLL mapping. The class and threading metadata stay in place. No DLL is loaded or registered.'
+                : entry.category === 'file_associations'
+                  ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
+                  : entry.category === 'uninstall'
+                    ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+                    : entry.category === 'app_paths'
+                      ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                      : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy
@@ -284,6 +289,13 @@ function DetailDialog({
 
 export default function App() {
   const [page, setPage] = useState<Page>('overview');
+  const [displayScale, setDisplayScale] = useState(() =>
+    initialDisplayScale(
+      localStorage.getItem('rustregistry-ui-scale'),
+      window.screen.width,
+      window.devicePixelRatio,
+    ),
+  );
   const [theme, setTheme] = useState<'dark' | 'light'>(() =>
     localStorage.getItem('rustregistry-theme') === 'light' ? 'light' : 'dark',
   );
@@ -316,6 +328,17 @@ export default function App() {
     document.documentElement.style.colorScheme = theme;
     localStorage.setItem('rustregistry-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('rustregistry-ui-scale', String(displayScale));
+    if (desktop) {
+      invoke('set_display_scale', { percent: displayScale }).catch((cause) =>
+        setError(`Could not change interface size: ${String(cause)}`),
+      );
+    } else {
+      document.documentElement.style.zoom = String(displayScale / 100);
+    }
+  }, [displayScale, desktop]);
 
   const counts = useMemo(() => countStatuses(report?.entries ?? []), [report]);
   const filtered = useMemo(
@@ -751,6 +774,20 @@ export default function App() {
             <strong>{pageNames[page]}</strong>
           </div>
           <div className="topbar-actions">
+            <label className="display-size">
+              <span>Interface size</span>
+              <select
+                aria-label="Interface size"
+                value={displayScale}
+                onChange={(event) => setDisplayScale(Number(event.target.value))}
+              >
+                {displayScales.map((scale) => (
+                  <option key={scale} value={scale}>
+                    {scale}%
+                  </option>
+                ))}
+              </select>
+            </label>
             <span className="readonly-pill">
               <LockKeyhole size={13} /> Protected changes
             </span>

@@ -7,6 +7,7 @@ pub(super) fn scan_com(
     environment: &Environment,
     entries: &mut Vec<RegistryEntry>,
     scope: &mut ScopeResult,
+    probe: &impl PathProbe,
 ) {
     use crate::{
         changes::{RegistryStore, StoredValue},
@@ -89,7 +90,7 @@ pub(super) fn scan_com(
                 let original = StoredValue {kind: value.vtype as u32, bytes: value.bytes.into_owned()};
                 match original.text() {
                     Ok(raw) => {
-                        let assessment = if server_name == "LocalServer32" && server.get_raw_value("ServerExecutable").is_ok() {Assessment {status: EntryStatus::Unknown, code: "com_server_executable_override".into(), explanation: "This local server defines ServerExecutable. Its effective launch configuration was not interpreted or executed.".into(), target: None}} else if source.view == "32" {Assessment {status: EntryStatus::Unknown, code: "com_32bit_unverified".into(), explanation: "The 32-bit DLL mapping was inventoried without probing its target. WOW64 filesystem and environment resolution require a 32-bit context; this view remains read-only.".into(), target: None}} else {analyze_target(&raw, if server_name == "LocalServer32" {TargetKind::Command} else {TargetKind::File}, environment, &LocalPathProbe)};
+                        let assessment = if server_name == "LocalServer32" && server.get_raw_value("ServerExecutable").is_ok() {Assessment {status: EntryStatus::Unknown, code: "com_server_executable_override".into(), explanation: "This local server defines ServerExecutable. Its effective launch configuration was not interpreted or executed.".into(), target: None}} else if source.view == "32" {Assessment {status: EntryStatus::Unknown, code: "com_32bit_unverified".into(), explanation: "The 32-bit DLL mapping was inventoried without probing its target. WOW64 filesystem and environment resolution require a 32-bit context; this view remains read-only.".into(), target: None}} else {analyze_target(&raw, if server_name == "LocalServer32" {TargetKind::Command} else {TargetKind::File}, environment, probe)};
                         (raw, kind, assessment, Some(original))
                     }
                     Err(reason) => (String::new(), kind, Assessment {status: EntryStatus::Unknown, code: "unsupported_value".into(), explanation: reason, target: None}, None),
@@ -138,6 +139,8 @@ pub(super) fn scan_com(
                 association_state: None,
                 association_repairable: false,
                 com_repairable: state.is_some(),
+                service_state: None,
+                service_repairable: false,
                 com_state: state,
             });
         }

@@ -22,10 +22,11 @@ export interface ChangePlan {
   originalValue: string;
   valueType: string;
   expiresAt: number;
-  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com' | 'service';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
+  serviceExecutable?: string | null;
 }
 export interface ChangeResult {
   backupId: string;
@@ -39,7 +40,7 @@ interface Backup {
   createdAt: number;
   state: 'restore_available' | 'original_present' | 'conflict' | 'unverified';
   note: string;
-  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com';
+  scope: 'startup' | 'app_path' | 'uninstall' | 'association' | 'com' | 'service';
   registryPath: string;
   registryView?: string;
 }
@@ -50,6 +51,18 @@ interface Inventory {
 }
 
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'services')
+    return (
+      ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
+      entry.hive === 'HKLM' &&
+      entry.view === 'shared' &&
+      entry.valueName === 'ImagePath' &&
+      entry.serviceRepairable === true &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'target_missing' &&
+      /^system\\currentcontrolset\\services\\[a-z0-9][a-z0-9_.-]{0,255}$/i.test(entry.keyPath)
+    );
+
   if (entry.category === 'com')
     return (
       entry.hive === 'HKCU' &&
@@ -120,6 +133,7 @@ export function ChangeConfirmation({
   const uninstall = plan.scope === 'uninstall';
   const association = plan.scope === 'association';
   const com = plan.scope === 'com';
+  const service = plan.scope === 'service';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -155,46 +169,54 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {com
+        {service
           ? restore
-            ? 'Restore COM DLL mapping?'
-            : 'Repair broken COM DLL mapping?'
-          : association
+            ? 'Restore service startup?'
+            : 'Disable this missing-target service?'
+          : com
             ? restore
-              ? 'Restore Open with suggestion?'
-              : 'Repair orphaned file association?'
-            : uninstall
+              ? 'Restore COM DLL mapping?'
+              : 'Repair broken COM DLL mapping?'
+            : association
               ? restore
-                ? 'Restore uninstall entry visibility?'
-                : 'Repair orphaned uninstall entry?'
-              : appPath
+                ? 'Restore Open with suggestion?'
+                : 'Repair orphaned file association?'
+              : uninstall
                 ? restore
-                  ? 'Restore application path?'
-                  : 'Repair broken application path?'
-                : restore
-                  ? 'Restore startup entry?'
-                  : 'Disable this startup entry?'}
+                  ? 'Restore uninstall entry visibility?'
+                  : 'Repair orphaned uninstall entry?'
+                : appPath
+                  ? restore
+                    ? 'Restore application path?'
+                    : 'Repair broken application path?'
+                  : restore
+                    ? 'Restore startup entry?'
+                    : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {com
+        {service
           ? restore
-            ? 'This restores the exact original 64-bit DLL mapping. If the DLL exists later, applications may load it through COM. The class and server metadata must still match the backup.'
-            : 'The explicit local DLL is missing. After a verified backup, only the default InprocServer32 path is removed. This disables this broken mapping; it does not repair missing DLL files or choose a replacement.'
-          : association
+            ? 'This restores the original Manual startup type through Windows Service Control Manager. The service remains stopped. Its executable, account, permissions, and configuration must still match the backup.'
+            : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
+          : com
             ? restore
-              ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
-              : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
-            : uninstall
+              ? 'This restores the exact original 64-bit DLL mapping. If the DLL exists later, applications may load it through COM. The class and server metadata must still match the backup.'
+              : 'The explicit local DLL is missing. After a verified backup, only the default InprocServer32 path is removed. This disables this broken mapping; it does not repair missing DLL files or choose a replacement.'
+            : association
               ? restore
-                ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
-                : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
-              : appPath
+                ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
+                : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
+              : uninstall
                 ? restore
-                  ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
-                  : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
-                : restore
-                  ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-                  : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+                  ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
+                  : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
+                : appPath
+                  ? restore
+                    ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+                    : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+                  : restore
+                    ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+                    : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -221,19 +243,40 @@ export function ChangeConfirmation({
         </div>
         <div className="full-field">
           <dt>
-            {com
-              ? 'Exact original COM DLL path'
-              : association
-                ? 'Original suggestion data'
-                : uninstall
-                  ? 'Original installation folder'
-                  : appPath
-                    ? 'Exact original executable path'
-                    : 'Exact original command'}
+            {service
+              ? 'Original startup type'
+              : com
+                ? 'Exact original COM DLL path'
+                : association
+                  ? 'Original suggestion data'
+                  : uninstall
+                    ? 'Original installation folder'
+                    : appPath
+                      ? 'Exact original executable path'
+                      : 'Exact original command'}
           </dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
       </dl>
+      {service && (
+        <>
+          <dl className="detail-fields uninstall-evidence">
+            <div className="full-field">
+              <dt>Executable command · never executed</dt>
+              <dd className="code-field">{plan.serviceExecutable}</dd>
+            </div>
+            <div className="full-field">
+              <dt>Startup type change</dt>
+              <dd>{restore ? '4 (Disabled) → 3 (Manual)' : '3 (Manual) → 4 (Disabled)'}</dd>
+            </div>
+          </dl>
+          <p className="change-intro">
+            The backup includes {plan.preservedValues} registry/security value(s) and the SCM
+            configuration. Windows configuration access is required. SCM updates are rechecked
+            before and after; avoid concurrent service configuration changes.
+          </p>
+        </>
+      )}
       {uninstall && (
         <>
           <dl className="detail-fields uninstall-evidence">
@@ -280,15 +323,17 @@ export function ChangeConfirmation({
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
-          {com
-            ? 'No DLL is loaded or registered, no COM object is activated, and no key, file, or permission is changed. A verified backup is required before removing this one path value.'
-            : association
-              ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
-              : uninstall
-                ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
-                : restore
-                  ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
-                  : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
+          {service
+            ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
+            : com
+              ? 'No DLL is loaded or registered, no COM object is activated, and no key, file, or permission is changed. A verified backup is required before removing this one path value.'
+              : association
+                ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
+                : uninstall
+                  ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
+                  : restore
+                    ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
+                    : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
         </p>
       </div>
       <label className="confirmation-check">
@@ -299,15 +344,17 @@ export function ChangeConfirmation({
           onChange={(event) => setAgreed(event.target.checked)}
         />
         <span>
-          {com
-            ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
-            : association
-              ? 'I reviewed this exact suggestion and understand the file association change.'
-              : uninstall
-                ? 'I reviewed this entry and understand this only changes listing visibility.'
-                : appPath
-                  ? 'I reviewed this exact value and understand the application path change.'
-                  : 'I reviewed this exact value and understand the startup change.'}
+          {service
+            ? 'I reviewed this service and understand that only its startup type changes.'
+            : com
+              ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
+              : association
+                ? 'I reviewed this exact suggestion and understand the file association change.'
+                : uninstall
+                  ? 'I reviewed this entry and understand this only changes listing visibility.'
+                  : appPath
+                    ? 'I reviewed this exact value and understand the application path change.'
+                    : 'I reviewed this exact value and understand the startup change.'}
         </span>
       </label>
       {expired && (
@@ -327,23 +374,27 @@ export function ChangeConfirmation({
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
           {busy
             ? 'Applying…'
-            : com
+            : service
               ? restore
-                ? 'Restore original value'
-                : 'Back up & disable mapping'
-              : association
+                ? 'Restore Manual startup'
+                : 'Back up & disable service'
+              : com
                 ? restore
                   ? 'Restore original value'
-                  : 'Back up & remove suggestion'
-                : uninstall
+                  : 'Back up & disable mapping'
+                : association
                   ? restore
-                    ? 'Restore original visibility'
-                    : 'Back up & hide entry'
-                  : restore
                     ? 'Restore original value'
-                    : appPath
-                      ? 'Back up & repair'
-                      : 'Back up & disable'}
+                    : 'Back up & remove suggestion'
+                  : uninstall
+                    ? restore
+                      ? 'Restore original visibility'
+                      : 'Back up & hide entry'
+                    : restore
+                      ? 'Restore original value'
+                      : appPath
+                        ? 'Back up & repair'
+                        : 'Back up & disable'}
         </button>
       </div>
     </dialog>
@@ -417,8 +468,8 @@ export function BackupsPanel({
               Local backups <span className="count-chip">{inventory?.backups.length ?? 0}</span>
             </h2>
             <p>
-              State is checked against the original current-user Run, App Paths, Uninstall, or Open
-              with location.
+              State is checked against the original registration and, for services, the live Windows
+              configuration.
             </p>
           </div>
           <button
@@ -456,15 +507,17 @@ export function BackupsPanel({
                     {new Date(backup.createdAt).toLocaleString('en-US')}
                     <span>
                       ·{' '}
-                      {backup.scope === 'com'
-                        ? `COM DLL · ${backup.registryView} bit`
-                        : backup.scope === 'association'
-                          ? 'File association'
-                          : backup.scope === 'uninstall'
-                            ? 'Uninstall'
-                            : backup.scope === 'app_path'
-                              ? 'Application path'
-                              : 'Startup'}{' '}
+                      {backup.scope === 'service'
+                        ? 'Service startup'
+                        : backup.scope === 'com'
+                          ? `COM DLL · ${backup.registryView} bit`
+                          : backup.scope === 'association'
+                            ? 'File association'
+                            : backup.scope === 'uninstall'
+                              ? 'Uninstall'
+                              : backup.scope === 'app_path'
+                                ? 'Application path'
+                                : 'Startup'}{' '}
                       · {backup.valueName || '(Default)'}
                     </span>
                   </small>
