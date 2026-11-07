@@ -103,6 +103,17 @@ fn sources() -> Vec<Source> {
     for hive in ["HKCU", "HKLM"] {
         for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
             result.push(Source {
+                category: Category::Interfaces,
+                hive,
+                path: crate::interfaces::INTERFACES_KEY,
+                flag,
+                view,
+            });
+        }
+    }
+    for hive in ["HKCU", "HKLM"] {
+        for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
+            result.push(Source {
                 category: Category::Com,
                 hive,
                 path: crate::com::CLSID_KEY,
@@ -229,21 +240,24 @@ fn make_entry(
                         | Category::SharedDlls
                         | Category::RegisteredApplications
                         | Category::TypeLibraries
+                        | Category::Interfaces
                         | Category::ProgIds => TargetKind::File,
                     };
-                    let assessment =
-                        if matches!(source.category, Category::TypeLibraries | Category::ProgIds) {
-                            Assessment {
-                                status: EntryStatus::Unknown,
-                                code: "type_library_unverified".into(),
-                                explanation: "The platform mapping has not been assessed.".into(),
-                                target: None,
-                            }
-                        } else if source.category == Category::ApplicationCommands {
-                            application_scan::assess_command(&raw, environment, probe)
-                        } else {
-                            analyze_target(&raw, kind, environment, probe)
-                        };
+                    let assessment = if matches!(
+                        source.category,
+                        Category::TypeLibraries | Category::ProgIds | Category::Interfaces
+                    ) {
+                        Assessment {
+                            status: EntryStatus::Unknown,
+                            code: "type_library_unverified".into(),
+                            explanation: "The platform mapping has not been assessed.".into(),
+                            target: None,
+                        }
+                    } else if source.category == Category::ApplicationCommands {
+                        application_scan::assess_command(&raw, environment, probe)
+                    } else {
+                        analyze_target(&raw, kind, environment, probe)
+                    };
                     (raw, value_type, assessment)
                 }
                 Err(reason) => (
@@ -302,6 +316,8 @@ fn make_entry(
         type_library_repairable: false,
         prog_id_state: None,
         prog_id_repairable: false,
+        interface_state: None,
+        interface_repairable: false,
         service_repairable: false,
     }
 }
@@ -317,6 +333,8 @@ mod extra_scan;
 use extra_scan::scan_shared_dlls;
 #[path = "application_scan.rs"]
 mod application_scan;
+#[path = "interface_scan.rs"]
+mod interface_scan;
 #[path = "prog_id_scan.rs"]
 mod prog_id_scan;
 #[path = "registered_apps_scan.rs"]
@@ -355,6 +373,7 @@ fn scan_source(
                 | Category::SharedDlls
                 | Category::RegisteredApplications
                 | Category::TypeLibraries
+                | Category::Interfaces
         ) {
             REG_OPTION_OPEN_LINK
         } else {
@@ -380,6 +399,7 @@ fn scan_source(
             | Category::SharedDlls
             | Category::RegisteredApplications
             | Category::TypeLibraries
+            | Category::Interfaces
     ) && key
         .get_raw_value("SymbolicLinkValue")
         .is_ok_and(|v| v.vtype == REG_LINK)
@@ -389,7 +409,17 @@ fn scan_source(
         return scope;
     }
     let start_count = entries.len();
-    if source.category == Category::ProgIds {
+    if source.category == Category::Interfaces {
+        interface_scan::scan_interfaces(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::ProgIds {
         prog_id_scan::scan_prog_ids(
             source,
             &key,

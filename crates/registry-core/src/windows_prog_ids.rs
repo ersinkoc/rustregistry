@@ -383,6 +383,34 @@ mod tests {
         }
     }
     #[test]
+    fn restores_unchanged_v0112_prog_id_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+        let leaf = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!(
+                r"{}\User\RustRegistry.Legacy.1\CLSID",
+                fixture.base
+            ))
+            .unwrap()
+            .0;
+        let bytes = include_bytes!("../tests/fixtures/prog-id-backup-v12.json");
+        let file = directory.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut manager =
+            ChangeManager::new(fixture.store(), directory.path().to_path_buf(), NoFileProbe);
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "prog_id");
+        manager.apply(&plan.token).unwrap();
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(
+            read_value(&leaf, "").unwrap(),
+            Some(serde_json::from_value(record["original"].clone()).unwrap())
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+        fixture.assert_other();
+    }
+    #[test]
     fn prog_id_quick_and_selected_clean_keep_separate_backups_and_restore_exact_types_bytes_and_metadata(
     ) {
         for mode in ["quick", "selected"] {

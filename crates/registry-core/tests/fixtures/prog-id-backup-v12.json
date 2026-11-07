@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 12,
+  "id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "name": "Legacy ProgID",
+  "valueName": "",
+  "createdAt": 1700000000000,
+  "original": {
+    "kind": 1,
+    "bytes": [
+      123, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 45, 0, 99, 0, 99, 0, 99, 0,
+      99, 0, 45, 0, 52, 0, 99, 0, 99, 0, 99, 0, 45, 0, 56, 0, 99, 0, 99, 0, 99, 0, 45, 0, 99, 0, 99,
+      0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 99, 0, 100, 0, 125, 0, 0, 0
+    ]
+  },
+  "integritySha256": "b4896a738db9d7ccfdc8a00b66863e48fdbf186e41bbcb764b5d3411cfd0a282",
+  "progId": {
+    "progId": "RustRegistry.Legacy.1",
+    "clsid": "{cccccccc-cccc-4ccc-8ccc-cccccccccccd}",
+    "guard": {
+      "values": []
+    }
+  }
+}

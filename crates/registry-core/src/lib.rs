@@ -31,3 +31,5 @@ pub fn scan(
 ) -> Result<ScanReport, String> {
     Err("Live registry scanning is only available on Windows.".into())
 }
+
+pub mod interfaces;

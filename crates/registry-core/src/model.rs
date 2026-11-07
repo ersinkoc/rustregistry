@@ -14,6 +14,7 @@ pub enum Category {
     RegisteredApplications,
     TypeLibraries,
     ProgIds,
+    Interfaces,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -80,6 +81,10 @@ pub struct RegistryEntry {
     pub prog_id_state: Option<crate::prog_ids::ProgIdState>,
     #[serde(default)]
     pub prog_id_repairable: bool,
+    #[serde(skip)]
+    pub interface_state: Option<crate::interfaces::InterfaceState>,
+    #[serde(default)]
+    pub interface_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

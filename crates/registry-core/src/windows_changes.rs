@@ -1,3 +1,6 @@
+#[path = "windows_interfaces.rs"]
+mod interfaces;
+pub(crate) use interfaces::open_interface_child;
 #[path = "windows_applications.rs"]
 mod applications;
 #[path = "windows_associations.rs"]
@@ -39,6 +42,12 @@ pub struct WindowsRegistryStore {
     machine_registered_app_path: String,
     #[cfg(test)]
     registered_app_test_machine: Option<String>,
+    interfaces_path: String,
+    machine_interfaces_path: String,
+    interface_libraries_path: String,
+    machine_interface_libraries_path: String,
+    #[cfg(test)]
+    interface_test_machine_user: bool,
     prog_ids_path: String,
     machine_prog_ids_path: String,
     #[cfg(test)]
@@ -67,6 +76,12 @@ impl Default for WindowsRegistryStore {
             machine_registered_app_path: crate::registered_apps::REGISTERED_APPS_KEY.into(),
             #[cfg(test)]
             registered_app_test_machine: None,
+            interfaces_path: crate::interfaces::INTERFACES_KEY.into(),
+            machine_interfaces_path: crate::interfaces::INTERFACES_KEY.into(),
+            interface_libraries_path: crate::type_libraries::TYPE_LIB_KEY.into(),
+            machine_interface_libraries_path: crate::type_libraries::TYPE_LIB_KEY.into(),
+            #[cfg(test)]
+            interface_test_machine_user: false,
             prog_ids_path: crate::prog_ids::PROG_IDS_KEY.into(),
             machine_prog_ids_path: crate::prog_ids::PROG_IDS_KEY.into(),
             #[cfg(test)]
@@ -179,6 +194,26 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_interface(
+        &self,
+        app: &crate::interfaces::InterfaceBackup,
+    ) -> Result<crate::interfaces::InterfaceState, String> {
+        self.interface_state(app)
+    }
+    fn check_interface_write_access(
+        &self,
+        app: &crate::interfaces::InterfaceBackup,
+    ) -> Result<(), String> {
+        self.interface_write_access(app)
+    }
+    fn compare_exchange_interface(
+        &self,
+        app: &crate::interfaces::InterfaceBackup,
+        expected: &crate::interfaces::InterfaceState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_interface(app, expected, replacement)
+    }
     fn read_prog_id(
         &self,
         app: &crate::prog_ids::ProgIdBackup,
@@ -641,6 +676,8 @@ mod tests {
             type_library_repairable: false,
             prog_id_state: None,
             prog_id_repairable: false,
+            interface_state: None,
+            interface_repairable: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -759,6 +796,8 @@ mod tests {
             type_library_repairable: false,
             prog_id_state: None,
             prog_id_repairable: false,
+            interface_state: None,
+            interface_repairable: false,
             service_repairable: false,
         };
         let mut manager =
@@ -928,6 +967,8 @@ mod tests {
                 type_library_repairable: false,
                 prog_id_state: None,
                 prog_id_repairable: false,
+                interface_state: None,
+                interface_repairable: false,
                 service_repairable: false,
             };
             let mut manager =

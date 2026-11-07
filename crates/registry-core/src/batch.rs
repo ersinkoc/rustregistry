@@ -50,6 +50,7 @@ pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
                 && entry.key_path.eq_ignore_ascii_case(STARTUP_KEY)
                 && entry.snapshot.is_some()
         }
+        Category::Interfaces => entry.view == "64" && entry.interface_repairable,
         Category::ProgIds => entry.view == "shared" && entry.prog_id_repairable,
         Category::TypeLibraries => entry.view == "shared" && entry.type_library_repairable,
         Category::RegisteredApplications => {

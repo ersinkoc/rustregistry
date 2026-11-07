@@ -291,6 +291,8 @@ mod tests {
                 type_library_repairable: false,
                 prog_id_state: None,
                 prog_id_repairable: false,
+                interface_state: None,
+                interface_repairable: false,
                 service_repairable: false,
                 com_state: Some(state),
             }

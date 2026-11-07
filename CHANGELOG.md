@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.13 — 2026-11-07
+
+- Expand coverage from 29 to 33 logical scan sections with COM Interface-to-TypeLib references under both hives and both architecture views. Check library GUID key existence in shared user and machine TypeLib roots without loading libraries, activating COM, or probing files. Any existing library prevents repair; this deliberately does not diagnose version-specific library failures.
+- Add backed-up, reversible removal of simple orphaned current-user 64-bit interface TypeLib defaults to individual repair, Quick Clean, and selected Clean. Require exact live evidence, no machine interface counterpart in either view, a library absent from both hives, and existing write access before review.
+- Preserve description, optional Version and flat ProxyStubClsid32 metadata, the entire 32-bit interface view, keys, permissions, files, and other registrations. Machine changes, complex/nested metadata, unknown children, links, malformed GUIDs, and uncertain evidence remain outside repair scope.
+- Flush and verify an individual checksum-protected schema 13 backup before each conditional registry transaction. Restore exact original REG_SZ/REG_EXPAND_SZ bytes only while the value remains absent and every orphan, metadata, structure, and counterpart guard still matches. Keep formats 1–12 unchanged with a fixed v0.1.12 ProgID restoration fixture.
+- Add policy, read-only inventory, write-access, conflict, batch-stop, exact-byte restart/restore, and tampered-backup tests. Add packaged UI verification of native/32-bit controls, shared user and read-only machine libraries, new-library conflicts after review, review/cancel, single and selected repair, reload/restore, raw metadata/permission preservation, and owned-fixture cleanup.
+
 ## 0.1.12 — 2026-11-07
 
 - Expand coverage from 27 to 29 logical scan sections with shared HKCU/HKLM COM ProgID-to-CLSID reference inventory. These checks share Classes roots with file-association inventory but inspect different children and use distinct scope IDs. Resolve class-key existence through both hives and both architecture views without COM activation, resolution APIs, or filesystem probes.

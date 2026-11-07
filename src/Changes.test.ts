@@ -22,6 +22,31 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only guarded native current-user interface type-library references', () => {
+    const mapping = {
+      ...entry,
+      category: 'interfaces' as RegistryEntry['category'],
+      keyPath: 'Software\\Classes\\Interface\\{11111111-1111-4111-8111-111111111111}\\TypeLib',
+      view: '64',
+      valueName: '',
+      rawValue: '{22222222-2222-4222-8222-222222222222}',
+      interfaceRepairable: true,
+      assessment: { ...entry.assessment, code: 'interface_library_missing' },
+    };
+    expect(canQuarantine(mapping)).toBe(true);
+    for (const changed of [
+      { ...mapping, hive: 'HKLM' },
+      { ...mapping, view: '32' },
+      { ...mapping, view: 'shared' },
+      { ...mapping, interfaceRepairable: false },
+      { ...mapping, valueName: 'Version' },
+      { ...mapping, valueType: 'REG_DWORD' },
+      { ...mapping, rawValue: '%LIBID%' },
+      { ...mapping, keyPath: `${mapping.keyPath}\\Nested` },
+      { ...mapping, assessment: { ...mapping.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only guarded current-user orphaned COM ProgID mappings', () => {
     const mapping = {
       ...entry,

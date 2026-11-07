@@ -9,7 +9,8 @@ export type Category =
   | 'shared_dlls'
   | 'registered_applications'
   | 'type_libraries'
-  | 'prog_ids';
+  | 'prog_ids'
+  | 'interfaces';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -34,6 +35,7 @@ export interface RegistryEntry {
   registeredAppRepairable?: boolean;
   typeLibraryRepairable?: boolean;
   progIdRepairable?: boolean;
+  interfaceRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -74,6 +76,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  interfaces: {
+    label: 'COM interface references',
+    description: 'Interface-to-TypeLib checks and guarded orphan recovery',
+    short: 'COM interface',
+  },
   prog_ids: {
     label: 'COM ProgID references',
     description: 'ProgID-to-CLSID checks and guarded orphan recovery',
