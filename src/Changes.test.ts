@@ -22,6 +22,28 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only guarded neutral current-user win64 type library mappings', () => {
+    const library = {
+      ...entry,
+      category: 'type_libraries' as const,
+      keyPath: 'Software\\Classes\\TypeLib\\{11111111-1111-4111-8111-111111111111}\\1.0\\0\\win64',
+      valueName: '',
+      typeLibraryRepairable: true,
+    };
+    expect(canQuarantine(library)).toBe(true);
+    for (const changed of [
+      { ...library, hive: 'HKLM' },
+      { ...library, view: '32' },
+      { ...library, typeLibraryRepairable: false },
+      { ...library, valueName: 'NamedValue' },
+      { ...library, keyPath: library.keyPath.replace('win64', 'win32') },
+      { ...library, keyPath: library.keyPath.replace('\\0\\win64', '\\409\\win64') },
+      { ...library, keyPath: `${library.keyPath}\\Nested` },
+      { ...library, valueType: 'REG_DWORD' },
+      { ...library, assessment: { ...entry.assessment, status: 'unknown' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only verified current-user orphaned registered applications', () => {
     const registration = {
       ...entry,

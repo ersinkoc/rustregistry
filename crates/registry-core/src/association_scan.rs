@@ -163,6 +163,8 @@ pub(super) fn scan_associations(
                 application_hidden: false,
                 shared_dll_repairable: false,
                 registered_app_repairable: false,
+                type_library_state: None,
+                type_library_repairable: false,
                 service_repairable: false,
                 association_state: state,
             });

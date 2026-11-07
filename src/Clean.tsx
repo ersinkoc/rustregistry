@@ -243,23 +243,25 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'registered_app'
-                  ? 'Remove orphaned application registration'
-                  : item.scope === 'shared_dll'
-                    ? 'Remove missing zero-count DLL reference · 64 bit'
-                    : item.scope === 'application'
-                      ? 'Hide broken application suggestion · NoOpenWith'
-                      : item.scope === 'service'
-                        ? 'Disable stopped service · Manual → Disabled'
-                        : item.scope === 'uninstall'
-                          ? 'Hide orphaned listing · SystemComponent → 1'
-                          : item.scope === 'association'
-                            ? 'Remove Open with suggestion'
-                            : item.scope === 'com'
-                              ? 'Disable COM mapping'
-                              : item.scope === 'app_path'
-                                ? 'Remove broken application path'
-                                : 'Disable startup value'}
+                {item.scope === 'type_library'
+                  ? 'Disable missing type library mapping · win64'
+                  : item.scope === 'registered_app'
+                    ? 'Remove orphaned application registration'
+                    : item.scope === 'shared_dll'
+                      ? 'Remove missing zero-count DLL reference · 64 bit'
+                      : item.scope === 'application'
+                        ? 'Hide broken application suggestion · NoOpenWith'
+                        : item.scope === 'service'
+                          ? 'Disable stopped service · Manual → Disabled'
+                          : item.scope === 'uninstall'
+                            ? 'Hide orphaned listing · SystemComponent → 1'
+                            : item.scope === 'association'
+                              ? 'Remove Open with suggestion'
+                              : item.scope === 'com'
+                                ? 'Disable COM mapping'
+                                : item.scope === 'app_path'
+                                  ? 'Remove broken application path'
+                                  : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -335,6 +337,14 @@ export function CleanConfirmation({
           Application registration cleanup removes only current-user values with confirmed missing
           Capabilities and no machine counterpart. Default selections, UserChoice, other keys,
           commands, and files are preserved. New targets or registrations block repair and restore.
+        </p>
+      )}
+      {plan.items.some((item) => item.scope === 'type_library') && (
+        <p className="change-intro">
+          Type library cleanup changes only confirmed missing, neutral win64 user mappings after a
+          separate verified backup. Version, locale, win32 mappings, keys, metadata, and files are
+          preserved. New files, machine counterparts, or changed registration details block repair
+          and restore.
         </p>
       )}
       <label className="confirmation-check">

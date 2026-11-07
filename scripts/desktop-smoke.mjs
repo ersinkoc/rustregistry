@@ -15,6 +15,7 @@ import { verifyDisplayScale } from './display-smoke.mjs';
 import { verifyApplicationRecovery } from './application-smoke.mjs';
 import { verifySharedDllRecovery } from './shared-dll-smoke.mjs';
 import { verifyRegisteredApplicationRecovery } from './registered-app-smoke.mjs';
+import { verifyTypeLibraryRecovery } from './type-library-smoke.mjs';
 
 if (process.platform !== 'win32')
   throw new Error('Desktop smoke verification requires Windows x64.');
@@ -24,11 +25,18 @@ const expandedOnly = process.argv.includes('--expanded-only');
 const applicationOnly = process.argv.includes('--application-only');
 const sharedDllOnly = process.argv.includes('--shared-dll-only');
 const registeredAppOnly = process.argv.includes('--registered-app-only');
+const typeLibraryOnly = process.argv.includes('--type-library-only');
 if (sharedDllOnly && !process.env.RUSTREGISTRY_SHARED_DLL_FIXTURE_TOKEN)
   throw new Error('An explicitly elevated owned SharedDLLs fixture session is required.');
 if (
-  [serviceOnly, expandedOnly, applicationOnly, sharedDllOnly, registeredAppOnly].filter(Boolean)
-    .length > 1
+  [
+    serviceOnly,
+    expandedOnly,
+    applicationOnly,
+    sharedDllOnly,
+    registeredAppOnly,
+    typeLibraryOnly,
+  ].filter(Boolean).length > 1
 )
   throw new Error('Choose only one focused verification mode.');
 if (serviceOnly && !process.env.RUSTREGISTRY_SERVICE_FIXTURE_TOKEN)
@@ -103,17 +111,19 @@ const summary = {
   executable,
   sourceExecutable: process.env.RUSTREGISTRY_SOURCE_EXE || executable,
   version: appVersion,
-  mode: registeredAppOnly
-    ? 'registered-app-only'
-    : serviceOnly
-      ? 'service-only'
-      : expandedOnly
-        ? 'expanded-only'
-        : applicationOnly
-          ? 'application-only'
-          : sharedDllOnly
-            ? 'shared-dll-only'
-            : 'full',
+  mode: typeLibraryOnly
+    ? 'type-library-only'
+    : registeredAppOnly
+      ? 'registered-app-only'
+      : serviceOnly
+        ? 'service-only'
+        : expandedOnly
+          ? 'expanded-only'
+          : applicationOnly
+            ? 'application-only'
+            : sharedDllOnly
+              ? 'shared-dll-only'
+              : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -177,7 +187,11 @@ try {
   expect(total).toBeGreaterThan(0);
   summary.entries = total;
   checked('Real registry scan completes through native IPC and populates the paginated table');
-  if (registeredAppOnly) {
+  if (typeLibraryOnly) {
+    await verifyTypeLibraryRecovery(page, output, checked, summary);
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (registeredAppOnly) {
     await verifyRegisteredApplicationRecovery(page, output, checked, summary);
     expect(summary.errors).toEqual([]);
     summary.passed = true;
@@ -290,10 +304,10 @@ try {
     checked('Search empty state is honest and clearing filters restores real entries');
 
     await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-    await expect(page.locator('.scope-item')).toHaveCount(25);
+    await expect(page.locator('.scope-item')).toHaveCount(27);
     await page.locator('.scope-item summary').first().click();
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-    checked('Coverage lists all 25 actual registry locations with expandable read results');
+    checked('Coverage lists all 27 actual registry locations with expandable read results');
 
     await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
     await expect(page.locator('.history-item')).toHaveCount(1);
@@ -387,6 +401,7 @@ try {
     await verifyServiceRecovery(page, output, checked, summary);
     await verifySharedDllRecovery(page, output, checked, summary);
     await verifyRegisteredApplicationRecovery(page, output, checked, summary);
+    await verifyTypeLibraryRecovery(page, output, checked, summary);
 
     await page.getByRole('link', { name: 'RustRegistry overview', exact: true }).click();
     await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
@@ -516,17 +531,19 @@ try {
   await writeFile(
     resolve(
       output,
-      registeredAppOnly
-        ? 'desktop-registered-app-verification.json'
-        : serviceOnly
-          ? 'desktop-service-verification.json'
-          : expandedOnly
-            ? 'desktop-expanded-verification.json'
-            : applicationOnly
-              ? 'desktop-application-verification.json'
-              : sharedDllOnly
-                ? 'desktop-shared-dll-verification.json'
-                : 'desktop-verification.json',
+      typeLibraryOnly
+        ? 'desktop-type-library-verification.json'
+        : registeredAppOnly
+          ? 'desktop-registered-app-verification.json'
+          : serviceOnly
+            ? 'desktop-service-verification.json'
+            : expandedOnly
+              ? 'desktop-expanded-verification.json'
+              : applicationOnly
+                ? 'desktop-application-verification.json'
+                : sharedDllOnly
+                  ? 'desktop-shared-dll-verification.json'
+                  : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );

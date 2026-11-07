@@ -10,6 +10,8 @@ mod registered_apps;
 mod services;
 #[path = "windows_shared_dlls.rs"]
 mod shared_dlls;
+#[path = "windows_type_libraries.rs"]
+mod type_libraries;
 use crate::changes::{
     validate_app_path_name, validate_value_name, AppPathGuard, AppPathState, NamedValue,
     RegistryStore, StoredValue, APP_PATHS_KEY, STARTUP_KEY,
@@ -17,6 +19,7 @@ use crate::changes::{
 use crate::uninstall::{validate_uninstall_name, UninstallSnapshot, COMPONENT, UNINSTALL_KEY};
 pub(crate) use registered_apps::open_registration_path;
 use std::borrow::Cow;
+pub(crate) use type_libraries::open_type_lib;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
 pub struct WindowsRegistryStore {
@@ -33,6 +36,10 @@ pub struct WindowsRegistryStore {
     machine_registered_app_path: String,
     #[cfg(test)]
     registered_app_test_machine: Option<String>,
+    type_lib_path: String,
+    machine_type_lib_path: String,
+    #[cfg(test)]
+    type_lib_test_machine_user: bool,
     shared_dll_path: String,
     #[cfg(test)]
     shared_dll_test_user: bool,
@@ -53,6 +60,10 @@ impl Default for WindowsRegistryStore {
             machine_registered_app_path: crate::registered_apps::REGISTERED_APPS_KEY.into(),
             #[cfg(test)]
             registered_app_test_machine: None,
+            type_lib_path: crate::type_libraries::TYPE_LIB_KEY.into(),
+            machine_type_lib_path: crate::type_libraries::TYPE_LIB_KEY.into(),
+            #[cfg(test)]
+            type_lib_test_machine_user: false,
             shared_dll_path: crate::shared_dlls::SHARED_DLLS_KEY.into(),
             #[cfg(test)]
             shared_dll_test_user: false,
@@ -157,6 +168,27 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_type_library(
+        &self,
+        app: &crate::type_libraries::TypeLibBackup,
+    ) -> Result<crate::type_libraries::TypeLibState, String> {
+        self.type_lib_state(app)
+    }
+    fn check_type_library_write_access(
+        &self,
+        app: &crate::type_libraries::TypeLibBackup,
+    ) -> Result<(), String> {
+        self.type_lib_write_access(app)
+    }
+    fn compare_exchange_type_library(
+        &self,
+        app: &crate::type_libraries::TypeLibBackup,
+        expected: &crate::type_libraries::TypeLibState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_type_lib(app, expected, replacement)
+    }
+
     fn read_registered_app(
         &self,
         name: &str,
@@ -573,6 +605,8 @@ mod tests {
             application_hidden: false,
             shared_dll_repairable: false,
             registered_app_repairable: false,
+            type_library_state: None,
+            type_library_repairable: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -687,6 +721,8 @@ mod tests {
             application_hidden: false,
             shared_dll_repairable: false,
             registered_app_repairable: false,
+            type_library_state: None,
+            type_library_repairable: false,
             service_repairable: false,
         };
         let mut manager =
@@ -852,6 +888,8 @@ mod tests {
                 application_hidden: false,
                 shared_dll_repairable: false,
                 registered_app_repairable: false,
+                type_library_state: None,
+                type_library_repairable: false,
                 service_repairable: false,
             };
             let mut manager =

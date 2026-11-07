@@ -84,6 +84,8 @@ pub(super) fn scan_shared_dlls(
             application_hidden: false,
             shared_dll_repairable: repairable,
             registered_app_repairable: false,
+            type_library_state: None,
+            type_library_repairable: false,
             service_repairable: false,
         });
     }

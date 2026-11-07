@@ -56,6 +56,13 @@ fn sources() -> Vec<Source> {
     }
     for hive in ["HKCU", "HKLM"] {
         result.push(Source {
+            category: Category::TypeLibraries,
+            hive,
+            path: crate::type_libraries::TYPE_LIB_KEY,
+            flag: 0,
+            view: "shared",
+        });
+        result.push(Source {
             category: Category::RegisteredApplications,
             hive,
             path: crate::registered_apps::REGISTERED_APPS_KEY,
@@ -204,9 +211,17 @@ fn make_entry(
                         Category::FileAssociations
                         | Category::Com
                         | Category::SharedDlls
-                        | Category::RegisteredApplications => TargetKind::File,
+                        | Category::RegisteredApplications
+                        | Category::TypeLibraries => TargetKind::File,
                     };
-                    let assessment = if source.category == Category::ApplicationCommands {
+                    let assessment = if source.category == Category::TypeLibraries {
+                        Assessment {
+                            status: EntryStatus::Unknown,
+                            code: "type_library_unverified".into(),
+                            explanation: "The platform mapping has not been assessed.".into(),
+                            target: None,
+                        }
+                    } else if source.category == Category::ApplicationCommands {
                         application_scan::assess_command(&raw, environment, probe)
                     } else {
                         analyze_target(&raw, kind, environment, probe)
@@ -265,6 +280,8 @@ fn make_entry(
         application_hidden: false,
         shared_dll_repairable: false,
         registered_app_repairable: false,
+        type_library_state: None,
+        type_library_repairable: false,
         service_repairable: false,
     }
 }
@@ -282,6 +299,8 @@ use extra_scan::scan_shared_dlls;
 mod application_scan;
 #[path = "registered_apps_scan.rs"]
 mod registered_apps_scan;
+#[path = "type_libraries_scan.rs"]
+mod type_libraries_scan;
 
 fn scan_source(
     source: &Source,
@@ -310,7 +329,10 @@ fn scan_source(
         source.path,
         if matches!(
             source.category,
-            Category::ApplicationCommands | Category::SharedDlls | Category::RegisteredApplications
+            Category::ApplicationCommands
+                | Category::SharedDlls
+                | Category::RegisteredApplications
+                | Category::TypeLibraries
         ) {
             REG_OPTION_OPEN_LINK
         } else {
@@ -332,7 +354,10 @@ fn scan_source(
     };
     if matches!(
         source.category,
-        Category::ApplicationCommands | Category::SharedDlls | Category::RegisteredApplications
+        Category::ApplicationCommands
+            | Category::SharedDlls
+            | Category::RegisteredApplications
+            | Category::TypeLibraries
     ) && key
         .get_raw_value("SymbolicLinkValue")
         .is_ok_and(|v| v.vtype == REG_LINK)
@@ -342,7 +367,17 @@ fn scan_source(
         return scope;
     }
     let start_count = entries.len();
-    if source.category == Category::RegisteredApplications {
+    if source.category == Category::TypeLibraries {
+        type_libraries_scan::scan_type_libraries(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::RegisteredApplications {
         registered_apps_scan::scan_registered_applications(
             source,
             &key,

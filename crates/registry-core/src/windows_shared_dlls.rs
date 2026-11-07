@@ -174,6 +174,8 @@ mod tests {
                 application_hidden: false,
                 shared_dll_repairable: true,
                 registered_app_repairable: false,
+                type_library_state: None,
+                type_library_repairable: false,
             }
         }
         fn assert_controls(&self) {

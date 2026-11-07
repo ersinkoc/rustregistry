@@ -270,6 +270,31 @@ mod tests {
     }
 
     #[test]
+    fn restores_unchanged_v0110_registration_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let bytes = include_bytes!("../tests/fixtures/registered-app-backup-v10.json");
+        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let file = directory.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut manager = ChangeManager::new(
+            fixture.store(),
+            directory.path().to_path_buf(),
+            LocalPathProbe,
+        );
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "registered_app");
+        manager.apply(&plan.token).unwrap();
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(
+            read_value(&fixture.key(), "RustRegistryLegacyRegisteredApplication").unwrap(),
+            Some(serde_json::from_value(record["original"].clone()).unwrap())
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+        fixture.assert_control();
+    }
+
+    #[test]
     fn registrations_quick_and_selected_clean_keep_separate_backups_and_restore_exact_bytes_after_restart(
     ) {
         for mode in ["quick", "selected"] {

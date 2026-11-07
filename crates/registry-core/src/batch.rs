@@ -50,6 +50,7 @@ pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
                 && entry.key_path.eq_ignore_ascii_case(STARTUP_KEY)
                 && entry.snapshot.is_some()
         }
+        Category::TypeLibraries => entry.view == "shared" && entry.type_library_repairable,
         Category::RegisteredApplications => {
             entry.view == "shared" && entry.registered_app_repairable
         }

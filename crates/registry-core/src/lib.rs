@@ -11,6 +11,7 @@ mod scan_probe;
 mod scanner;
 pub mod services;
 pub mod shared_dlls;
+pub mod type_libraries;
 pub mod uninstall;
 #[cfg(windows)]
 pub mod windows_changes;

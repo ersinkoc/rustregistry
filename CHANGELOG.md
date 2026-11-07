@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.11 — 2026-11-07
+
+- Expand read-only coverage from 25 to 27 locations with shared HKCU/HKLM TypeLib inventory. Read explicit win32/win64 platform mappings, versions, and locales without loading or registering libraries. Keep win32 file targets unverified in the 64-bit process and bound both mapping counts and hierarchy traversal.
+- Add backed-up, reversible repair of missing literal local .dll/.tlb/.olb win64 defaults for simple one-version, neutral-locale current-user type libraries. Include guarded mappings in individual repair, Quick Clean, and selected Clean; require existing write access and no machine counterpart for the library ID.
+- Preserve all supported library/version/locale/help/flags metadata, win32 mappings, keys, permissions, other libraries, and all files. Exclude Windows paths, ambiguous/environment/resource-index paths, multiple versions/locales, unknown/nested metadata, links, machine changes, and uncertain evidence.
+- Save and verify a separate checksum-protected schema 11 backup before a conditional registry transaction removes only the reviewed default mapping. Restore exact original type/bytes only while the value remains absent, the file remains missing, and all metadata/fallback guards match. Never load, register, unregister, replace, or delete a library file.
+- Preserve backup formats 1–10 without migration, including a fixed v0.1.10 registration backup restoration test. Add policy, read-only platform inventory, write-access, conflict, batch-stop, restart/restore, and corruption tests plus packaged UI recovery checks with independently read raw metadata and permissions in both architecture views.
+
 ## 0.1.10 — 2026-11-07
 
 - Expand read-only coverage from 23 to 25 registry locations with shared HKCU/HKLM RegisteredApplications inventory. Check literal supported Capabilities registry references without probing files or running application commands; distinguish existing, missing, and unverified targets.

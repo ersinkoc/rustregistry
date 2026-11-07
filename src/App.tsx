@@ -69,6 +69,7 @@ const pageNames: Record<Page, string> = {
   about: 'About RustRegistry',
 };
 const categoryIcons: Record<Category, LucideIcon> = {
+  type_libraries: FileSearch,
   registered_applications: FileSearch,
   application_commands: TerminalSquare,
   startup: Radio,
@@ -238,42 +239,46 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'registered_applications'
-              ? 'Protected application registration repair'
-              : entry.category === 'shared_dlls'
-                ? 'Protected shared DLL reference repair'
-                : entry.category === 'application_commands'
-                  ? 'Protected application suggestion repair'
-                  : entry.category === 'services'
-                    ? 'Protected service startup repair'
-                    : entry.category === 'com'
-                      ? 'Protected COM mapping repair'
-                      : entry.category === 'file_associations'
-                        ? 'Protected Open with repair'
-                        : entry.category === 'uninstall'
-                          ? 'Protected uninstall listing repair'
-                          : entry.category === 'app_paths'
-                            ? 'Protected application path repair'
-                            : 'Protected startup change'}
+            {entry.category === 'type_libraries'
+              ? 'Protected type library mapping repair'
+              : entry.category === 'registered_applications'
+                ? 'Protected application registration repair'
+                : entry.category === 'shared_dlls'
+                  ? 'Protected shared DLL reference repair'
+                  : entry.category === 'application_commands'
+                    ? 'Protected application suggestion repair'
+                    : entry.category === 'services'
+                      ? 'Protected service startup repair'
+                      : entry.category === 'com'
+                        ? 'Protected COM mapping repair'
+                        : entry.category === 'file_associations'
+                          ? 'Protected Open with repair'
+                          : entry.category === 'uninstall'
+                            ? 'Protected uninstall listing repair'
+                            : entry.category === 'app_paths'
+                              ? 'Protected application path repair'
+                              : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'registered_applications'
-              ? 'Review a verified backup before removing this orphaned application registration. Only its named value changes; default selections, Capabilities keys, commands, files, and permissions are preserved.'
-              : entry.category === 'shared_dlls'
-                ? 'Review a verified backup before removing only this missing DLL’s zero-count reference. Existing Windows write access is required. No DLL file or positive counter is changed.'
-                : entry.category === 'application_commands'
-                  ? 'Review a verified backup before hiding this broken application suggestion. Its open command and default selections stay intact; no command is run.'
-                  : entry.category === 'services'
-                    ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
-                    : entry.category === 'com'
-                      ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
-                      : entry.category === 'file_associations'
-                        ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
-                        : entry.category === 'uninstall'
-                          ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
-                          : entry.category === 'app_paths'
-                            ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-                            : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'type_libraries'
+              ? 'Review a verified backup before disabling this missing win64 library mapping. Version, locale, win32 mappings, help metadata, keys, files, and permissions are preserved. No library is loaded or registered.'
+              : entry.category === 'registered_applications'
+                ? 'Review a verified backup before removing this orphaned application registration. Only its named value changes; default selections, Capabilities keys, commands, files, and permissions are preserved.'
+                : entry.category === 'shared_dlls'
+                  ? 'Review a verified backup before removing only this missing DLL’s zero-count reference. Existing Windows write access is required. No DLL file or positive counter is changed.'
+                  : entry.category === 'application_commands'
+                    ? 'Review a verified backup before hiding this broken application suggestion. Its open command and default selections stay intact; no command is run.'
+                    : entry.category === 'services'
+                      ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
+                      : entry.category === 'com'
+                        ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
+                        : entry.category === 'file_associations'
+                          ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
+                          : entry.category === 'uninstall'
+                            ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+                            : entry.category === 'app_paths'
+                              ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                              : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy
@@ -323,7 +328,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 25,
+    total: 27,
     entries: 0,
     current: '',
   });
@@ -382,7 +387,7 @@ export default function App() {
     setScanning(true);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 25, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 27, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -1146,7 +1151,7 @@ export default function App() {
                 <div>
                   <h2>Focused scope. Transparent results.</h2>
                   <p>
-                    This release checks 25 locations, including separate 32-bit and 64-bit COM views
+                    This release checks 27 locations, including separate 32-bit and 64-bit COM views
                     in both hives. File association Classes roots are shared and read once per hive.
                     Services use the shared system view. Other application locations use their
                     documented 32-bit, 64-bit, or shared views.
@@ -1243,7 +1248,7 @@ export default function App() {
                         </strong>
                         <small>
                           {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/25 locations
+                          {formatDuration(item.durationMs)} · {item.scopes.length}/27 locations
                         </small>
                       </span>
                       <span className="readonly-pill">
@@ -1335,8 +1340,10 @@ export default function App() {
                     File association checks cover Open with registration references only. Default
                     handlers and full system configuration are outside scan scope. COM checks cover
                     DLL, handler, and local-server mappings. Registered applications check bounded
-                    Capabilities references. Guarded service and zero-count shared DLL repairs
-                    require existing Windows write access; 32-bit file targets remain unverified.
+                    Capabilities references. Type library checks inventory win32/win64 mappings;
+                    guarded neutral win64 user mappings support reversible repair. Guarded service
+                    and zero-count shared DLL repairs require existing Windows write access; 32-bit
+                    file targets remain unverified.
                   </li>
                   <li>
                     <ArrowDownLeft size={17} />
