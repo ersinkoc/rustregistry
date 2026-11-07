@@ -250,7 +250,7 @@ export function CleanConfirmation({
                     : item.scope === 'association'
                       ? 'Remove Open with suggestion'
                       : item.scope === 'com'
-                        ? 'Disable COM DLL mapping'
+                        ? 'Disable COM mapping'
                         : item.scope === 'app_path'
                           ? 'Remove broken application path'
                           : 'Disable startup value'}
@@ -301,8 +301,8 @@ export function CleanConfirmation({
       ))}
       <p className="change-intro">
         Keys, files, permissions, and default application selections are preserved. COM cleanup
-        disables only the reviewed path; it never loads a DLL. Restore is available in Backups &
-        restore.
+        disables only the reviewed mapping; it never loads a DLL or runs a command. Restore is
+        available in Backups & restore.
       </p>
       <label className="confirmation-check">
         <input

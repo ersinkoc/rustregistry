@@ -72,7 +72,7 @@ export function canQuarantine(entry: RegistryEntry) {
       entry.assessment.code === 'target_missing' &&
       entry.valueName === '' &&
       ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
-      /^software\\classes\\clsid\\\{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\}\\inprocserver32$/i.test(
+      /^software\\classes\\clsid\\\{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\}\\(inprocserver32|inprochandler32|localserver32)$/i.test(
         entry.keyPath,
       )
     );
@@ -133,6 +133,13 @@ export function ChangeConfirmation({
   const uninstall = plan.scope === 'uninstall';
   const association = plan.scope === 'association';
   const com = plan.scope === 'com';
+  const comLocal = com && /\\LocalServer32$/i.test(plan.registryPath);
+  const comServer = plan.registryPath.split('\\').at(-1);
+  const comLabel = comLocal
+    ? 'COM server command'
+    : comServer === 'InprocHandler32'
+      ? 'COM handler mapping'
+      : 'COM DLL mapping';
   const service = plan.scope === 'service';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
@@ -175,8 +182,8 @@ export function ChangeConfirmation({
             : 'Disable this missing-target service?'
           : com
             ? restore
-              ? 'Restore COM DLL mapping?'
-              : 'Repair broken COM DLL mapping?'
+              ? `Restore ${comLabel}?`
+              : `Repair broken ${comLabel}?`
             : association
               ? restore
                 ? 'Restore Open with suggestion?'
@@ -200,8 +207,8 @@ export function ChangeConfirmation({
             : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
           : com
             ? restore
-              ? 'This restores the exact original 64-bit DLL mapping. If the DLL exists later, applications may load it through COM. The class and server metadata must still match the backup.'
-              : 'The explicit local DLL is missing. After a verified backup, only the default InprocServer32 path is removed. This disables this broken mapping; it does not repair missing DLL files or choose a replacement.'
+              ? `This restores the exact original 64-bit ${comLocal ? 'server command' : 'DLL mapping'}. Applications may use it through COM later. The class and server metadata must still match the backup.`
+              : `The explicit local ${comLocal ? 'executable' : 'DLL'} is missing. After a verified backup, only the default ${comServer} value is removed. The registration keys and permissions are preserved; no COM object is activated and no command is run.`
             : association
               ? restore
                 ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
@@ -246,7 +253,9 @@ export function ChangeConfirmation({
             {service
               ? 'Original startup type'
               : com
-                ? 'Exact original COM DLL path'
+                ? comLocal
+                  ? 'Exact original COM server command'
+                  : 'Exact original COM DLL path'
                 : association
                   ? 'Original suggestion data'
                   : uninstall
@@ -302,8 +311,8 @@ export function ChangeConfirmation({
       )}
       {com && (
         <p className="change-intro">
-          The COM class, InprocServer32 key, and {plan.preservedValues} other metadata value(s)
-          remain in place. Alternative activation keys, changed metadata, or a same-view machine
+          The COM class, {comServer} key, and {plan.preservedValues} other metadata value(s) remain
+          in place. Alternative activation keys, changed metadata, or a same-view machine
           registration block repair and restore.
         </p>
       )}
@@ -326,7 +335,7 @@ export function ChangeConfirmation({
           {service
             ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
             : com
-              ? 'No DLL is loaded or registered, no COM object is activated, and no key, file, or permission is changed. A verified backup is required before removing this one path value.'
+              ? 'No DLL is loaded or registered, no COM object is activated, no command is run, and no key, file, or permission is changed. A verified backup is required before removing this one value.'
               : association
                 ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
                 : uninstall
@@ -510,7 +519,7 @@ export function BackupsPanel({
                       {backup.scope === 'service'
                         ? 'Service startup'
                         : backup.scope === 'com'
-                          ? `COM DLL · ${backup.registryView} bit`
+                          ? `COM mapping · ${backup.registryView} bit`
                           : backup.scope === 'association'
                             ? 'File association'
                             : backup.scope === 'uninstall'

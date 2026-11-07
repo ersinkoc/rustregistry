@@ -60,10 +60,37 @@ describe('protected change availability', () => {
       { ...com, comRepairable: false },
       { ...com, valueName: 'ThreadingModel' },
       { ...com, valueType: 'REG_BINARY' },
-      { ...com, keyPath: com.keyPath.replace('InprocServer32', 'LocalServer32') },
+      { ...com, keyPath: com.keyPath.replace('InprocServer32', 'TreatAs') },
       { ...com, assessment: { ...entry.assessment, status: 'unknown' as const } },
     ])
       expect(canQuarantine(changed)).toBe(false);
+  });
+  it('includes verified COM handlers and local servers in cleaning while keeping application commands read-only', () => {
+    for (const server of ['InprocHandler32', 'LocalServer32']) {
+      const mapping: RegistryEntry = {
+        ...entry,
+        category: 'com',
+        view: '64',
+        valueName: '',
+        comRepairable: true,
+        keyPath: `Software\\Classes\\CLSID\\{11111111-1111-4111-8111-111111111111}\\${server}`,
+      };
+      expect(canQuarantine(mapping)).toBe(true);
+      for (const changed of [
+        { ...mapping, comRepairable: false },
+        { ...mapping, hive: 'HKLM' },
+        { ...mapping, view: '32' },
+        { ...mapping, keyPath: `${mapping.keyPath}\\Nested` },
+      ])
+        expect(canQuarantine(changed)).toBe(false);
+    }
+    expect(
+      canQuarantine({
+        ...entry,
+        category: 'application_commands',
+        keyPath: 'Software\\Classes\\Applications\\missing.exe\\shell\\open\\command',
+      }),
+    ).toBe(false);
   });
   it('offers only verified current-user orphaned Open with suggestions', () => {
     const association = {

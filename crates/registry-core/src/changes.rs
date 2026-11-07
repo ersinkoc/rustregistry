@@ -9,7 +9,8 @@ use crate::associations::{
     OPEN_WITH,
 };
 use crate::com::{
-    validate_clsid, verify_missing_dll, ComBackup, ComState, CLSID_KEY, INPROC_SERVER,
+    validate_clsid, validate_server, verify_missing_mapping, ComBackup, ComState, CLSID_KEY,
+    INPROC_SERVER,
 };
 use crate::uninstall::{
     validate_uninstall_name, verify_orphan, UninstallBackup, UninstallSnapshot, COMPONENT,
@@ -160,12 +161,13 @@ pub trait RegistryStore {
         Err("Service recovery is unavailable in this registry store.".into())
     }
 
-    fn read_com(&self, _clsid: &str) -> Result<ComState, String> {
+    fn read_com(&self, _clsid: &str, _server: &str) -> Result<ComState, String> {
         Err("COM recovery is unavailable in this registry store.".into())
     }
     fn compare_exchange_com(
         &self,
         _clsid: &str,
+        _server: &str,
         _expected: &ComState,
         _replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
@@ -383,7 +385,10 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 association.guard.validate(&record.value_name)?;
                 validate_suggestion(&record.original)?;
             }
-            (None, None, None, Some(com), None, 5) if record.value_name.is_empty() => {
+            (None, None, None, Some(com), None, 5 | 7) if record.value_name.is_empty() => {
+                if (record.schema_version == 5) != (com.server == INPROC_SERVER) {
+                    return Err("COM backup version and server scope do not match.".into());
+                }
                 com.validate()?;
             }
             (None, None, None, None, Some(service), 6) if record.value_name == "Start" => {
@@ -420,7 +425,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             serde_json::to_vec(&(bytes, &record.uninstall)).map_err(|e| e.to_string())?
         } else if record.schema_version == 4 {
             serde_json::to_vec(&(bytes, &record.association)).map_err(|e| e.to_string())?
-        } else if record.schema_version == 5 {
+        } else if matches!(record.schema_version, 5 | 7) {
             serde_json::to_vec(&(bytes, &record.com)).map_err(|e| e.to_string())?
         } else if record.schema_version == 6 {
             serde_json::to_vec(&(bytes, &record.service)).map_err(|e| e.to_string())?
@@ -715,31 +720,31 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
 
     fn prepare_com(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
         if !entry.value_name.is_empty() {
-            return Err("Only the default COM DLL mapping is supported.".into());
+            return Err("Only the default COM mapping is supported.".into());
         }
         let prefix = format!("{CLSID_KEY}\\");
-        let suffix = format!("\\{INPROC_SERVER}");
-        let clsid = entry
+        let (clsid, server) = entry
             .key_path
             .strip_prefix(&prefix)
-            .and_then(|p| p.strip_suffix(&suffix))
+            .and_then(|p| p.split_once('\\'))
             .ok_or("Unsupported COM registry location.")?;
         validate_clsid(clsid)?;
+        validate_server(server)?;
         let state = entry
             .com_state
             .clone()
             .ok_or("COM evidence is unavailable. Run a fresh scan.")?;
-        state.guard.validate()?;
+        state.guard.validate_for(server)?;
         let original = state
             .value
             .clone()
-            .ok_or("The COM DLL mapping no longer exists.")?;
-        if original.text()? != entry.raw_value || self.store.read_com(clsid)? != state {
+            .ok_or("The COM mapping no longer exists.")?;
+        if original.text()? != entry.raw_value || self.store.read_com(clsid, server)? != state {
             return Err("The COM mapping changed after scanning. Nothing was changed.".into());
         }
-        verify_missing_dll(&original, &self.probe)?;
+        verify_missing_mapping(server, &original, &self.probe)?;
         let mut record = BackupRecord {
-            schema_version: 5,
+            schema_version: if server == INPROC_SERVER { 5 } else { 7 },
             id: Uuid::new_v4(),
             name: entry.name.clone(),
             value_name: String::new(),
@@ -750,6 +755,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             uninstall: None,
             association: None,
             com: Some(ComBackup {
+                server: server.into(),
                 clsid: clsid.into(),
                 view: "64".into(),
                 guard: state.guard,
@@ -919,7 +925,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             return format!("HKLM\\{SERVICES_KEY}\\{}", service.service_name);
         }
         if let Some(com) = &record.com {
-            return format!("HKCU\\{CLSID_KEY}\\{}\\{INPROC_SERVER}", com.clsid);
+            return format!("HKCU\\{CLSID_KEY}\\{}\\{}", com.clsid, com.server);
         }
         if let Some(association) = &record.association {
             return format!(
@@ -949,7 +955,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             return Err("The service metadata, security, or startup configuration changed. Repair or restore is blocked.".into());
         }
         if let Some(com) = &record.com {
-            let state = self.store.read_com(&com.clsid)?;
+            let state = self.store.read_com(&com.clsid, &com.server)?;
             if state.guard != com.guard {
                 return Err("COM metadata changed. Repair or restore is blocked.".into());
             }
@@ -1001,6 +1007,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         if let Some(com) = &record.com {
             return self.store.compare_exchange_com(
                 &com.clsid,
+                &com.server,
                 &ComState {
                     value: expected,
                     guard: com.guard.clone(),
@@ -1066,8 +1073,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 verify_missing_service(&service.snapshot, &self.probe)?;
             } else if let Some(uninstall) = &record.uninstall {
                 verify_orphan(&uninstall.snapshot, &self.probe)?;
-            } else if record.com.is_some() {
-                verify_missing_dll(&record.original, &self.probe)?;
+            } else if let Some(com) = &record.com {
+                verify_missing_mapping(&com.server, &record.original, &self.probe)?;
             } else if record.association.is_none() {
                 self.verify_missing(&record.original, record.app_path.is_some())?;
             }
@@ -1092,7 +1099,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
             message: if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
-                if restore {"Original 64-bit COM DLL mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM DLL mapping disabled after a verified backup. The class key and metadata were preserved."}
+                if restore {"Original 64-bit COM mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
             } else if record.uninstall.is_some() {
@@ -1247,7 +1254,7 @@ mod tests {
             };
             Ok(())
         }
-        fn read_com(&self, name: &str) -> Result<ComState, String> {
+        fn read_com(&self, name: &str, _server: &str) -> Result<ComState, String> {
             self.5
                 .borrow()
                 .get(name)
@@ -1257,6 +1264,7 @@ mod tests {
         fn compare_exchange_com(
             &self,
             name: &str,
+            _server: &str,
             expected: &ComState,
             replacement: Option<&StoredValue>,
         ) -> Result<(), String> {
@@ -2339,7 +2347,7 @@ mod tests {
         manager.apply(&plan.token).unwrap();
         assert_eq!(
             store
-                .read_com(clsid)
+                .read_com(clsid, INPROC_SERVER)
                 .unwrap()
                 .value
                 .unwrap()

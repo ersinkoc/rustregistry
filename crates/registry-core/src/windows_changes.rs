@@ -148,16 +148,17 @@ impl RegistryStore for WindowsRegistryStore {
         self.change_service_start(name, original, disabled)
     }
 
-    fn read_com(&self, clsid: &str) -> Result<crate::com::ComState, String> {
-        self.com_state(clsid)
+    fn read_com(&self, clsid: &str, server: &str) -> Result<crate::com::ComState, String> {
+        self.com_state(clsid, server)
     }
     fn compare_exchange_com(
         &self,
         clsid: &str,
+        server: &str,
         expected: &crate::com::ComState,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
-        self.exchange_com(clsid, expected, replacement)
+        self.exchange_com(clsid, server, expected, replacement)
     }
 
     fn read_association(

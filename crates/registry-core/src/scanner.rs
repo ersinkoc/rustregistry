@@ -56,6 +56,13 @@ fn sources() -> Vec<Source> {
     }
     for hive in ["HKCU", "HKLM"] {
         result.push(Source {
+            category: Category::ApplicationCommands,
+            hive,
+            path: application_scan::APPLICATIONS_KEY,
+            flag: 0,
+            view: "shared",
+        });
+        result.push(Source {
             category: Category::FileAssociations,
             hive,
             path: crate::associations::CLASSES_KEY,
@@ -181,14 +188,20 @@ fn make_entry(
             match text(&value) {
                 Ok(raw) => {
                     let kind = match source.category {
-                        Category::Startup | Category::Services => TargetKind::Command,
+                        Category::Startup | Category::Services | Category::ApplicationCommands => {
+                            TargetKind::Command
+                        }
                         Category::AppPaths => TargetKind::File,
                         Category::Uninstall => TargetKind::Directory,
                         Category::FileAssociations | Category::Com | Category::SharedDlls => {
                             TargetKind::File
                         }
                     };
-                    let assessment = analyze_target(&raw, kind, environment, probe);
+                    let assessment = if source.category == Category::ApplicationCommands {
+                        application_scan::assess_command(&raw, environment, probe)
+                    } else {
+                        analyze_target(&raw, kind, environment, probe)
+                    };
                     (raw, value_type, assessment)
                 }
                 Err(reason) => (
@@ -251,6 +264,8 @@ use com_scan::scan_com;
 #[path = "extra_scan.rs"]
 mod extra_scan;
 use extra_scan::scan_shared_dlls;
+#[path = "application_scan.rs"]
+mod application_scan;
 
 fn scan_source(
     source: &Source,
@@ -275,7 +290,15 @@ fn scan_source(
         HKEY_LOCAL_MACHINE
     });
     // Scanning opens handles only with KEY_READ; protected mutations live in windows_changes.
-    let key = match hive.open_subkey_with_flags(source.path, KEY_READ | source.flag) {
+    let key = match hive.open_subkey_with_options_flags(
+        source.path,
+        if source.category == Category::ApplicationCommands {
+            REG_OPTION_OPEN_LINK
+        } else {
+            0
+        },
+        KEY_READ | source.flag,
+    ) {
         Ok(key) => key,
         Err(error) => {
             scope.status = match error.kind() {
@@ -288,8 +311,27 @@ fn scan_source(
             return scope;
         }
     };
+    if source.category == Category::ApplicationCommands
+        && key
+            .get_raw_value("SymbolicLinkValue")
+            .is_ok_and(|v| v.vtype == REG_LINK)
+    {
+        scope.status = "partial".into();
+        scope.notes.push("Registry root link not followed.".into());
+        return scope;
+    }
     let start_count = entries.len();
-    if source.category == Category::Com {
+    if source.category == Category::ApplicationCommands {
+        application_scan::scan_applications(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::Com {
         scan_com(
             source,
             &key,

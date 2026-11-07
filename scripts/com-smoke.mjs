@@ -7,10 +7,17 @@ import { promisify } from 'node:util';
 const run = promisify(execFile);
 const script = resolve(import.meta.dirname, 'com-fixture.ps1');
 
-export async function verifyComRecovery(page, output, checked, summary) {
+export async function verifyComRecovery(page, output, checked, summary, server = 'InprocServer32') {
+  const expanded = server !== 'InprocServer32';
+  const label =
+    server === 'LocalServer32'
+      ? 'COM server command'
+      : server === 'InprocHandler32'
+        ? 'COM handler mapping'
+        : 'COM DLL mapping';
   const token = randomUUID();
   const clsid = `{${token}}`;
-  const name = `RustRegistry E2E COM ${token}`;
+  const name = `RustRegistry E2E COM ${token}${expanded ? ` ${server}` : ''}`;
   await page.locator('nav').getByRole('button', { name: 'Backups & restore', exact: true }).click();
   const storagePath = await page.locator('.backup-location .mono').innerText();
   const shell = join(
@@ -23,7 +30,18 @@ export async function verifyComRecovery(page, output, checked, summary) {
   const fixture = async (action) => {
     const { stdout } = await run(
       shell,
-      ['-NoProfile', '-NonInteractive', '-File', script, '-Action', action, '-Token', token],
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-File',
+        script,
+        '-Action',
+        action,
+        '-Token',
+        token,
+        '-ServerKind',
+        server,
+      ],
       { windowsHide: true, encoding: 'utf8', timeout: 10_000 },
     );
     return JSON.parse(stdout.replace(/^\uFEFF/, '').trim());
@@ -59,7 +77,7 @@ export async function verifyComRecovery(page, output, checked, summary) {
     await page.getByRole('button', { name: 'Review repair', exact: true }).click();
     await expect(page.getByRole('dialog')).toContainText(name);
     await expect(
-      page.getByRole('heading', { name: 'Repair broken COM DLL mapping?', exact: true }),
+      page.getByRole('heading', { name: `Repair broken ${label}?`, exact: true }),
     ).toBeVisible();
     await expect(page.getByRole('dialog')).toContainText('64 bit · current user');
     await expect(
@@ -71,12 +89,38 @@ export async function verifyComRecovery(page, output, checked, summary) {
       'COM review and cancellation preserve both registry views, all metadata, and permissions',
     );
 
-    await page.locator('.entry-button').click();
-    await page.getByRole('button', { name: 'Review repair', exact: true }).click();
+    if (expanded) {
+      await page
+        .locator('nav')
+        .getByRole('button', { name: 'Clean registry', exact: true })
+        .click();
+      await page.getByRole('button', { name: 'Review Quick Clean', exact: true }).click();
+      await expect(page.getByRole('dialog')).toContainText(name);
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+      expect(await fixture('inspect')).toEqual(original);
+      checked(
+        `${server}: Quick Clean includes the guarded mapping; cancellation preserves all values`,
+      );
+      await page.getByRole('textbox', { name: 'Search cleaning candidates' }).fill(token);
+      await page.getByRole('checkbox', { name: `Select ${name}`, exact: true }).check();
+      await page.getByRole('button', { name: 'Review selected (1)', exact: true }).click();
+      await expect(page.locator('.clean-review-items details')).toHaveCount(1);
+    } else {
+      await page.locator('.entry-button').click();
+      await page.getByRole('button', { name: 'Review repair', exact: true }).click();
+    }
     await expect(page.getByRole('dialog')).toContainText(name);
-    await page.getByRole('checkbox').check();
-    await page.screenshot({ path: resolve(output, 'desktop-com-review.png'), fullPage: true });
-    await page.getByRole('button', { name: 'Back up & disable mapping', exact: true }).click();
+    await page.getByRole('dialog').getByRole('checkbox').check();
+    await page.screenshot({
+      path: resolve(output, `desktop-com-${server}-review.png`),
+      fullPage: true,
+    });
+    await page
+      .getByRole('button', {
+        name: expanded ? 'Back up & clean 1 entries' : 'Back up & disable mapping',
+        exact: true,
+      })
+      .click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Scan again', exact: true })).toBeEnabled({
       timeout: 30_000,
@@ -90,12 +134,16 @@ export async function verifyComRecovery(page, output, checked, summary) {
       ),
     };
     expect(await fixture('inspect')).toEqual(expected);
+    await page
+      .locator('nav')
+      .getByRole('button', { name: 'Backups & restore', exact: true })
+      .click();
     const backup = page
       .locator('.backup-item')
       .filter({ has: page.getByRole('heading', { name, exact: true }) });
     await expect(backup.getByRole('button', { name: 'Review restore', exact: true })).toBeEnabled();
     checked(
-      'Packaged COM repair removes only the 64-bit default DLL path; the 32-bit mapping, threading model, and permissions are preserved',
+      `Packaged ${server} repair removes only the 64-bit default mapping; the 32-bit mapping, metadata, and permissions are preserved`,
     );
 
     await page
@@ -118,7 +166,7 @@ export async function verifyComRecovery(page, output, checked, summary) {
     await backup.getByRole('button', { name: 'Review restore', exact: true }).click();
     await expect(page.getByRole('dialog')).toContainText(name);
     await expect(
-      page.getByRole('heading', { name: 'Restore COM DLL mapping?', exact: true }),
+      page.getByRole('heading', { name: `Restore ${label}?`, exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole('button', { name: 'Restore original value', exact: true }),
@@ -133,9 +181,12 @@ export async function verifyComRecovery(page, output, checked, summary) {
     await expect(
       backup.getByRole('button', { name: 'Original present', exact: true }),
     ).toBeDisabled();
-    await page.screenshot({ path: resolve(output, 'desktop-com-restored.png'), fullPage: true });
+    await page.screenshot({
+      path: resolve(output, `desktop-com-${server}-restored.png`),
+      fullPage: true,
+    });
     checked(
-      'COM backup survives UI reload and restores the exact REG_EXPAND_SZ path with both registry views and permissions intact',
+      `${server} backup survives UI reload and restores the exact REG_EXPAND_SZ value with both views and permissions intact`,
     );
   } catch (error) {
     failure = error;
@@ -174,7 +225,7 @@ export async function verifyComRecovery(page, output, checked, summary) {
         cleanupErrors.push(String(error));
       }
     }
-    summary.comFixtureCleanup = cleanupErrors.length === 0;
+    summary[`com${server}FixtureCleanup`] = cleanupErrors.length === 0;
     summary.errors.push(...cleanupErrors);
   }
   if (failure) throw failure;

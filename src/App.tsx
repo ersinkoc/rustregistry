@@ -69,6 +69,7 @@ const pageNames: Record<Page, string> = {
   about: 'About RustRegistry',
 };
 const categoryIcons: Record<Category, LucideIcon> = {
+  application_commands: TerminalSquare,
   startup: Radio,
   app_paths: FolderOpen,
   uninstall: Boxes,
@@ -235,7 +236,7 @@ function DetailDialog({
             {entry.category === 'services'
               ? 'Protected service startup repair'
               : entry.category === 'com'
-                ? 'Protected COM DLL mapping repair'
+                ? 'Protected COM mapping repair'
                 : entry.category === 'file_associations'
                   ? 'Protected Open with repair'
                   : entry.category === 'uninstall'
@@ -248,7 +249,7 @@ function DetailDialog({
             {entry.category === 'services'
               ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
               : entry.category === 'com'
-                ? 'Review a backup before disabling this missing 64-bit DLL mapping. The class and threading metadata stay in place. No DLL is loaded or registered.'
+                ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
                 : entry.category === 'file_associations'
                   ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
                   : entry.category === 'uninstall'
@@ -305,7 +306,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 21,
+    total: 23,
     entries: 0,
     current: '',
   });
@@ -364,7 +365,7 @@ export default function App() {
     setScanning(true);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 21, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 23, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -637,7 +638,7 @@ export default function App() {
           <p>
             {report
               ? 'Try a different search or clear your filters to see other entries.'
-              : 'Your startup entries, application paths, uninstall records, Open with suggestions, and COM DLL mappings will appear here.'}
+              : 'Your startup entries, application paths, uninstall records, application commands, Open with suggestions, services, and COM mappings will appear here.'}
           </p>
           {report && (
             <button
@@ -1126,7 +1127,7 @@ export default function App() {
                 <div>
                   <h2>Focused scope. Transparent results.</h2>
                   <p>
-                    This release checks 21 locations, including separate 32-bit and 64-bit COM views
+                    This release checks 23 locations, including separate 32-bit and 64-bit COM views
                     in both hives. File association Classes roots are shared and read once per hive.
                     Services use the shared system view. Other application locations use their
                     documented 32-bit, 64-bit, or shared views.
@@ -1223,7 +1224,7 @@ export default function App() {
                         </strong>
                         <small>
                           {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/21 locations
+                          {formatDuration(item.durationMs)} · {item.scopes.length}/23 locations
                         </small>
                       </span>
                       <span className="readonly-pill">

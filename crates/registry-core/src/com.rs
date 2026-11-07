@@ -7,6 +7,49 @@ use serde::{Deserialize, Serialize};
 
 pub const CLSID_KEY: &str = r"Software\Classes\CLSID";
 pub const INPROC_SERVER: &str = "InprocServer32";
+pub const INPROC_HANDLER: &str = "InprocHandler32";
+pub const LOCAL_SERVER: &str = "LocalServer32";
+
+pub fn validate_server(server: &str) -> Result<(), String> {
+    if [INPROC_SERVER, INPROC_HANDLER, LOCAL_SERVER].contains(&server) {
+        Ok(())
+    } else {
+        Err("Unsupported COM server registration.".into())
+    }
+}
+
+fn default_server() -> String {
+    INPROC_SERVER.into()
+}
+fn is_default_server(server: &str) -> bool {
+    server == INPROC_SERVER
+}
+
+pub fn verify_missing_mapping(
+    server: &str,
+    value: &StoredValue,
+    probe: &impl PathProbe,
+) -> Result<(), String> {
+    validate_server(server)?;
+    if server != LOCAL_SERVER {
+        return verify_missing_dll(value, probe);
+    }
+    let raw = value.text()?;
+    // A local server runs in an activation context. Do not infer that context's environment.
+    if raw.contains('%') {
+        return Err("Environment-dependent COM server commands remain read-only.".into());
+    }
+    let assessment = analyze_target(&raw, TargetKind::Command, &Environment::current(), probe);
+    if assessment.status != EntryStatus::Review
+        || assessment.code != "target_missing"
+        || !assessment
+            .target
+            .is_some_and(|p| p.to_ascii_lowercase().ends_with(".exe"))
+    {
+        return Err("The explicit local COM executable is not confirmed missing.".into());
+    }
+    Ok(())
+}
 
 pub fn validate_clsid(name: &str) -> Result<(), String> {
     if name.len() != 38 || !name.starts_with('{') || !name.ends_with('}') {
@@ -48,6 +91,14 @@ pub struct ComGuard {
     pub server_values: Vec<NamedValue>,
 }
 impl ComGuard {
+    pub fn validate_for(&self, server: &str) -> Result<(), String> {
+        validate_server(server)?;
+        self.validate()?;
+        if server != INPROC_SERVER && !self.server_values.is_empty() {
+            return Err("Handler and local-server mappings with named activation metadata remain read-only.".into());
+        }
+        Ok(())
+    }
     pub fn validate(&self) -> Result<(), String> {
         crate::associations::validate_values(&self.class_values)?;
         crate::associations::validate_values(&self.server_values)?;
@@ -89,6 +140,9 @@ pub struct ComBackup {
     pub clsid: String,
     pub view: String,
     pub guard: ComGuard,
+    // Omit the legacy default so existing v5 checksums remain byte-for-byte compatible.
+    #[serde(default = "default_server", skip_serializing_if = "is_default_server")]
+    pub server: String,
 }
 impl ComBackup {
     pub fn validate(&self) -> Result<(), String> {
@@ -96,7 +150,7 @@ impl ComBackup {
         if self.view != "64" {
             return Err("Only the current-user 64-bit COM view supports protected changes.".into());
         }
-        self.guard.validate()
+        self.guard.validate_for(&self.server)
     }
 }
 
@@ -117,6 +171,50 @@ mod tests {
                 .flat_map(u16::to_le_bytes)
                 .collect(),
         }
+    }
+    #[test]
+    fn additional_com_scopes_require_unambiguous_targets_and_no_named_activation_metadata() {
+        verify_missing_mapping(INPROC_HANDLER, &text(r"C:\Missing\handler.dll"), &Missing).unwrap();
+        verify_missing_mapping(
+            LOCAL_SERVER,
+            &text(r#""C:\Missing App\server.exe" /Embedding"#),
+            &Missing,
+        )
+        .unwrap();
+        for value in [
+            r"C:\Missing App\server.exe /Embedding",
+            r"server.exe",
+            r"C:\Missing\server.dll",
+            r"%TEMP%\server.exe",
+            r"\\server\share\server.exe",
+            r"C:\Windows\System32\cmd.exe /c other.exe",
+        ] {
+            assert!(
+                verify_missing_mapping(LOCAL_SERVER, &text(value), &Missing).is_err(),
+                "{value}"
+            );
+        }
+        for server in [INPROC_HANDLER, LOCAL_SERVER] {
+            let mut guard = ComGuard {
+                class_values: vec![],
+                server_values: vec![],
+            };
+            guard.validate_for(server).unwrap();
+            for field in [
+                "ServerExecutable",
+                "ThreadingModel",
+                "DelegateExecute",
+                "Assembly",
+            ] {
+                guard.server_values = vec![NamedValue {
+                    name: field.into(),
+                    value: text("Both"),
+                }];
+                assert!(guard.validate_for(server).is_err());
+            }
+        }
+        assert!(validate_server(r"LocalServer32\Nested").is_err());
+        assert!(validate_server("TreatAs").is_err());
     }
     #[test]
     fn com_repair_requires_a_strict_guid_missing_local_dll_and_simple_metadata() {

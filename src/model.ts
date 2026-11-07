@@ -1,5 +1,12 @@
 export type Category =
-  'startup' | 'app_paths' | 'uninstall' | 'file_associations' | 'com' | 'services' | 'shared_dlls';
+  | 'startup'
+  | 'app_paths'
+  | 'application_commands'
+  | 'uninstall'
+  | 'file_associations'
+  | 'com'
+  | 'services'
+  | 'shared_dlls';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -58,6 +65,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  application_commands: {
+    label: 'Application commands',
+    description: 'Read-only registered open commands',
+    short: 'App command',
+  },
   services: {
     label: 'Services & drivers',
     description: 'ImagePath checks and guarded startup repair',
@@ -71,7 +83,7 @@ export const categories: Record<Category, { label: string; description: string; 
   com: {
     label: 'COM registrations',
     description: 'DLL, handler, and local-server mappings',
-    short: 'COM DLL',
+    short: 'COM',
   },
   startup: {
     label: 'Startup entries',

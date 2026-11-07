@@ -90,22 +90,21 @@ pub(super) fn scan_com(
                 let original = StoredValue {kind: value.vtype as u32, bytes: value.bytes.into_owned()};
                 match original.text() {
                     Ok(raw) => {
-                        let assessment = if server_name == "LocalServer32" && server.get_raw_value("ServerExecutable").is_ok() {Assessment {status: EntryStatus::Unknown, code: "com_server_executable_override".into(), explanation: "This local server defines ServerExecutable. Its effective launch configuration was not interpreted or executed.".into(), target: None}} else if source.view == "32" {Assessment {status: EntryStatus::Unknown, code: "com_32bit_unverified".into(), explanation: "The 32-bit DLL mapping was inventoried without probing its target. WOW64 filesystem and environment resolution require a 32-bit context; this view remains read-only.".into(), target: None}} else {analyze_target(&raw, if server_name == "LocalServer32" {TargetKind::Command} else {TargetKind::File}, environment, probe)};
+                        let assessment = if server_name == "LocalServer32" && server.get_raw_value("ServerExecutable").is_ok() {Assessment {status: EntryStatus::Unknown, code: "com_server_executable_override".into(), explanation: "This local server defines ServerExecutable. Its effective launch configuration was not interpreted or executed.".into(), target: None}} else if source.view == "32" {Assessment {status: EntryStatus::Unknown, code: "com_32bit_unverified".into(), explanation: "The 32-bit COM mapping was inventoried without probing its target. WOW64 filesystem and environment resolution require a 32-bit context; this view remains read-only.".into(), target: None}} else {analyze_target(&raw, if server_name == "LocalServer32" {TargetKind::Command} else {TargetKind::File}, environment, probe)};
                         (raw, kind, assessment, Some(original))
                     }
                     Err(reason) => (String::new(), kind, Assessment {status: EntryStatus::Unknown, code: "unsupported_value".into(), explanation: reason, target: None}, None),
                 }
             }
-            Err(error) => (String::new(), "—".into(), Assessment {status: EntryStatus::Unknown, code: "com_mapping_absent".into(), explanation: format!("No readable default DLL mapping is available. This alone does not prove the COM class is broken. {}", read_error(&error)), target: None}, None),
+            Err(error) => (String::new(), "—".into(), Assessment {status: EntryStatus::Unknown, code: "com_mapping_absent".into(), explanation: format!("No readable default COM mapping is available. This alone does not prove the COM class is broken. {}", read_error(&error)), target: None}, None),
         };
-            let state = if server_name == INPROC_SERVER
-                && source.hive == "HKCU"
+            let state = if source.hive == "HKCU"
                 && source.view == "64"
                 && assessment.code == "target_missing"
             {
-                match original.as_ref().ok_or("DLL evidence unavailable.").and_then(|value| crate::com::verify_missing_dll(value, &LocalPathProbe).map_err(|_| "Only explicit missing local DLL targets support repair.")).and_then(|_| store.read_com(&clsid).map_err(|_| "The class has a machine counterpart, alternative activation, unsupported metadata, or unreadable structure.")) {
+                match original.as_ref().ok_or("COM evidence unavailable.").and_then(|value| crate::com::verify_missing_mapping(server_name, value, &LocalPathProbe).map_err(|_| "Only explicit missing local targets support repair.")).and_then(|_| store.read_com(&clsid, server_name).map_err(|_| "The class has a machine counterpart, alternative activation, unsupported metadata, or unreadable structure.")) {
                 Ok(state) if state.value == original => Some(state),
-                _ => {assessment.explanation.push_str(" Repair unavailable: only simple current-user 64-bit DLL classes with no machine counterpart and unchanged supported metadata are eligible."); None}
+                _ => {assessment.explanation.push_str(" Repair unavailable: only simple current-user 64-bit COM mappings with no machine counterpart and unchanged supported metadata are eligible."); None}
             }
             } else {
                 None

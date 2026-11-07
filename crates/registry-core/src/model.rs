@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum Category {
     Startup,
     AppPaths,
+    ApplicationCommands,
     Uninstall,
     FileAssociations,
     Com,

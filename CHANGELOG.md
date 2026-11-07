@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.7 — 2026-11-07
+
+- Expand scanning from 21 to 23 fixed locations with shared HKCU/HKLM application open-command inventory. Preserve shell argument placeholders, diagnose only explicit local executable expressions, and keep these application commands read-only.
+- Include guarded current-user 64-bit InprocHandler32 DLL and LocalServer32 executable mappings in individual repair, Quick Clean, and selected Clean. Keep machine counterparts, alternate activation, ServerExecutable overrides, unknown/nested metadata, indirect launchers, environment-dependent local servers, and 32-bit changes excluded.
+- Back up and verify exact original values and supported metadata before removing only the broken default mapping in a conditional Windows transaction. Preserve keys and permissions; never activate COM, load DLLs, run commands, or change files.
+- Restore the exact original type and bytes only when existing keys, metadata, and fallback guards still match. Use scope-checked schema 7 backups for the new mappings while retaining unchanged schemas 1–6.
+- Add native Windows tests for both new repair types, Quick Clean/restart/restore, stale targets, override/metadata conflicts, backup failures, scope tampering, and read-only application command inventory. Extend packaged desktop verification with both COM views, independent permission checks, Quick Clean review, selected repair, and exact restore.
+
 ## 0.1.6 — 2026-11-07
 
 - Avoid repeated filesystem queries for duplicate found targets within a read-only scan. Missing/uncertain targets and all repair checks remain uncached.

@@ -12,11 +12,14 @@ import { verifyComRecovery } from './com-smoke.mjs';
 import { verifyCleaning } from './clean-smoke.mjs';
 import { verifyServiceRecovery } from './service-smoke.mjs';
 import { verifyDisplayScale } from './display-smoke.mjs';
+import { verifyApplicationInventory } from './application-smoke.mjs';
 
 if (process.platform !== 'win32')
   throw new Error('Desktop smoke verification requires Windows x64.');
 const root = resolve(import.meta.dirname, '..');
 const serviceOnly = process.argv.includes('--service-only');
+const expandedOnly = process.argv.includes('--expanded-only');
+if (serviceOnly && expandedOnly) throw new Error('Choose only one focused verification mode.');
 if (serviceOnly && !process.env.RUSTREGISTRY_SERVICE_FIXTURE_TOKEN)
   throw new Error('A prepared owned service fixture is required for service-only verification.');
 const appVersion = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8')).version;
@@ -52,7 +55,7 @@ let browser;
 const summary = {
   executable,
   version: appVersion,
-  mode: serviceOnly ? 'service-only' : 'full',
+  mode: serviceOnly ? 'service-only' : expandedOnly ? 'expanded-only' : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -118,6 +121,12 @@ try {
   checked('Real registry scan completes through native IPC and populates the paginated table');
   if (serviceOnly) {
     await verifyServiceRecovery(page, output, checked, summary);
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (expandedOnly) {
+    await verifyApplicationInventory(page, executable, checked, summary);
+    await verifyComRecovery(page, output, checked, summary, 'InprocHandler32');
+    await verifyComRecovery(page, output, checked, summary, 'LocalServer32');
     expect(summary.errors).toEqual([]);
     summary.passed = true;
   } else {
@@ -211,10 +220,10 @@ try {
     checked('Search empty state is honest and clearing filters restores real entries');
 
     await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-    await expect(page.locator('.scope-item')).toHaveCount(21);
+    await expect(page.locator('.scope-item')).toHaveCount(23);
     await page.locator('.scope-item summary').first().click();
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-    checked('Coverage lists all 21 actual registry locations with expandable read results');
+    checked('Coverage lists all 23 actual registry locations with expandable read results');
 
     await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
     await expect(page.locator('.history-item')).toHaveCount(1);
@@ -300,7 +309,10 @@ try {
     await verifyAppPathRecovery(page, output, checked, summary);
     await verifyUninstallRecovery(page, output, checked, summary);
     await verifyAssociationRecovery(page, output, checked, summary);
+    await verifyApplicationInventory(page, executable, checked, summary);
     await verifyComRecovery(page, output, checked, summary);
+    await verifyComRecovery(page, output, checked, summary, 'InprocHandler32');
+    await verifyComRecovery(page, output, checked, summary, 'LocalServer32');
     await verifyCleaning(page, output, checked, summary);
     await verifyServiceRecovery(page, output, checked, summary);
 
@@ -414,7 +426,11 @@ try {
   await writeFile(
     resolve(
       output,
-      serviceOnly ? 'desktop-service-verification.json' : 'desktop-verification.json',
+      serviceOnly
+        ? 'desktop-service-verification.json'
+        : expandedOnly
+          ? 'desktop-expanded-verification.json'
+          : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );

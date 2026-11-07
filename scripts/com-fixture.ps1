@@ -1,13 +1,16 @@
 param(
     [Parameter(Mandatory = $true)][ValidateSet('create', 'inspect', 'cleanup')][string]$Action,
-    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9-]{36}$')][string]$Token
+    [Parameter(Mandatory = $true)][ValidatePattern('^[a-f0-9-]{36}$')][string]$Token,
+    [ValidateSet('InprocServer32', 'InprocHandler32', 'LocalServer32')][string]$ServerKind = 'InprocServer32'
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 if ([Guid]::ParseExact($Token, 'D').ToString('D') -cne $Token) { throw 'Invalid fixture identifier.' }
 $clsid = '{' + $Token + '}'
 $displayName = "RustRegistry E2E COM $Token"
+if ($ServerKind -ne 'InprocServer32') { $displayName += " $ServerKind" }
 $missingDll = Join-Path ([System.IO.Path]::GetTempPath()) "RustRegistryMissing-COM-$Token.dll"
+if ($ServerKind -eq 'LocalServer32') { $missingDll = [System.IO.Path]::ChangeExtension($missingDll, '.exe') }
 if (Test-Path -LiteralPath $missingDll) { throw 'The fixture target unexpectedly exists.' }
 function Read-Values($Key) {
     @($Key.GetValueNames() | Sort-Object { $_.ToLowerInvariant() } | ForEach-Object {
@@ -32,10 +35,11 @@ foreach ($view in $views) {
                 $class = $root.CreateSubKey($clsid)
                 try {
                     $class.SetValue('', $displayName, [Microsoft.Win32.RegistryValueKind]::String)
-                    $server = $class.CreateSubKey('InprocServer32')
+                    $server = $class.CreateSubKey($ServerKind)
                     try {
-                        $server.SetValue('', ('%TEMP%\RustRegistryMissing-COM-' + $Token + '.dll'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
-                        $server.SetValue('ThreadingModel', 'Both', [Microsoft.Win32.RegistryValueKind]::String)
+                        $command = if ($ServerKind -eq 'LocalServer32') { '"' + $missingDll + '" /Embedding' } else { '%TEMP%\RustRegistryMissing-COM-' + $Token + '.dll' }
+                        $server.SetValue('', $command, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+                        if ($ServerKind -eq 'InprocServer32') { $server.SetValue('ThreadingModel', 'Both', [Microsoft.Win32.RegistryValueKind]::String) }
                     } finally { $server.Dispose() }
                 } finally { $class.Dispose() }
             }
@@ -46,13 +50,14 @@ foreach ($view in $views) {
             }
             try {
                 if ($class.GetValue('') -cne $displayName) { throw 'COM fixture ownership mismatch.' }
-                $server = $class.OpenSubKey('InprocServer32')
+                $server = $class.OpenSubKey($ServerKind)
                 if ($null -eq $server) { throw 'The owned DLL mapping key is missing.' }
                 try {
                     if ($Action -eq 'cleanup') {
                         $unknownClass = @($class.GetValueNames() | Where-Object { $_ -ne '' })
-                        $unknownServer = @($server.GetValueNames() | Where-Object { $_ -notin @('', 'ThreadingModel') })
-                        if ($unknownClass.Count -or $unknownServer.Count -or $class.SubKeyCount -ne 1 -or $server.SubKeyCount -ne 0 -or $server.GetValue('ThreadingModel') -cne 'Both') { throw 'Unexpected COM fixture metadata. Cleanup stopped.' }
+                        $allowedValues = if ($ServerKind -eq 'InprocServer32') { @('', 'ThreadingModel') } else { @('') }
+                        $unknownServer = @($server.GetValueNames() | Where-Object { $_ -notin $allowedValues })
+                        if ($unknownClass.Count -or $unknownServer.Count -or $class.SubKeyCount -ne 1 -or $server.SubKeyCount -ne 0 -or ($ServerKind -eq 'InprocServer32' -and $server.GetValue('ThreadingModel') -cne 'Both')) { throw 'Unexpected COM fixture metadata. Cleanup stopped.' }
                         $results += @{ exists = $false; view = $view.ToString() }
                     } else {
                         $results += [ordered]@{ exists = $true; view = $view.ToString(); clsid = $clsid; displayName = $displayName; classValues = @(Read-Values $class); serverValues = @(Read-Values $server); classSecurity = Read-Security $class; serverSecurity = Read-Security $server }
@@ -60,7 +65,7 @@ foreach ($view in $views) {
                 } finally { $server.Dispose() }
             } finally { $class.Dispose() }
             if ($Action -eq 'cleanup') {
-                $root.DeleteSubKey("$clsid\InprocServer32", $true)
+                $root.DeleteSubKey("$clsid\$ServerKind", $true)
                 $root.DeleteSubKey($clsid, $true)
             }
         } finally { $root.Dispose() }

@@ -63,9 +63,11 @@ impl WindowsRegistryStore {
     fn com_state_in(
         &self,
         clsid: &str,
+        server_name: &str,
         transaction: Option<&Transaction>,
     ) -> Result<ComState, String> {
         validate_clsid(clsid)?;
+        validate_server(server_name)?;
         let user = RegKey::predef(HKEY_CURRENT_USER);
         let machine = RegKey::predef(HKEY_LOCAL_MACHINE);
         let root = open(&user, &self.com_path, transaction, false)?
@@ -82,14 +84,14 @@ impl WindowsRegistryStore {
             .take(3)
             .collect::<Result<_, _>>()
             .map_err(|_| "COM child keys could not be completely read.".to_string())?;
-        if children.len() != 1 || !children[0].eq_ignore_ascii_case(INPROC_SERVER) {
+        if children.len() != 1 || !children[0].eq_ignore_ascii_case(server_name) {
             return Err(
                 "COM classes with alternate, nested, or unknown activation keys remain read-only."
                     .into(),
             );
         }
-        let server = open(&class, INPROC_SERVER, transaction, false)?
-            .ok_or("The existing DLL mapping key is missing.")?;
+        let server = open(&class, server_name, transaction, false)?
+            .ok_or("The existing COM mapping key is missing.")?;
         if server.enum_keys().next().is_some() {
             return Err("Nested or unreadable COM server keys remain read-only.".into());
         }
@@ -99,37 +101,39 @@ impl WindowsRegistryStore {
             class_values: values(&class)?,
             server_values,
         };
-        guard.validate()?;
+        guard.validate_for(server_name)?;
         let value = read_value(&server, "")?;
         if let Some(value) = &value {
             value.text()?;
         }
         Ok(ComState { value, guard })
     }
-    pub(crate) fn com_state(&self, clsid: &str) -> Result<ComState, String> {
-        self.com_state_in(clsid, None)
+    pub(crate) fn com_state(&self, clsid: &str, server_name: &str) -> Result<ComState, String> {
+        self.com_state_in(clsid, server_name, None)
     }
     pub(crate) fn exchange_com(
         &self,
         clsid: &str,
+        server_name: &str,
         expected: &ComState,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
         validate_clsid(clsid)?;
-        expected.guard.validate()?;
+        validate_server(server_name)?;
+        expected.guard.validate_for(server_name)?;
         if expected.value.is_none() && replacement.is_none() {
             return Err("No COM mapping change was requested.".into());
         }
         for value in [expected.value.as_ref(), replacement].into_iter().flatten() {
             value.text()?;
         }
-        if self.com_state(clsid)? != *expected {
+        if self.com_state(clsid, server_name)? != *expected {
             return Err("COM metadata changed. Nothing was changed.".into());
         }
         let transaction = Transaction::new().map_err(|_| {
             "Windows registry transactions are unavailable. Nothing was changed.".to_string()
         })?;
-        if self.com_state_in(clsid, Some(&transaction))? != *expected {
+        if self.com_state_in(clsid, server_name, Some(&transaction))? != *expected {
             return Err(
                 "The COM mapping changed before its transaction. Nothing was overwritten.".into(),
             );
@@ -139,8 +143,8 @@ impl WindowsRegistryStore {
             .ok_or("The COM root disappeared.")?;
         let class =
             open(&root, clsid, Some(&transaction), false)?.ok_or("The COM class disappeared.")?;
-        let key = open(&class, INPROC_SERVER, Some(&transaction), true)?
-            .ok_or("The DLL mapping key disappeared.")?;
+        let key = open(&class, server_name, Some(&transaction), true)?
+            .ok_or("The COM mapping key disappeared.")?;
         match replacement {
             Some(value) => key.set_raw_value(
                 "",
@@ -175,32 +179,43 @@ mod tests {
     struct Fixture {
         path: String,
         clsid: String,
+        server_name: String,
         directory: tempfile::TempDir,
     }
     impl Fixture {
         fn new() -> Self {
+            Self::with_server(INPROC_SERVER)
+        }
+        fn with_server(server_name: &str) -> Self {
             let token = uuid::Uuid::new_v4();
             let fixture = Self {
                 path: format!(r"Software\RustRegistryTests\{token}"),
                 clsid: format!("{{{token}}}"),
+                server_name: server_name.into(),
                 directory: tempfile::tempdir().unwrap(),
             };
             let (class, _) = RegKey::predef(HKEY_CURRENT_USER)
                 .create_subkey(format!("{}\\CLSID\\{}", fixture.path, fixture.clsid))
                 .unwrap();
             class.set_value("", &"RustRegistry COM fixture").unwrap();
-            let (server, _) = class.create_subkey(INPROC_SERVER).unwrap();
-            let bytes = format!(
-                "{}\0\0",
-                fixture
-                    .directory
-                    .path()
-                    .join("missing-server.dll")
-                    .display()
-            )
-            .encode_utf16()
-            .flat_map(u16::to_le_bytes)
-            .collect();
+            let (server, _) = class.create_subkey(server_name).unwrap();
+            let target = fixture
+                .directory
+                .path()
+                .join(if server_name == LOCAL_SERVER {
+                    "missing-server.exe"
+                } else {
+                    "missing-server.dll"
+                });
+            let command = if server_name == LOCAL_SERVER {
+                format!("\"{}\" /Embedding", target.display())
+            } else {
+                target.display().to_string()
+            };
+            let bytes = format!("{command}\0\0")
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect();
             server
                 .set_raw_value(
                     "",
@@ -210,7 +225,9 @@ mod tests {
                     },
                 )
                 .unwrap();
-            server.set_value("ThreadingModel", &"Both").unwrap();
+            if server_name == INPROC_SERVER {
+                server.set_value("ThreadingModel", &"Both").unwrap();
+            }
             fixture
         }
         fn store(&self) -> WindowsRegistryStore {
@@ -229,17 +246,20 @@ mod tests {
         }
         fn server(&self) -> RegKey {
             self.class()
-                .open_subkey_with_flags(INPROC_SERVER, KEY_ALL_ACCESS)
+                .open_subkey_with_flags(&self.server_name, KEY_ALL_ACCESS)
                 .unwrap()
         }
         fn entry(&self) -> RegistryEntry {
-            let state = self.store().read_com(&self.clsid).unwrap();
+            let state = self
+                .store()
+                .read_com(&self.clsid, &self.server_name)
+                .unwrap();
             RegistryEntry {
                 id: "fixture".into(),
                 name: "RustRegistry COM fixture".into(),
                 category: Category::Com,
                 hive: "HKCU".into(),
-                key_path: format!("{CLSID_KEY}\\{}\\{INPROC_SERVER}", self.clsid),
+                key_path: format!("{CLSID_KEY}\\{}\\{}", self.clsid, self.server_name),
                 view: "64".into(),
                 value_name: String::new(),
                 value_type: "REG_EXPAND_SZ".into(),
@@ -267,6 +287,157 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn handler_and_local_server_quick_clean_backups_restart_and_restore_exact_commands() {
+        for server in [INPROC_HANDLER, LOCAL_SERVER] {
+            let fixture = Fixture::with_server(server);
+            let directory = tempfile::tempdir().unwrap();
+            let backups = directory.path().join("backups");
+            let entry = fixture.entry();
+            let original = entry.com_state.clone().unwrap();
+            let mut manager = ChangeManager::new(fixture.store(), backups.clone(), LocalPathProbe);
+            assert!(crate::changes::is_repair_candidate(&entry));
+            let plan = manager
+                .prepare_clean(std::slice::from_ref(&entry), "quick")
+                .unwrap();
+            assert_eq!(plan.items.len(), 1);
+            assert!(plan.items[0].registry_path.ends_with(server));
+            assert_eq!(
+                fixture.store().read_com(&fixture.clsid, server).unwrap(),
+                original
+            );
+            assert!(!backups.exists());
+            manager.cancel();
+            assert!(manager.apply_clean(&plan.token).is_err());
+            let plan = manager.prepare_clean(&[entry], "selected").unwrap();
+            let result = manager.apply_clean(&plan.token).unwrap();
+            assert!(result.failed.is_none());
+            assert_eq!(result.completed.len(), 1);
+            let id = &result.completed[0].backup_id;
+            let changed = fixture.store().read_com(&fixture.clsid, server).unwrap();
+            assert!(changed.value.is_none());
+            assert_eq!(changed.guard, original.guard);
+            let record: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(backups.join(format!("{id}.json"))).unwrap())
+                    .unwrap();
+            assert_eq!(record["schemaVersion"], 7);
+            assert_eq!(record["com"]["server"], server);
+            assert_eq!(
+                record["original"],
+                serde_json::to_value(original.value.as_ref().unwrap()).unwrap()
+            );
+            drop(manager);
+            let mut restarted = ChangeManager::new(fixture.store(), backups, LocalPathProbe);
+            assert_eq!(
+                restarted.inventory().unwrap().backups[0].state,
+                "restore_available"
+            );
+            let restore = restarted.prepare_restore(id).unwrap();
+            restarted.apply(&restore.token).unwrap();
+            assert_eq!(
+                fixture.store().read_com(&fixture.clsid, server).unwrap(),
+                original
+            );
+        }
+    }
+
+    #[test]
+    fn new_com_repairs_block_stale_commands_overrides_alternate_activation_and_missing_backups() {
+        for server in [INPROC_HANDLER, LOCAL_SERVER] {
+            for scenario in 0..7 {
+                let fixture = Fixture::with_server(server);
+                let directory = tempfile::tempdir().unwrap();
+                let backups = directory.path().join("backups");
+                let mut manager =
+                    ChangeManager::new(fixture.store(), backups.clone(), LocalPathProbe);
+                let plan = manager.prepare_quarantine(&fixture.entry()).unwrap();
+                match scenario {
+                    0 => fixture
+                        .server()
+                        .set_value("", &"preserve replacement")
+                        .unwrap(),
+                    1 => fixture
+                        .server()
+                        .set_value("ServerExecutable", &"C:\\Other.exe")
+                        .unwrap(),
+                    2 => {
+                        fixture.class().create_subkey(INPROC_SERVER).unwrap();
+                    }
+                    3 => {
+                        fixture.server().create_subkey("Nested").unwrap();
+                    }
+                    4 => fixture.class().set_value("AppID", &fixture.clsid).unwrap(),
+                    5 => std::fs::write(
+                        fixture.directory.path().join(if server == LOCAL_SERVER {
+                            "missing-server.exe"
+                        } else {
+                            "missing-server.dll"
+                        }),
+                        b"never executed",
+                    )
+                    .unwrap(),
+                    6 => std::fs::write(backups, b"not a directory").unwrap(),
+                    _ => unreachable!(),
+                }
+                assert!(
+                    manager.apply(&plan.token).is_err(),
+                    "{server} scenario {scenario}"
+                );
+                assert!(fixture.server().get_raw_value("").is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn new_com_restore_blocks_conflicts_changed_metadata_deleted_keys_and_scope_tampering() {
+        for server in [INPROC_HANDLER, LOCAL_SERVER] {
+            for scenario in 0..6 {
+                let fixture = Fixture::with_server(server);
+                let directory = tempfile::tempdir().unwrap();
+                let backups = directory.path().join("backups");
+                let mut manager =
+                    ChangeManager::new(fixture.store(), backups.clone(), LocalPathProbe);
+                let plan = manager.prepare_quarantine(&fixture.entry()).unwrap();
+                let result = manager.apply(&plan.token).unwrap();
+                match scenario {
+                    0 => fixture.server().set_value("", &"keep replacement").unwrap(),
+                    1 => fixture
+                        .class()
+                        .set_value("", &"changed description")
+                        .unwrap(),
+                    2 => {
+                        fixture.class().create_subkey("TreatAs").unwrap();
+                    }
+                    3 => fixture.class().delete_subkey(server).unwrap(),
+                    4 | 5 => {
+                        let path = backups.join(format!("{}.json", result.backup_id));
+                        let mut record: serde_json::Value =
+                            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                        record["com"]["server"] = serde_json::json!(if scenario == 4 {
+                            INPROC_SERVER
+                        } else if server == LOCAL_SERVER {
+                            INPROC_HANDLER
+                        } else {
+                            LOCAL_SERVER
+                        });
+                        std::fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+                    }
+                    _ => unreachable!(),
+                }
+                assert!(
+                    manager.prepare_restore(&result.backup_id).is_err(),
+                    "{server} scenario {scenario}"
+                );
+                if scenario == 0 {
+                    assert_eq!(
+                        fixture.server().get_value::<String, _>("").unwrap(),
+                        "keep replacement"
+                    );
+                }
+            }
+        }
+    }
     impl Drop for Fixture {
         fn drop(&mut self) {
             let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(&self.path);
@@ -287,13 +458,22 @@ mod tests {
         let review = manager.prepare_quarantine(&entry).unwrap();
         assert_eq!(review.scope, "com");
         assert_eq!(review.registry_view, "64");
-        assert_eq!(fixture.store().read_com(&fixture.clsid).unwrap(), original);
+        assert_eq!(
+            fixture
+                .store()
+                .read_com(&fixture.clsid, INPROC_SERVER)
+                .unwrap(),
+            original
+        );
         assert!(!backup_directory.path().join("backups").exists());
         manager.cancel();
         assert!(manager.apply(&review.token).is_err());
         let plan = manager.prepare_quarantine(&entry).unwrap();
         let result = manager.apply(&plan.token).unwrap();
-        let changed = fixture.store().read_com(&fixture.clsid).unwrap();
+        let changed = fixture
+            .store()
+            .read_com(&fixture.clsid, INPROC_SERVER)
+            .unwrap();
         assert!(changed.value.is_none());
         assert_eq!(changed.guard, original.guard);
         let path = backup_directory
@@ -319,7 +499,13 @@ mod tests {
         );
         let restore = manager.prepare_restore(&result.backup_id).unwrap();
         manager.apply(&restore.token).unwrap();
-        assert_eq!(fixture.store().read_com(&fixture.clsid).unwrap(), original);
+        assert_eq!(
+            fixture
+                .store()
+                .read_com(&fixture.clsid, INPROC_SERVER)
+                .unwrap(),
+            original
+        );
     }
 
     #[test]
