@@ -16,6 +16,15 @@ struct Source {
     view: &'static str,
 }
 
+fn source_id(source: &Source) -> String {
+    let id = format!("{}|{}|{}", source.hive, source.view, source.path);
+    if source.category == Category::ProgIds {
+        format!("{id}|prog_ids")
+    } else {
+        id
+    }
+}
+
 fn sources() -> Vec<Source> {
     let mut result = Vec::new();
     for (category, path) in [
@@ -55,6 +64,13 @@ fn sources() -> Vec<Source> {
         }
     }
     for hive in ["HKCU", "HKLM"] {
+        result.push(Source {
+            category: Category::ProgIds,
+            hive,
+            path: crate::prog_ids::PROG_IDS_KEY,
+            flag: 0,
+            view: "shared",
+        });
         result.push(Source {
             category: Category::TypeLibraries,
             hive,
@@ -212,20 +228,22 @@ fn make_entry(
                         | Category::Com
                         | Category::SharedDlls
                         | Category::RegisteredApplications
-                        | Category::TypeLibraries => TargetKind::File,
+                        | Category::TypeLibraries
+                        | Category::ProgIds => TargetKind::File,
                     };
-                    let assessment = if source.category == Category::TypeLibraries {
-                        Assessment {
-                            status: EntryStatus::Unknown,
-                            code: "type_library_unverified".into(),
-                            explanation: "The platform mapping has not been assessed.".into(),
-                            target: None,
-                        }
-                    } else if source.category == Category::ApplicationCommands {
-                        application_scan::assess_command(&raw, environment, probe)
-                    } else {
-                        analyze_target(&raw, kind, environment, probe)
-                    };
+                    let assessment =
+                        if matches!(source.category, Category::TypeLibraries | Category::ProgIds) {
+                            Assessment {
+                                status: EntryStatus::Unknown,
+                                code: "type_library_unverified".into(),
+                                explanation: "The platform mapping has not been assessed.".into(),
+                                target: None,
+                            }
+                        } else if source.category == Category::ApplicationCommands {
+                            application_scan::assess_command(&raw, environment, probe)
+                        } else {
+                            analyze_target(&raw, kind, environment, probe)
+                        };
                     (raw, value_type, assessment)
                 }
                 Err(reason) => (
@@ -282,6 +300,8 @@ fn make_entry(
         registered_app_repairable: false,
         type_library_state: None,
         type_library_repairable: false,
+        prog_id_state: None,
+        prog_id_repairable: false,
         service_repairable: false,
     }
 }
@@ -297,6 +317,8 @@ mod extra_scan;
 use extra_scan::scan_shared_dlls;
 #[path = "application_scan.rs"]
 mod application_scan;
+#[path = "prog_id_scan.rs"]
+mod prog_id_scan;
 #[path = "registered_apps_scan.rs"]
 mod registered_apps_scan;
 #[path = "type_libraries_scan.rs"]
@@ -310,7 +332,7 @@ fn scan_source(
     probe: &impl PathProbe,
 ) -> ScopeResult {
     let mut scope = ScopeResult {
-        id: format!("{}|{}|{}", source.hive, source.view, source.path),
+        id: source_id(source),
         category: source.category,
         hive: source.hive.into(),
         key_path: source.path.into(),
@@ -367,7 +389,17 @@ fn scan_source(
         return scope;
     }
     let start_count = entries.len();
-    if source.category == Category::TypeLibraries {
+    if source.category == Category::ProgIds {
+        prog_id_scan::scan_prog_ids(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::TypeLibraries {
         type_libraries_scan::scan_type_libraries(
             source,
             &key,

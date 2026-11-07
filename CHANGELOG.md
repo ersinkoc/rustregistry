@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.12 — 2026-11-07
+
+- Expand coverage from 27 to 29 logical scan sections with shared HKCU/HKLM COM ProgID-to-CLSID reference inventory. These checks share Classes roots with file-association inventory but inspect different children and use distinct scope IDs. Resolve class-key existence through both hives and both architecture views without COM activation, resolution APIs, or filesystem probes.
+- Add backed-up, reversible disabling of simple orphaned current-user ProgID CLSID defaults, including Quick Clean and selected Clean. Require a literal CLSID absent from every checked view, no same-named machine ProgID, unchanged bounded description metadata, and existing write access.
+- Preserve all keys, descriptions, class registrations, default selections, UserChoice, file-association metadata, permissions, and files. Machine changes, existing targets in any view, CurVer/shell/complex registrations, links, malformed GUIDs, and unsupported ProgID names/types remain excluded.
+- Flush and verify a separate schema 12 backup before each conditional registry transaction. Restore exact original REG_SZ/REG_EXPAND_SZ bytes only while the value is absent and all orphan/metadata/fallback guards still hold. Keep formats 1–11 unchanged, including a fixed v0.1.11 type library backup restoration test.
+- Add policy, read-only inventory, unique-scope-ID regression, write-access, conflict, batch-stop, exact-byte restart/restore, and corruption tests. Add packaged UI controls for real 32-bit-only, 64-bit-only, and machine-only class targets, a newly appearing 32-bit class after review, Quick Clean review/cancel, individual and two-entry selected repair, independent raw/permission comparisons, and owned-fixture cleanup.
+
 ## 0.1.11 — 2026-11-07
 
 - Expand read-only coverage from 25 to 27 locations with shared HKCU/HKLM TypeLib inventory. Read explicit win32/win64 platform mappings, versions, and locales without loading or registering libraries. Keep win32 file targets unverified in the 64-bit process and bound both mapping counts and hierarchy traversal.

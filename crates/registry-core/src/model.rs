@@ -13,6 +13,7 @@ pub enum Category {
     SharedDlls,
     RegisteredApplications,
     TypeLibraries,
+    ProgIds,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +76,10 @@ pub struct RegistryEntry {
     pub type_library_state: Option<crate::type_libraries::TypeLibState>,
     #[serde(default)]
     pub type_library_repairable: bool,
+    #[serde(skip)]
+    pub prog_id_state: Option<crate::prog_ids::ProgIdState>,
+    #[serde(default)]
+    pub prog_id_repairable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

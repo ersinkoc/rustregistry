@@ -404,6 +404,34 @@ mod tests {
     }
 
     #[test]
+    fn restores_unchanged_v0111_type_library_backup_without_migration() {
+        let fixture = Fixture::new();
+        let directory = tempfile::tempdir().unwrap();
+        let id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        let (leaf, _) = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!(r"{}\User\{{{id}}}\1.0\0\win64", fixture.base))
+            .unwrap();
+        let bytes = include_bytes!("../tests/fixtures/type-library-backup-v11.json");
+        let file = directory.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut manager = ChangeManager::new(
+            fixture.store(),
+            directory.path().to_path_buf(),
+            LocalPathProbe,
+        );
+        let plan = manager.prepare_restore(id).unwrap();
+        assert_eq!(plan.scope, "type_library");
+        manager.apply(&plan.token).unwrap();
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        assert_eq!(
+            read_value(&leaf, "").unwrap(),
+            Some(serde_json::from_value(record["original"].clone()).unwrap())
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+        fixture.assert_other();
+    }
+
+    #[test]
     fn type_library_quick_and_selected_clean_back_up_restart_and_restore_exact_mappings_and_metadata(
     ) {
         for mode in ["quick", "selected"] {

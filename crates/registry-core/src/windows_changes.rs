@@ -4,6 +4,8 @@ mod applications;
 mod associations;
 #[path = "windows_com.rs"]
 mod com;
+#[path = "windows_prog_ids.rs"]
+mod prog_ids;
 #[path = "windows_registered_apps.rs"]
 mod registered_apps;
 #[path = "windows_services.rs"]
@@ -17,6 +19,7 @@ use crate::changes::{
     RegistryStore, StoredValue, APP_PATHS_KEY, STARTUP_KEY,
 };
 use crate::uninstall::{validate_uninstall_name, UninstallSnapshot, COMPONENT, UNINSTALL_KEY};
+pub(crate) use prog_ids::open_prog_id_child;
 pub(crate) use registered_apps::open_registration_path;
 use std::borrow::Cow;
 pub(crate) use type_libraries::open_type_lib;
@@ -36,6 +39,10 @@ pub struct WindowsRegistryStore {
     machine_registered_app_path: String,
     #[cfg(test)]
     registered_app_test_machine: Option<String>,
+    prog_ids_path: String,
+    machine_prog_ids_path: String,
+    #[cfg(test)]
+    prog_id_test_machine_user: bool,
     type_lib_path: String,
     machine_type_lib_path: String,
     #[cfg(test)]
@@ -60,6 +67,10 @@ impl Default for WindowsRegistryStore {
             machine_registered_app_path: crate::registered_apps::REGISTERED_APPS_KEY.into(),
             #[cfg(test)]
             registered_app_test_machine: None,
+            prog_ids_path: crate::prog_ids::PROG_IDS_KEY.into(),
+            machine_prog_ids_path: crate::prog_ids::PROG_IDS_KEY.into(),
+            #[cfg(test)]
+            prog_id_test_machine_user: false,
             type_lib_path: crate::type_libraries::TYPE_LIB_KEY.into(),
             machine_type_lib_path: crate::type_libraries::TYPE_LIB_KEY.into(),
             #[cfg(test)]
@@ -168,6 +179,27 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_prog_id(
+        &self,
+        app: &crate::prog_ids::ProgIdBackup,
+    ) -> Result<crate::prog_ids::ProgIdState, String> {
+        self.prog_id_state(app)
+    }
+    fn check_prog_id_write_access(
+        &self,
+        app: &crate::prog_ids::ProgIdBackup,
+    ) -> Result<(), String> {
+        self.prog_id_write_access(app)
+    }
+    fn compare_exchange_prog_id(
+        &self,
+        app: &crate::prog_ids::ProgIdBackup,
+        expected: &crate::prog_ids::ProgIdState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_prog_id(app, expected, replacement)
+    }
+
     fn read_type_library(
         &self,
         app: &crate::type_libraries::TypeLibBackup,
@@ -607,6 +639,8 @@ mod tests {
             registered_app_repairable: false,
             type_library_state: None,
             type_library_repairable: false,
+            prog_id_state: None,
+            prog_id_repairable: false,
             service_repairable: false,
         };
         let mut manager = ChangeManager::new(
@@ -723,6 +757,8 @@ mod tests {
             registered_app_repairable: false,
             type_library_state: None,
             type_library_repairable: false,
+            prog_id_state: None,
+            prog_id_repairable: false,
             service_repairable: false,
         };
         let mut manager =
@@ -890,6 +926,8 @@ mod tests {
                 registered_app_repairable: false,
                 type_library_state: None,
                 type_library_repairable: false,
+                prog_id_state: None,
+                prog_id_repairable: false,
                 service_repairable: false,
             };
             let mut manager =

@@ -8,7 +8,8 @@ export type Category =
   | 'services'
   | 'shared_dlls'
   | 'registered_applications'
-  | 'type_libraries';
+  | 'type_libraries'
+  | 'prog_ids';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -32,6 +33,7 @@ export interface RegistryEntry {
   sharedDllRepairable?: boolean;
   registeredAppRepairable?: boolean;
   typeLibraryRepairable?: boolean;
+  progIdRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -72,6 +74,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  prog_ids: {
+    label: 'COM ProgID references',
+    description: 'ProgID-to-CLSID checks and guarded orphan recovery',
+    short: 'COM ProgID',
+  },
   type_libraries: {
     label: 'Type libraries',
     description: 'COM library paths and guarded win64 repair',

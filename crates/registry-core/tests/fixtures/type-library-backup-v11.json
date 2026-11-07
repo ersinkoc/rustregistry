@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 11,
+  "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "name": "Legacy type library mapping",
+  "valueName": "",
+  "createdAt": 11,
+  "original": {
+    "kind": 2,
+    "bytes": [
+      67, 0, 58, 0, 92, 0, 82, 0, 117, 0, 115, 0, 116, 0, 82, 0, 101, 0, 103, 0, 105, 0, 115, 0,
+      116, 0, 114, 0, 121, 0, 77, 0, 105, 0, 115, 0, 115, 0, 105, 0, 110, 0, 103, 0, 92, 0, 108, 0,
+      101, 0, 103, 0, 97, 0, 99, 0, 121, 0, 45, 0, 116, 0, 121, 0, 112, 0, 101, 0, 108, 0, 105, 0,
+      98, 0, 46, 0, 116, 0, 108, 0, 98, 0, 0, 0, 0, 0
+    ]
+  },
+  "typeLibrary": {
+    "libraryId": "{bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb}",
+    "version": "1.0",
+    "locale": "0",
+    "platform": "win64",
+    "guard": {
+      "nodes": [
+        {
+          "path": "",
+          "values": []
+        },
+        {
+          "path": "1.0",
+          "values": []
+        },
+        {
+          "path": "1.0\\0",
+          "values": []
+        },
+        {
+          "path": "1.0\\0\\win64",
+          "values": []
+        }
+      ]
+    }
+  },
+  "integritySha256": "34a96331b59fed36cceb6f6d63e88811e38b29254ce82287f9b06fb9b28a5a9c"
+}

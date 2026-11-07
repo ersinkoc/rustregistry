@@ -32,7 +32,8 @@ export interface ChangePlan {
     | 'application'
     | 'shared_dll'
     | 'registered_app'
-    | 'type_library';
+    | 'type_library'
+    | 'prog_id';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -61,7 +62,8 @@ interface Backup {
     | 'application'
     | 'shared_dll'
     | 'registered_app'
-    | 'type_library';
+    | 'type_library'
+    | 'prog_id';
   registryPath: string;
   registryView?: string;
 }
@@ -72,6 +74,24 @@ interface Inventory {
 }
 
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'prog_ids') {
+    const mapping = /^software\\classes\\([a-z][a-z0-9]*(?:\.[a-z0-9]+)+)\\clsid$/i.exec(
+      entry.keyPath,
+    );
+    return Boolean(
+      mapping &&
+      mapping[1].length <= 39 &&
+      entry.hive === 'HKCU' &&
+      entry.view === 'shared' &&
+      entry.progIdRepairable === true &&
+      entry.valueName === '' &&
+      ['REG_SZ', 'REG_EXPAND_SZ'].includes(entry.valueType) &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'clsid_missing' &&
+      /^\{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\}$/i.test(entry.rawValue),
+    );
+  }
+
   if (entry.category === 'type_libraries')
     return (
       entry.hive === 'HKCU' &&
@@ -218,6 +238,7 @@ export function ChangeConfirmation({
   const sharedDll = plan.scope === 'shared_dll';
   const registeredApp = plan.scope === 'registered_app';
   const typeLibrary = plan.scope === 'type_library';
+  const progId = plan.scope === 'prog_id';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -253,86 +274,94 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {typeLibrary
+        {progId
           ? restore
-            ? 'Restore type library mapping?'
-            : 'Disable missing type library mapping?'
-          : registeredApp
+            ? 'Restore COM ProgID mapping?'
+            : 'Disable orphaned COM ProgID mapping?'
+          : typeLibrary
             ? restore
-              ? 'Restore application registration?'
-              : 'Remove orphaned application registration?'
-            : sharedDll
+              ? 'Restore type library mapping?'
+              : 'Disable missing type library mapping?'
+            : registeredApp
               ? restore
-                ? 'Restore shared DLL reference?'
-                : 'Remove zero-count shared DLL reference?'
-              : application
+                ? 'Restore application registration?'
+                : 'Remove orphaned application registration?'
+              : sharedDll
                 ? restore
-                  ? 'Restore application suggestion?'
-                  : 'Hide broken application suggestion?'
-                : service
+                  ? 'Restore shared DLL reference?'
+                  : 'Remove zero-count shared DLL reference?'
+                : application
                   ? restore
-                    ? 'Restore service startup?'
-                    : 'Disable this missing-target service?'
-                  : com
+                    ? 'Restore application suggestion?'
+                    : 'Hide broken application suggestion?'
+                  : service
                     ? restore
-                      ? `Restore ${comLabel}?`
-                      : `Repair broken ${comLabel}?`
-                    : association
+                      ? 'Restore service startup?'
+                      : 'Disable this missing-target service?'
+                    : com
                       ? restore
-                        ? 'Restore Open with suggestion?'
-                        : 'Repair orphaned file association?'
-                      : uninstall
+                        ? `Restore ${comLabel}?`
+                        : `Repair broken ${comLabel}?`
+                      : association
                         ? restore
-                          ? 'Restore uninstall entry visibility?'
-                          : 'Repair orphaned uninstall entry?'
-                        : appPath
+                          ? 'Restore Open with suggestion?'
+                          : 'Repair orphaned file association?'
+                        : uninstall
                           ? restore
-                            ? 'Restore application path?'
-                            : 'Repair broken application path?'
-                          : restore
-                            ? 'Restore startup entry?'
-                            : 'Disable this startup entry?'}
+                            ? 'Restore uninstall entry visibility?'
+                            : 'Repair orphaned uninstall entry?'
+                          : appPath
+                            ? restore
+                              ? 'Restore application path?'
+                              : 'Repair broken application path?'
+                            : restore
+                              ? 'Restore startup entry?'
+                              : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {typeLibrary
+        {progId
           ? restore
-            ? 'Restore the exact original win64 mapping only while its value is absent, its file remains missing, and every guarded registration and fallback check still matches.'
-            : 'The literal local win64 library file is missing. After a verified backup, only this default mapping value is removed. The library keys, win32 mappings, version and locale information, help metadata, and permissions are preserved. No library is loaded, registered, or unregistered.'
-          : registeredApp
+            ? 'Restore the exact original CLSID mapping only while its value remains absent, its target class is still absent from both user/machine 32/64-bit views, and every description and fallback check still matches.'
+            : 'The referenced COM class is absent from both hives and both architecture views. After a verified backup, only this current-user ProgID’s default CLSID mapping is removed. Keys, descriptions, class registrations, default application selections, and files are preserved. No COM object is activated.'
+          : typeLibrary
             ? restore
-              ? 'Restore the exact original application name and Capabilities path only while the value is absent, the target remains missing, and no machine counterpart exists.'
-              : 'This current-user registration points to a missing Capabilities key. After a verified backup, only this named RegisteredApplications value is removed. Default application selections, UserChoice, ProgIDs, Capabilities keys, commands, files, and permissions are preserved.'
-            : sharedDll
+              ? 'Restore the exact original win64 mapping only while its value is absent, its file remains missing, and every guarded registration and fallback check still matches.'
+              : 'The literal local win64 library file is missing. After a verified backup, only this default mapping value is removed. The library keys, win32 mappings, version and locale information, help metadata, and permissions are preserved. No library is loaded, registered, or unregistered.'
+            : registeredApp
               ? restore
-                ? 'This restores the exact original DWORD zero only if the value is still absent and the local DLL remains missing. A new counter, changed key structure, or reappearing file blocks restore.'
-                : 'The local DLL was not found and this reference count is exactly zero. After a verified backup, only this named registry value is removed. A zero count does not establish all application ownership; review the exact path. Positive counters and DLL files are preserved.'
-              : application
+                ? 'Restore the exact original application name and Capabilities path only while the value is absent, the target remains missing, and no machine counterpart exists.'
+                : 'This current-user registration points to a missing Capabilities key. After a verified backup, only this named RegisteredApplications value is removed. Default application selections, UserChoice, ProgIDs, Capabilities keys, commands, files, and permissions are preserved.'
+              : sharedDll
                 ? restore
-                  ? 'This removes the backed-up NoOpenWith flag only when all guarded application metadata and the original command still match. The application may appear in optional suggestions again.'
-                  : 'The executable in this simple open command is missing. After a verified backup, only an empty NoOpenWith flag is added to the application registration. The exact open command, keys, and default application selections are preserved.'
-                : service
+                  ? 'This restores the exact original DWORD zero only if the value is still absent and the local DLL remains missing. A new counter, changed key structure, or reappearing file blocks restore.'
+                  : 'The local DLL was not found and this reference count is exactly zero. After a verified backup, only this named registry value is removed. A zero count does not establish all application ownership; review the exact path. Positive counters and DLL files are preserved.'
+                : application
                   ? restore
-                    ? 'This restores the original Manual startup type through Windows Service Control Manager. The service remains stopped. Its executable, account, permissions, and configuration must still match the backup.'
-                    : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
-                  : com
+                    ? 'This removes the backed-up NoOpenWith flag only when all guarded application metadata and the original command still match. The application may appear in optional suggestions again.'
+                    : 'The executable in this simple open command is missing. After a verified backup, only an empty NoOpenWith flag is added to the application registration. The exact open command, keys, and default application selections are preserved.'
+                  : service
                     ? restore
-                      ? `This restores the exact original 64-bit ${comLocal ? 'server command' : 'DLL mapping'}. Applications may use it through COM later. The class and server metadata must still match the backup.`
-                      : `The explicit local ${comLocal ? 'executable' : 'DLL'} is missing. After a verified backup, only the default ${comServer} value is removed. The registration keys and permissions are preserved; no COM object is activated and no command is run.`
-                    : association
+                      ? 'This restores the original Manual startup type through Windows Service Control Manager. The service remains stopped. Its executable, account, permissions, and configuration must still match the backup.'
+                      : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
+                    : com
                       ? restore
-                        ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
-                        : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
-                      : uninstall
+                        ? `This restores the exact original 64-bit ${comLocal ? 'server command' : 'DLL mapping'}. Applications may use it through COM later. The class and server metadata must still match the backup.`
+                        : `The explicit local ${comLocal ? 'executable' : 'DLL'} is missing. After a verified backup, only the default ${comServer} value is removed. The registration keys and permissions are preserved; no COM object is activated and no command is run.`
+                      : association
                         ? restore
-                          ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
-                          : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
-                        : appPath
+                          ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
+                          : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
+                        : uninstall
                           ? restore
-                            ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
-                            : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
-                          : restore
-                            ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-                            : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+                            ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
+                            : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
+                          : appPath
+                            ? restore
+                              ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+                              : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+                            : restore
+                              ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+                              : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -343,11 +372,13 @@ export function ChangeConfirmation({
           <dt>Registry path</dt>
           <dd className="code-field">{plan.registryPath}</dd>
         </div>
-        {(com || sharedDll || typeLibrary) && (
+        {(com || sharedDll || typeLibrary || progId) && (
           <div className="full-field">
             <dt>Registry view</dt>
             <dd>
-              {typeLibrary ? (
+              {progId ? (
+                'Shared ProgID · target checked in both hives and architecture views'
+              ) : typeLibrary ? (
                 'Shared registry · win64 library · current user'
               ) : (
                 <>
@@ -367,27 +398,29 @@ export function ChangeConfirmation({
         </div>
         <div className="full-field">
           <dt>
-            {typeLibrary
-              ? 'Exact original type library file path'
-              : registeredApp
-                ? 'Exact original Capabilities registry path'
-                : sharedDll
-                  ? 'Original reference count'
-                  : application
-                    ? 'Original NoOpenWith flag'
-                    : service
-                      ? 'Original startup type'
-                      : com
-                        ? comLocal
-                          ? 'Exact original COM server command'
-                          : 'Exact original COM DLL path'
-                        : association
-                          ? 'Original suggestion data'
-                          : uninstall
-                            ? 'Original installation folder'
-                            : appPath
-                              ? 'Exact original executable path'
-                              : 'Exact original command'}
+            {progId
+              ? 'Exact original CLSID reference'
+              : typeLibrary
+                ? 'Exact original type library file path'
+                : registeredApp
+                  ? 'Exact original Capabilities registry path'
+                  : sharedDll
+                    ? 'Original reference count'
+                    : application
+                      ? 'Original NoOpenWith flag'
+                      : service
+                        ? 'Original startup type'
+                        : com
+                          ? comLocal
+                            ? 'Exact original COM server command'
+                            : 'Exact original COM DLL path'
+                          : association
+                            ? 'Original suggestion data'
+                            : uninstall
+                              ? 'Original installation folder'
+                              : appPath
+                                ? 'Exact original executable path'
+                                : 'Exact original command'}
           </dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
@@ -483,25 +516,27 @@ export function ChangeConfirmation({
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
-          {typeLibrary
-            ? 'A separate verified backup preserves the original mapping type and bytes and the supported registration metadata. New files, machine counterparts, modified metadata, or missing keys block both repair and restore.'
-            : registeredApp
-              ? 'A separate verified backup preserves the exact original REG_SZ bytes. New registrations, reappearing Capabilities, registry links, or changed evidence block repair and restore.'
-              : sharedDll
-                ? 'A verified backup preserves the original DWORD type and all four bytes. Repair and restore both recheck that the target is missing; no key or file is recreated.'
-                : application
-                  ? 'Only suggestion visibility changes. The original open command, default application selections, registry keys, files, and permissions are preserved.'
-                  : service
-                    ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
-                    : com
-                      ? 'No DLL is loaded or registered, no COM object is activated, no command is run, and no key, file, or permission is changed. A verified backup is required before removing this one value.'
-                      : association
-                        ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
-                        : uninstall
-                          ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
-                          : restore
-                            ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
-                            : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
+          {progId
+            ? 'A separate verified backup preserves the original mapping type/bytes and description. A class appearing in any checked view, a same-named machine ProgID, changed metadata, or missing keys blocks repair and restore.'
+            : typeLibrary
+              ? 'A separate verified backup preserves the original mapping type and bytes and the supported registration metadata. New files, machine counterparts, modified metadata, or missing keys block both repair and restore.'
+              : registeredApp
+                ? 'A separate verified backup preserves the exact original REG_SZ bytes. New registrations, reappearing Capabilities, registry links, or changed evidence block repair and restore.'
+                : sharedDll
+                  ? 'A verified backup preserves the original DWORD type and all four bytes. Repair and restore both recheck that the target is missing; no key or file is recreated.'
+                  : application
+                    ? 'Only suggestion visibility changes. The original open command, default application selections, registry keys, files, and permissions are preserved.'
+                    : service
+                      ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
+                      : com
+                        ? 'No DLL is loaded or registered, no COM object is activated, no command is run, and no key, file, or permission is changed. A verified backup is required before removing this one value.'
+                        : association
+                          ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
+                          : uninstall
+                            ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
+                            : restore
+                              ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
+                              : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
         </p>
       </div>
       <label className="confirmation-check">
@@ -512,25 +547,27 @@ export function ChangeConfirmation({
           onChange={(event) => setAgreed(event.target.checked)}
         />
         <span>
-          {typeLibrary
-            ? 'I reviewed this exact library path and understand that only its win64 mapping changes.'
-            : registeredApp
-              ? 'I reviewed this exact application name and Capabilities path and understand this registration change.'
-              : sharedDll
-                ? 'I reviewed this exact DLL path and understand that only its zero-count registry reference changes.'
-                : application
-                  ? 'I reviewed the original command and understand the suggestion visibility change.'
-                  : service
-                    ? 'I reviewed this service and understand that only its startup type changes.'
-                    : com
-                      ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
-                      : association
-                        ? 'I reviewed this exact suggestion and understand the file association change.'
-                        : uninstall
-                          ? 'I reviewed this entry and understand this only changes listing visibility.'
-                          : appPath
-                            ? 'I reviewed this exact value and understand the application path change.'
-                            : 'I reviewed this exact value and understand the startup change.'}
+          {progId
+            ? 'I reviewed this exact ProgID and CLSID reference and understand the mapping change.'
+            : typeLibrary
+              ? 'I reviewed this exact library path and understand that only its win64 mapping changes.'
+              : registeredApp
+                ? 'I reviewed this exact application name and Capabilities path and understand this registration change.'
+                : sharedDll
+                  ? 'I reviewed this exact DLL path and understand that only its zero-count registry reference changes.'
+                  : application
+                    ? 'I reviewed the original command and understand the suggestion visibility change.'
+                    : service
+                      ? 'I reviewed this service and understand that only its startup type changes.'
+                      : com
+                        ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
+                        : association
+                          ? 'I reviewed this exact suggestion and understand the file association change.'
+                          : uninstall
+                            ? 'I reviewed this entry and understand this only changes listing visibility.'
+                            : appPath
+                              ? 'I reviewed this exact value and understand the application path change.'
+                              : 'I reviewed this exact value and understand the startup change.'}
         </span>
       </label>
       {expired && (
@@ -550,43 +587,47 @@ export function ChangeConfirmation({
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
           {busy
             ? 'Applying…'
-            : typeLibrary
+            : progId
               ? restore
-                ? 'Restore library mapping'
-                : 'Back up & disable library mapping'
-              : registeredApp
+                ? 'Restore ProgID mapping'
+                : 'Back up & disable ProgID mapping'
+              : typeLibrary
                 ? restore
-                  ? 'Restore registration'
-                  : 'Back up & remove registration'
-                : sharedDll
+                  ? 'Restore library mapping'
+                  : 'Back up & disable library mapping'
+                : registeredApp
                   ? restore
-                    ? 'Restore zero-count reference'
-                    : 'Back up & remove reference'
-                  : application
+                    ? 'Restore registration'
+                    : 'Back up & remove registration'
+                  : sharedDll
                     ? restore
-                      ? 'Restore suggestion visibility'
-                      : 'Back up & hide suggestion'
-                    : service
+                      ? 'Restore zero-count reference'
+                      : 'Back up & remove reference'
+                    : application
                       ? restore
-                        ? 'Restore Manual startup'
-                        : 'Back up & disable service'
-                      : com
+                        ? 'Restore suggestion visibility'
+                        : 'Back up & hide suggestion'
+                      : service
                         ? restore
-                          ? 'Restore original value'
-                          : 'Back up & disable mapping'
-                        : association
+                          ? 'Restore Manual startup'
+                          : 'Back up & disable service'
+                        : com
                           ? restore
                             ? 'Restore original value'
-                            : 'Back up & remove suggestion'
-                          : uninstall
+                            : 'Back up & disable mapping'
+                          : association
                             ? restore
-                              ? 'Restore original visibility'
-                              : 'Back up & hide entry'
-                            : restore
                               ? 'Restore original value'
-                              : appPath
-                                ? 'Back up & repair'
-                                : 'Back up & disable'}
+                              : 'Back up & remove suggestion'
+                            : uninstall
+                              ? restore
+                                ? 'Restore original visibility'
+                                : 'Back up & hide entry'
+                              : restore
+                                ? 'Restore original value'
+                                : appPath
+                                  ? 'Back up & repair'
+                                  : 'Back up & disable'}
         </button>
       </div>
     </dialog>
@@ -699,25 +740,27 @@ export function BackupsPanel({
                     {new Date(backup.createdAt).toLocaleString('en-US')}
                     <span>
                       ·{' '}
-                      {backup.scope === 'type_library'
-                        ? 'Type library · win64'
-                        : backup.scope === 'registered_app'
-                          ? 'Application registration'
-                          : backup.scope === 'shared_dll'
-                            ? 'Shared DLL reference · 64 bit'
-                            : backup.scope === 'application'
-                              ? 'Application suggestion'
-                              : backup.scope === 'service'
-                                ? 'Service startup'
-                                : backup.scope === 'com'
-                                  ? `COM mapping · ${backup.registryView} bit`
-                                  : backup.scope === 'association'
-                                    ? 'File association'
-                                    : backup.scope === 'uninstall'
-                                      ? 'Uninstall'
-                                      : backup.scope === 'app_path'
-                                        ? 'Application path'
-                                        : 'Startup'}{' '}
+                      {backup.scope === 'prog_id'
+                        ? 'COM ProgID mapping'
+                        : backup.scope === 'type_library'
+                          ? 'Type library · win64'
+                          : backup.scope === 'registered_app'
+                            ? 'Application registration'
+                            : backup.scope === 'shared_dll'
+                              ? 'Shared DLL reference · 64 bit'
+                              : backup.scope === 'application'
+                                ? 'Application suggestion'
+                                : backup.scope === 'service'
+                                  ? 'Service startup'
+                                  : backup.scope === 'com'
+                                    ? `COM mapping · ${backup.registryView} bit`
+                                    : backup.scope === 'association'
+                                      ? 'File association'
+                                      : backup.scope === 'uninstall'
+                                        ? 'Uninstall'
+                                        : backup.scope === 'app_path'
+                                          ? 'Application path'
+                                          : 'Startup'}{' '}
                       · {backup.valueName || '(Default)'}
                     </span>
                   </small>

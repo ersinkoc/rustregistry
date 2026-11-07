@@ -176,6 +176,8 @@ mod tests {
                 registered_app_repairable: false,
                 type_library_state: None,
                 type_library_repairable: false,
+                prog_id_state: None,
+                prog_id_repairable: false,
             }
         }
         fn assert_controls(&self) {

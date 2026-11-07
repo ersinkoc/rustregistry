@@ -4,6 +4,7 @@ pub mod associations;
 pub mod changes;
 pub mod com;
 mod model;
+pub mod prog_ids;
 pub mod registered_apps;
 #[cfg(windows)]
 mod scan_probe;

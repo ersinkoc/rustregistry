@@ -22,6 +22,33 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers only guarded current-user orphaned COM ProgID mappings', () => {
+    const mapping = {
+      ...entry,
+      category: 'prog_ids' as const,
+      keyPath: 'Software\\Classes\\Example.Component.1\\CLSID',
+      valueName: '',
+      rawValue: '{11111111-1111-4111-8111-111111111111}',
+      progIdRepairable: true,
+      assessment: { ...entry.assessment, code: 'clsid_missing' },
+    };
+    expect(canQuarantine(mapping)).toBe(true);
+    for (const changed of [
+      { ...mapping, hive: 'HKLM' },
+      { ...mapping, view: '32' },
+      { ...mapping, progIdRepairable: false },
+      { ...mapping, valueName: 'NamedValue' },
+      { ...mapping, valueType: 'REG_DWORD' },
+      { ...mapping, rawValue: '%CLSID%' },
+      {
+        ...mapping,
+        keyPath: mapping.keyPath.replace('Example.Component.1', 'Example_Component.1'),
+      },
+      { ...mapping, keyPath: `${mapping.keyPath}\\Nested` },
+      { ...mapping, assessment: { ...mapping.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers only guarded neutral current-user win64 type library mappings', () => {
     const library = {
       ...entry,
