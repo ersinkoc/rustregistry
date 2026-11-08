@@ -26,7 +26,7 @@ The executable requires WebView2 on the target computer. This release does not c
 
 ## What it reads
 
-The scanner covers **64 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
+The scanner covers **66 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
 
 | Category                                           | Registry area                                                         | Sections |
 | -------------------------------------------------- | --------------------------------------------------------------------- | -------: |
@@ -44,6 +44,7 @@ The scanner covers **64 logical registry sections**, including independent 32/64
 | Optional personal registry history                 | HKCU CurrentVersion Explorer RunMRU / TypedPaths                      |        2 |
 | Persisted font registrations                       | Shared HKCU/HKLM Windows NT CurrentVersion Fonts                      |        2 |
 | Registered help files                              | HKLM Windows HTML Help / Help in separate 32/64-bit views             |        4 |
+| Sound-event file assignments                       | Shared HKCU/HKLM AppEvents Schemes Apps, including saved variants     |        2 |
 
 HKCU shared locations are read once. Applicable machine locations and redirected COM registrations use the 32/64-bit views described in [Microsoft's registry architecture table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Shared keys are not counted twice merely because both architecture flags can read them. File probing for redirected COM and SharedDLLs remains limited to native 64-bit mappings. Existing class or library keys prove registration presence, not working activation. Uninstall display metadata is shown when available.
 
@@ -52,6 +53,20 @@ HKCU shared locations are read once. Applicable machine locations and redirected
 - **Unverified:** the target is absent, ambiguous, inaccessible, unsupported, or could not be resolved reliably.
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
+
+## Sound-event diagnostics and repair in 0.1.22
+
+Sound-event inventory reads direct assignments under shared `HKCU`/`HKLM\AppEvents\Schemes\Apps\<application>\<event>\<scheme>`. Empty text is an explicit unassigned sound, not a missing file. An absent value is shown separately because consuming applications can implement their own fallback. Relative/expandable paths, aliases, unsupported types and non-wave formats remain unverified. Existing files are checked for presence only; their contents and playback are not validated.
+
+**Review sound repair** supports current-user `.Current` default REG_SZ values pointing to confirmed missing literal local ASCII `.wav` files outside Windows, up to 255 characters. Individual review, selected Clean and category-scoped Quick Clean share the native checks. The review shows the event, exact registry location, original file and replacement: an **explicit empty REG_SZ assignment**. The existing value and key are retained rather than deleted. Saved variants, `.Default`/`.None` scheme values, default fallback events, machine registrations, unsupported/nested metadata and uncertain evidence remain read-only. A selected No Sounds scheme or matching machine event blocks repair.
+
+A **schema 22** backup contains the exact original bytes and bounded guard snapshots of the selected scheme, application/event metadata and every saved/current variant's other values. The backup is flushed and read back with its checksum verified before a conditional transaction writes only the chosen default value. Restore returns the exact original type/bytes only while that existing key contains the exact empty assignment written by repair, the file remains missing, no machine counterpart exists and all guarded metadata still matches. New values/files, scheme changes, missing keys, corrupt or namespace-mismatched backups block the action; no key is recreated. Formats 1–21 retain their original layouts and checksums.
+
+This changes persisted configuration. Applications may cache sounds or use their own resources and fallback; this release does not promise that every client becomes silent. No audio is played, decoded or deleted, and no sound-settings notification is broadcast. Device, volume, event labels, notification policies, files, other sound applications and saved schemes are preserved. Restoring a registry assignment does not recover its missing audio file.
+
+Microsoft's [theme format](https://learn.microsoft.com/en-us/windows/win32/controls/themesfileformat-overview) describes event-to-wave assignments and empty event entries. [PlaySound](<https://learn.microsoft.com/en-us/previous-versions/dd743680(v=vs.85)>) documents application/system aliases, search paths and default-sound behavior. Keeping an explicit empty assignment is a conservative configuration choice; complete consumer behavior is not inferred or tested through playback.
+
+`cargo test -p registry-core sound` covers classification, supported repair policy, individual/selected/Quick Clean, restart/exact restore, real file conflicts, selected-scheme and saved-metadata changes, machine counterparts, backup failures/corruption and missing keys on isolated registry roots. `scripts/elevated-desktop-smoke.ps1 -Mode sound-only -Token <new-guid>` exercises the packaged UI with GUID-owned current-user sound controls, inert files and independent raw/permission comparisons. It never changes the live selected scheme or plays a sound; owned cleanup uses a transaction and preserves existing sound configuration. The complete Windows suite includes the same flow.
 
 ## Font and help-file diagnostics and repair in 0.1.21
 

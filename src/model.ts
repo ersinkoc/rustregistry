@@ -1,4 +1,5 @@
 export type Category =
+  | 'sound_events'
   | 'fonts'
   | 'help_files'
   | 'mui_cache'
@@ -53,6 +54,7 @@ export interface RegistryEntry {
   conversionRepairable?: boolean;
   maintenanceRepairable?: boolean;
   fileReferenceRepairable?: boolean;
+  soundRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -93,6 +95,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  sound_events: {
+    label: 'Sound events',
+    description: 'Sound-file assignments and protected current-event repair',
+    short: 'Sound event',
+  },
   fonts: {
     label: 'Font registrations',
     description: 'Persisted font file checks and protected user-reference repair',

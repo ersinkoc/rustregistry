@@ -10,6 +10,8 @@ mod conversions;
 mod file_references;
 #[path = "windows_maintenance.rs"]
 mod maintenance;
+#[path = "windows_sound_events.rs"]
+mod sounds;
 pub(crate) use maintenance::{open_maintenance_source, read_maintenance_snapshot};
 #[path = "windows_interfaces.rs"]
 mod interfaces;
@@ -46,6 +48,10 @@ pub(crate) use type_libraries::open_type_lib;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
 pub struct WindowsRegistryStore {
+    #[cfg(test)]
+    sound_test_root: Option<String>,
+    #[cfg(test)]
+    sound_test_machine: Option<String>,
     #[cfg(test)]
     file_reference_test_root: Option<String>,
     #[cfg(test)]
@@ -92,6 +98,10 @@ pub struct WindowsRegistryStore {
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
         Self {
+            #[cfg(test)]
+            sound_test_root: None,
+            #[cfg(test)]
+            sound_test_machine: None,
             #[cfg(test)]
             file_reference_test_root: None,
             #[cfg(test)]
@@ -235,6 +245,27 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_sound(
+        &self,
+        app: &crate::sound_events::SoundBackup,
+    ) -> Result<Option<StoredValue>, String> {
+        self.read_sound_event(app)
+    }
+    fn check_sound_write_access(
+        &self,
+        app: &crate::sound_events::SoundBackup,
+    ) -> Result<(), String> {
+        self.sound_access(app)
+    }
+    fn compare_exchange_sound(
+        &self,
+        app: &crate::sound_events::SoundBackup,
+        expected: Option<&StoredValue>,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_sound_event(app, expected, replacement)
+    }
+
     fn read_file_reference(
         &self,
         app: &crate::file_references::FileReferenceBackup,
@@ -870,6 +901,8 @@ mod tests {
             maintenance_state: None,
             file_reference: None,
             file_reference_repairable: false,
+            sound_state: None,
+            sound_repairable: false,
             maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
@@ -1005,6 +1038,8 @@ mod tests {
             maintenance_state: None,
             file_reference: None,
             file_reference_repairable: false,
+            sound_state: None,
+            sound_repairable: false,
             maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
@@ -1191,6 +1226,8 @@ mod tests {
                 maintenance_state: None,
                 file_reference: None,
                 file_reference_repairable: false,
+                sound_state: None,
+                sound_repairable: false,
                 maintenance_repairable: false,
                 conversion_repairable: false,
                 redirection_state: None,

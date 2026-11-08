@@ -1,6 +1,6 @@
 # Registry Doctor: scope and next milestones
 
-RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.21; future milestones below are plans, not implemented features.
+RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.22; future milestones below are plans, not implemented features.
 
 ## Research and current behavior
 
@@ -31,12 +31,20 @@ Microsoft's [font installation model](https://learn.microsoft.com/en-us/windows/
 
 Native tests use isolated roots; the packaged UI flow uses only owned registration values, inert help files and independent raw/permission readers. The setup has explicit test elevation for machine controls; the production app still uses existing rights. Test-created global help roots are removed only while a transaction verifies that they remain empty. Existing registrations and data are preserved.
 
+## Delivered in 0.1.22
+
+Sound-event inventory adds two shared user/machine logical sections, bringing coverage to 66. Explicit empty assignments are separated from absent values and missing files. Supported missing current-user `.Current` wave assignments can be reviewed individually or in selected/category-scoped cleaning. A verified schema 22 backup precedes a conditional write of an explicit empty assignment; exact restart restoration requires the same current value, selected scheme, saved variants, metadata and missing-file evidence.
+
+Microsoft's [theme format](https://learn.microsoft.com/en-us/windows/win32/controls/themesfileformat-overview) describes event sound files and empty entries. [PlaySound](<https://learn.microsoft.com/en-us/previous-versions/dd743680(v=vs.85)>) documents alias/search/default behavior. The implementation keeps the current value/key, preserves saved/default/No Sounds schemes and protects default fallback events and machine counterparts. This is a configuration change with explicit review; cached sounds and each application's fallback are not inferred. No audio is played, decoded or deleted, and no device, volume or notification policy changes.
+
+Native tests use isolated roots for selected-scheme, saved metadata, machine-counterpart, current-value and real-file conflicts during apply/restore. The packaged fixture uses only a GUID-owned current-user sound application and inert controls, preserves the real selected scheme and unrelated applications, and checks original bytes and permissions independently. Owned registry-tree cleanup compares the snapshot inside a transaction before deletion.
+
 ## Next concrete milestones
 
 | Area                            | Next implementation work                                                                              | Evidence required before enabling repair                                                                               |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Further font/help coverage      | Research packaged fonts, collections, Unicode/expanded paths and loader-specific relative resolution  | Verified lookup/fallback semantics, unchanged system/runtime resources and exact recovery before enabling more repairs |
-| Sound events                    | Inventory custom per-user sound mappings and distinguish empty/no-sound settings from missing media   | Default-scheme exclusions, exact metadata preservation, no playback, and tested user/system fallback behavior          |
+| Further sound coverage          | Research expanded/relative paths, aliases, saved scheme editing and application-specific fallback     | Verified resolution and consumer behavior, default protections and exact recovery before enabling further repairs      |
 | Installed-application leftovers | Correlate application paths, uninstall records, suggestions and cached labels into explainable groups | Multiple independent signals; absent files alone must not imply that settings, licenses or user data are disposable    |
 | Review controls                 | Per-category selections, explicit exclusions and remembered user decisions                            | Excluded IDs cannot enter native batches; changes in scan evidence must invalidate old decisions                       |
 | Recovery workflow               | Group successful batch backups into a visible operation journal                                       | Partial-failure reporting, per-item outcomes, exact conflict handling and independently tested restart recovery        |

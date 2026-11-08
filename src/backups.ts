@@ -11,6 +11,7 @@ export interface SearchableBackup {
 }
 
 const scopeLabels: Record<string, string> = {
+  sound_event: 'Current sound assignment',
   startup: 'Startup',
   app_path: 'Application path',
   uninstall: 'Uninstall',

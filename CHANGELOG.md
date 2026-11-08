@@ -2,6 +2,13 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.22 — 2026-11-09
+
+- Add shared current-user/machine sound-event inventory under AppEvents Schemes Apps, bringing coverage from 64 to 66 logical sections. Distinguish missing/found .wav files, explicit empty assignments, absent values, expanded/relative paths and unsupported settings without playing audio.
+- Add individual review, selected Clean and category-scoped Quick Clean for supported missing current-user .Current assignments. Back up before replacing only the default value with an explicit empty REG_SZ assignment. Preserve saved/default/No Sounds schemes, event metadata, keys, files, permissions, devices and volume settings. Default fallback events and machine counterparts remain protected.
+- Add disjoint schema 22 verified backups and exact-byte restoration after restart. Recheck the selected scheme, application/event metadata, all saved variants, current assignment and missing file before change or restore. New files, changed settings, machine counterparts, missing keys, corrupt backups and unsupported scope block changes. Formats 1–21 retain their layouts and checksums.
+- Add sound policy and native transaction/recovery/conflict tests, frontend eligibility coverage and an owned packaged sound fixture flow with independent raw-value and permission checks. Fixture cleanup verifies the owned tree inside a conditional transaction. No audio is played, decoded or deleted, and application-specific caching/fallback is not inferred.
+
 ## 0.1.21 — 2026-11-08
 
 - Add persisted font registration diagnostics under shared user/machine Fonts roots and filename-to-directory diagnostics for HTML Help and WinHelp in both machine architecture views. Coverage grows from 58 to 64 logical sections. Show found, missing, relative, expandable, multi-file/collection and unsupported evidence without parsing/loading a font or opening a help document.

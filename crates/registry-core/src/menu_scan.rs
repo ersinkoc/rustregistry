@@ -250,6 +250,6 @@ mod tests {
         );
         assert!(cancelled.is_empty());
         assert_eq!(scope.status, "cancelled");
-        assert_eq!(super::super::sources().len(), 64);
+        assert_eq!(super::super::sources().len(), 66);
     }
 }

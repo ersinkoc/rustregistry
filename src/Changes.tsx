@@ -14,6 +14,7 @@ import {
 import type { RegistryEntry } from './model';
 import { MaintenanceConfirmation } from './Maintenance';
 import { FileReferenceConfirmation } from './FileReferences';
+import { SoundConfirmation } from './Sounds';
 import { backupScopeLabel, filterBackups, type BackupStateFilter } from './backups';
 
 export interface ChangePlan {
@@ -49,7 +50,8 @@ export interface ChangePlan {
     | 'run_history'
     | 'typed_paths'
     | 'font_reference'
-    | 'help_reference';
+    | 'help_reference'
+    | 'sound_event';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -90,7 +92,8 @@ interface Backup {
     | 'run_history'
     | 'typed_paths'
     | 'font_reference'
-    | 'help_reference';
+    | 'help_reference'
+    | 'sound_event';
   registryPath: string;
   registryView?: string;
 }
@@ -104,6 +107,17 @@ export function isQuickCleanCandidate(entry: RegistryEntry) {
   return entry.category !== 'usage_history' && canQuarantine(entry);
 }
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'sound_events')
+    return (
+      entry.soundRepairable === true &&
+      entry.hive === 'HKCU' &&
+      entry.view === 'shared' &&
+      entry.valueType === 'REG_SZ' &&
+      entry.valueName === '' &&
+      /^AppEvents\\Schemes\\Apps\\[^\\]+\\[^\\]+\\\.Current$/i.test(entry.keyPath) &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'sound_file_missing'
+    );
   if (entry.category === 'fonts' || entry.category === 'help_files') {
     if (
       entry.fileReferenceRepairable !== true ||
@@ -377,6 +391,7 @@ export function ChangeConfirmation(props: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  if (props.plan.scope === 'sound_event') return <SoundConfirmation {...props} />;
   if (['font_reference', 'help_reference'].includes(props.plan.scope))
     return <FileReferenceConfirmation {...props} />;
   return ['mui_cache', 'run_history', 'typed_paths'].includes(props.plan.scope) ? (

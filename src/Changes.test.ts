@@ -22,6 +22,28 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers missing current sound assignments only with native guarded evidence', () => {
+    const sound = {
+      ...entry,
+      category: 'sound_events',
+      keyPath: 'AppEvents\\Schemes\\Apps\\CustomApp\\CustomEvent\\.Current',
+      valueName: '',
+      rawValue: 'C:\\Removed\\event.wav',
+      soundRepairable: true,
+      assessment: { ...entry.assessment, code: 'sound_file_missing' },
+    } as unknown as RegistryEntry;
+    expect(canQuarantine(sound)).toBe(true);
+    for (const changed of [
+      { ...sound, hive: 'HKLM' },
+      { ...sound, view: '32' },
+      { ...sound, soundRepairable: false },
+      { ...sound, valueName: 'Metadata' },
+      { ...sound, valueType: 'REG_EXPAND_SZ' },
+      { ...sound, keyPath: sound.keyPath.replace('.Current', '.Default') },
+      { ...sound, assessment: { ...sound.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers font-reference repair only for supported missing current-user mappings', () => {
     const font = {
       ...entry,

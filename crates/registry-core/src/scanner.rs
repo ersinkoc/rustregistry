@@ -237,6 +237,15 @@ fn sources() -> Vec<Source> {
             view: location.view(),
         });
     }
+    for hive in ["HKCU", "HKLM"] {
+        result.push(Source {
+            category: Category::SoundEvents,
+            hive,
+            path: crate::sound_events::SOUND_APPS,
+            flag: KEY_WOW64_64KEY,
+            view: "shared",
+        });
+    }
     result
 }
 
@@ -344,6 +353,7 @@ fn make_entry(
                         | Category::ComRedirections
                         | Category::MuiCache
                         | Category::UsageHistory
+                        | Category::SoundEvents
                         | Category::Fonts
                         | Category::HelpFiles
                         | Category::ComConversions
@@ -441,6 +451,8 @@ fn make_entry(
         maintenance_state: None,
         file_reference: None,
         file_reference_repairable: false,
+        sound_state: None,
+        sound_repairable: false,
         maintenance_repairable: false,
         conversion_repairable: false,
         redirection_state: None,
@@ -487,6 +499,8 @@ mod proxy_scan;
 mod redirection_scan;
 #[path = "registered_apps_scan.rs"]
 mod registered_apps_scan;
+#[path = "sound_events_scan.rs"]
+mod sound_events_scan;
 #[path = "type_libraries_scan.rs"]
 mod type_libraries_scan;
 
@@ -507,6 +521,10 @@ fn scan_source(
         entries: 0,
         notes: Vec::new(),
     };
+    if source.category == Category::SoundEvents {
+        sound_events_scan::scan_sounds(source, cancel, environment, entries, &mut scope, probe);
+        return scope;
+    }
     if matches!(source.category, Category::Fonts | Category::HelpFiles) {
         let hive = if source.hive == "HKCU" {
             HKEY_CURRENT_USER

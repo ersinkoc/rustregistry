@@ -154,6 +154,8 @@ pub(super) fn scan_com(
                 maintenance_state: None,
                 file_reference: None,
                 file_reference_repairable: false,
+                sound_state: None,
+                sound_repairable: false,
                 maintenance_repairable: false,
                 conversion_repairable: false,
                 redirection_state: None,

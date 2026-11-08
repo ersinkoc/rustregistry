@@ -29,6 +29,13 @@ pub(super) struct PendingBatch {
 }
 
 pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
+    if entry.category == Category::SoundEvents {
+        return entry.hive == "HKCU"
+            && entry.view == "shared"
+            && entry.sound_repairable
+            && entry.sound_state.is_some()
+            && entry.assessment.status == EntryStatus::Review;
+    }
     if matches!(entry.category, Category::Fonts | Category::HelpFiles) {
         return entry.file_reference_repairable
             && entry.file_reference.is_some()
