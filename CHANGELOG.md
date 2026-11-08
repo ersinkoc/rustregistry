@@ -2,6 +2,13 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.21 — 2026-11-08
+
+- Add persisted font registration diagnostics under shared user/machine Fonts roots and filename-to-directory diagnostics for HTML Help and WinHelp in both machine architecture views. Coverage grows from 58 to 64 logical sections. Show found, missing, relative, expandable, multi-file/collection and unsupported evidence without parsing/loading a font or opening a help document.
+- Add separate individual review and reversible removal of supported missing current-user font values and literal machine help registrations, with selected Clean and category-scoped Quick Clean sharing the guards. Show registered name, exact original path/directory, resolved file and architecture. System font registrations remain read-only; matching normalized machine font names block user repair and restoration. Existing package child keys, font linking/substitution, runtime font tables, help search/security settings, files, other values and permissions remain intact.
+- Flush and read back verified disjoint schema 21 backups before conditional transactions remove only selected values. Restore exact original type/bytes only while the target remains missing, the existing key still exists and the value is absent. New files/values, machine-font counterparts, corrupt or scope-mismatched backups and inaccessible evidence block changes. Preserve formats 1–20 unchanged with a fixed schema 20 history restore fixture.
+- Add policy, read-only inventory, individual/selected/Quick Clean, exact restart/restore, actual file and font-counterpart conflicts, backup failure/corruption and legacy compatibility checks. Add an explicitly elevated owned packaged font/help fixture flow; the production app continues to use existing rights without requesting elevation automatically.
+
 ## 0.1.20 — 2026-11-08
 
 - Move beyond missing-reference repair with reversible application display-cache cleanup and explicitly selected personal registry history maintenance. Add three logical sections for MUI cache, RunMRU and Explorer TypedPaths, bringing coverage to 58.

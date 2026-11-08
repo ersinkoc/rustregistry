@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { RegistryEntry } from './model';
 import { MaintenanceConfirmation } from './Maintenance';
+import { FileReferenceConfirmation } from './FileReferences';
 import { backupScopeLabel, filterBackups, type BackupStateFilter } from './backups';
 
 export interface ChangePlan {
@@ -23,6 +24,7 @@ export interface ChangePlan {
   registryPath: string;
   registryView?: string;
   originalValue: string;
+  resolvedFile?: string | null;
   valueType: string;
   expiresAt: number;
   scope:
@@ -45,7 +47,9 @@ export interface ChangePlan {
     | 'com_conversion'
     | 'mui_cache'
     | 'run_history'
-    | 'typed_paths';
+    | 'typed_paths'
+    | 'font_reference'
+    | 'help_reference';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -84,7 +88,9 @@ interface Backup {
     | 'com_conversion'
     | 'mui_cache'
     | 'run_history'
-    | 'typed_paths';
+    | 'typed_paths'
+    | 'font_reference'
+    | 'help_reference';
   registryPath: string;
   registryView?: string;
 }
@@ -98,6 +104,30 @@ export function isQuickCleanCandidate(entry: RegistryEntry) {
   return entry.category !== 'usage_history' && canQuarantine(entry);
 }
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'fonts' || entry.category === 'help_files') {
+    if (
+      entry.fileReferenceRepairable !== true ||
+      entry.assessment.status !== 'review' ||
+      entry.valueType !== 'REG_SZ'
+    )
+      return false;
+    if (entry.category === 'fonts')
+      return (
+        entry.hive === 'HKCU' &&
+        entry.view === 'shared' &&
+        entry.keyPath === 'Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts' &&
+        entry.assessment.code === 'font_file_missing'
+      );
+    return (
+      entry.hive === 'HKLM' &&
+      ['32', '64'].includes(entry.view) &&
+      ['Software\\Microsoft\\Windows\\Help', 'Software\\Microsoft\\Windows\\HTML Help'].includes(
+        entry.keyPath,
+      ) &&
+      entry.assessment.code === 'help_file_missing'
+    );
+  }
+
   if (entry.category === 'mui_cache' || entry.category === 'usage_history') {
     if (entry.hive !== 'HKCU' || entry.view !== 'shared' || entry.maintenanceRepairable !== true)
       return false;
@@ -347,6 +377,8 @@ export function ChangeConfirmation(props: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  if (['font_reference', 'help_reference'].includes(props.plan.scope))
+    return <FileReferenceConfirmation {...props} />;
   return ['mui_cache', 'run_history', 'typed_paths'].includes(props.plan.scope) ? (
     <MaintenanceConfirmation {...props} />
   ) : (

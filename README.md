@@ -26,7 +26,7 @@ The executable requires WebView2 on the target computer. This release does not c
 
 ## What it reads
 
-The scanner covers **58 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
+The scanner covers **64 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
 
 | Category                                           | Registry area                                                         | Sections |
 | -------------------------------------------------- | --------------------------------------------------------------------- | -------: |
@@ -42,6 +42,8 @@ The scanner covers **58 logical registry sections**, including independent 32/64
 | COM TreatAs / AutoConvertTo references             | Classes CLSID redirection children                                    |        8 |
 | Application display cache                          | HKCU Classes Local Settings Software Microsoft Windows Shell MuiCache |        1 |
 | Optional personal registry history                 | HKCU CurrentVersion Explorer RunMRU / TypedPaths                      |        2 |
+| Persisted font registrations                       | Shared HKCU/HKLM Windows NT CurrentVersion Fonts                      |        2 |
+| Registered help files                              | HKLM Windows HTML Help / Help in separate 32/64-bit views             |        4 |
 
 HKCU shared locations are read once. Applicable machine locations and redirected COM registrations use the 32/64-bit views described in [Microsoft's registry architecture table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Shared keys are not counted twice merely because both architecture flags can read them. File probing for redirected COM and SharedDLLs remains limited to native 64-bit mappings. Existing class or library keys prove registration presence, not working activation. Uninstall display metadata is shown when available.
 
@@ -50,6 +52,28 @@ HKCU shared locations are read once. Applicable machine locations and redirected
 - **Unverified:** the target is absent, ambiguous, inaccessible, unsupported, or could not be resolved reliably.
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
+
+## Font and help-file diagnostics and repair in 0.1.21
+
+Inventory direct persisted font values under shared `HKCU`/`HKLM\Software\Microsoft\Windows NT\CurrentVersion\Fonts`, and registered help filenames under `HKLM\Software\Microsoft\Windows\HTML Help` (`.chm`) and `…\Help` (`.hlp`) in **separate 32/64-bit views**. A help value stores a directory: the scanner combines that directory with its registered filename. These checks never parse/load/unload/install a font, send `WM_FONTCHANGE`, open a document, or launch a help viewer.
+
+### Font references
+
+**Review font repair** is available for supported direct **current-user REG_SZ** mappings to confirmed missing absolute local `.ttf`/`.otf` files outside Windows. Registry display names and target paths must be bounded, unambiguous ASCII; original value bytes are retained exactly. All system-wide font registrations remain read-only. A matching normalized machine font name—including names in a registered collection—blocks user repair and restoration. Packaged-font child keys, font files, linking/substitution settings, active font tables, other values, and key permissions are preserved.
+
+Existing absolute font files are shown as Found without validating their contents or usability. A simple machine basename is checked only against the conventional Windows Fonts candidate: a missing candidate stays Unverified, since complete loader fallback is not inferred. Relative user paths, expanded values, Type 1 multi-file resources, collections, unsupported types and uncertain evidence are not repaired. A currently loaded font can remain active in existing sessions after its stale persisted mapping is removed; this version does not change runtime font resources or reboot the computer. See Microsoft's [font file/API reference](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-addfontresourceexa) and [font installation/deletion model](https://learn.microsoft.com/en-us/windows/win32/gdi/font-installation-and-deletion).
+
+### Help references
+
+**Review help repair** supports a single literal REG_SZ directory and matching ASCII `.chm`/`.hlp` filename, resolving to a confirmed missing local file outside Windows. The displayed machine architecture view is part of the backup and restore scope. Existing write rights are required, usually by manually opening the app as administrator; the production app never requests elevation automatically. Relative/expanded directories, malformed filenames, unsupported types, Windows targets and ambiguous/inaccessible paths remain read-only. Windows directories in 32-bit help records are not probed through a mismatched native filesystem view.
+
+Only the selected mapping is removed. Other help values, documents, search paths, security policies, keys and permissions remain intact. This checks the registered directory, not every WinHelp search fallback or the availability of a viewer. Removing a mapping can affect later filename-based help lookup. See Microsoft's [WinHelp lookup rules](<https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/bb776786(v=vs.85)>) and the HTML Help producer's [registration/deployment description](https://www.innovasys.com/help/dx/deployment.html).
+
+### Verified recovery and tests
+
+Individual review, selected Clean and category-scoped Quick Clean share the same native guards. The review shows the registered name, original path/directory, resolved file and view. A flushed, read-back-verified **schema 21** backup is saved before a conditional transaction removes the one selected value. No key is deleted or recreated by repair/restore. Restore writes exact original REG_SZ bytes only if the existing key remains present, the value is absent, the target remains missing and no matching machine font name has appeared. New values/files, unreadable evidence, missing keys and corrupt or namespace-mismatched backups block the action. Formats 1–20 keep their original checksums/layouts, including a fixed schema 20 history restoration test.
+
+`cargo test -p registry-core file_reference` exercises policy, read-only inventory, individual/selected/Quick Clean, exact restart/restore, file/value/machine-font conflicts, backup failures/corruption and legacy compatibility on isolated owned registry roots. `scripts/elevated-desktop-smoke.ps1 -Mode file-reference-only -Token <new-guid>` runs the packaged owned UI flow with explicit developer-test elevation. It creates only GUID-scoped font/help values, a package-child sentinel and inert help controls; compares independent raw values/permissions; tests real file and machine-font conflicts; and restores/cleans only its own fixtures. Help roots created solely by setup are removed only if a conditional transaction still finds them empty. The complete Windows suite includes the same flow. Existing user fonts and help registrations are never cleaned by these tests.
 
 ## Registry Doctor maintenance in 0.1.20
 

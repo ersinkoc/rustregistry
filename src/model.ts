@@ -1,4 +1,6 @@
 export type Category =
+  | 'fonts'
+  | 'help_files'
   | 'mui_cache'
   | 'usage_history'
   | 'startup'
@@ -50,6 +52,7 @@ export interface RegistryEntry {
   redirectionRepairable?: boolean;
   conversionRepairable?: boolean;
   maintenanceRepairable?: boolean;
+  fileReferenceRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -90,6 +93,16 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  fonts: {
+    label: 'Font registrations',
+    description: 'Persisted font file checks and protected user-reference repair',
+    short: 'Font',
+  },
+  help_files: {
+    label: 'Help-file registrations',
+    description: 'Registered .chm/.hlp directory checks and reversible reference repair',
+    short: 'Help file',
+  },
   mui_cache: {
     label: 'Application display cache',
     description: 'Missing-executable MUI cache diagnostics and reversible cleanup',

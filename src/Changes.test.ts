@@ -22,6 +22,52 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers font-reference repair only for supported missing current-user mappings', () => {
+    const font = {
+      ...entry,
+      category: 'fonts',
+      keyPath: 'Software\\Microsoft\\Windows NT\\CurrentVersion\\Fonts',
+      valueName: 'Example Font (TrueType)',
+      rawValue: 'C:\\Removed\\font.ttf',
+      fileReferenceRepairable: true,
+      assessment: { ...entry.assessment, code: 'font_file_missing' },
+    } as unknown as RegistryEntry;
+    expect(canQuarantine(font)).toBe(true);
+    for (const changed of [
+      { ...font, hive: 'HKLM' },
+      { ...font, view: '32' },
+      { ...font, fileReferenceRepairable: false },
+      { ...font, valueType: 'REG_EXPAND_SZ' },
+      { ...font, keyPath: font.keyPath + '\\Package' },
+      { ...font, assessment: { ...font.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
+  it('offers help-reference repair in each explicitly checked machine architecture view', () => {
+    for (const view of ['32', '64'])
+      for (const root of ['Help', 'HTML Help']) {
+        const help = {
+          ...entry,
+          category: 'help_files',
+          hive: 'HKLM',
+          view,
+          keyPath: `Software\\Microsoft\\Windows\\${root}`,
+          valueName: root === 'Help' ? 'manual.hlp' : 'manual.chm',
+          rawValue: 'C:\\Removed\\Help',
+          fileReferenceRepairable: true,
+          assessment: { ...entry.assessment, code: 'help_file_missing' },
+        } as unknown as RegistryEntry;
+        expect(canQuarantine(help)).toBe(true);
+        for (const changed of [
+          { ...help, hive: 'HKCU' },
+          { ...help, view: 'shared' },
+          { ...help, fileReferenceRepairable: false },
+          { ...help, valueType: 'REG_EXPAND_SZ' },
+          { ...help, keyPath: help.keyPath + '\\Policies' },
+        ])
+          expect(canQuarantine(changed)).toBe(false);
+      }
+  });
   it('offers stale MUI cache cleanup and optional history through separate native evidence', () => {
     const cache = {
       ...entry,

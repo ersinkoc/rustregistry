@@ -12,7 +12,7 @@ pub struct SharedDllBackup {
     pub view: String,
 }
 
-fn windows_directory() -> Result<String, String> {
+pub(crate) fn windows_directory() -> Result<String, String> {
     #[cfg(windows)]
     {
         let mut buffer = vec![0u16; 32_768];

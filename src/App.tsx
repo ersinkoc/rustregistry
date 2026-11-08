@@ -70,6 +70,8 @@ const pageNames: Record<Page, string> = {
   about: 'About RustRegistry',
 };
 const categoryIcons: Record<Category, LucideIcon> = {
+  fonts: FileSearch,
+  help_files: FileSearch,
   mui_cache: Boxes,
   usage_history: History,
   prog_ids: FileSearch,
@@ -284,92 +286,104 @@ function DetailDialog({
         <div className="remediation-card">
           <ShieldCheck size={19} />
           <h3>
-            {entry.category === 'usage_history'
-              ? 'Optional registry history cleanup'
-              : entry.category === 'mui_cache'
-                ? 'Protected display-cache cleanup'
-                : entry.category === 'com_conversions'
-                  ? 'Protected COM conversion reference repair'
-                  : entry.category === 'com_redirections'
-                    ? 'Protected COM redirection repair'
-                    : entry.category === 'shell_menus'
-                      ? 'Protected context-menu visibility repair'
-                      : entry.category === 'application_icons'
-                        ? 'Protected application icon reference repair'
-                        : entry.category === 'com_proxies'
-                          ? 'Protected COM proxy reference repair'
-                          : entry.category === 'interfaces'
-                            ? 'Protected COM interface TypeLib reference repair'
-                            : entry.category === 'prog_ids'
-                              ? 'Protected COM ProgID mapping repair'
-                              : entry.category === 'type_libraries'
-                                ? 'Protected type library mapping repair'
-                                : entry.category === 'registered_applications'
-                                  ? 'Protected application registration repair'
-                                  : entry.category === 'shared_dlls'
-                                    ? 'Protected shared DLL reference repair'
-                                    : entry.category === 'application_commands'
-                                      ? 'Protected application suggestion repair'
-                                      : entry.category === 'services'
-                                        ? 'Protected service startup repair'
-                                        : entry.category === 'com'
-                                          ? 'Protected COM mapping repair'
-                                          : entry.category === 'file_associations'
-                                            ? 'Protected Open with repair'
-                                            : entry.category === 'uninstall'
-                                              ? 'Protected uninstall listing repair'
-                                              : entry.category === 'app_paths'
-                                                ? 'Protected application path repair'
-                                                : 'Protected startup change'}
+            {entry.category === 'fonts'
+              ? 'Protected font-reference repair'
+              : entry.category === 'help_files'
+                ? 'Protected help-file reference repair'
+                : entry.category === 'usage_history'
+                  ? 'Optional registry history cleanup'
+                  : entry.category === 'mui_cache'
+                    ? 'Protected display-cache cleanup'
+                    : entry.category === 'com_conversions'
+                      ? 'Protected COM conversion reference repair'
+                      : entry.category === 'com_redirections'
+                        ? 'Protected COM redirection repair'
+                        : entry.category === 'shell_menus'
+                          ? 'Protected context-menu visibility repair'
+                          : entry.category === 'application_icons'
+                            ? 'Protected application icon reference repair'
+                            : entry.category === 'com_proxies'
+                              ? 'Protected COM proxy reference repair'
+                              : entry.category === 'interfaces'
+                                ? 'Protected COM interface TypeLib reference repair'
+                                : entry.category === 'prog_ids'
+                                  ? 'Protected COM ProgID mapping repair'
+                                  : entry.category === 'type_libraries'
+                                    ? 'Protected type library mapping repair'
+                                    : entry.category === 'registered_applications'
+                                      ? 'Protected application registration repair'
+                                      : entry.category === 'shared_dlls'
+                                        ? 'Protected shared DLL reference repair'
+                                        : entry.category === 'application_commands'
+                                          ? 'Protected application suggestion repair'
+                                          : entry.category === 'services'
+                                            ? 'Protected service startup repair'
+                                            : entry.category === 'com'
+                                              ? 'Protected COM mapping repair'
+                                              : entry.category === 'file_associations'
+                                                ? 'Protected Open with repair'
+                                                : entry.category === 'uninstall'
+                                                  ? 'Protected uninstall listing repair'
+                                                  : entry.category === 'app_paths'
+                                                    ? 'Protected application path repair'
+                                                    : 'Protected startup change'}
           </h3>
           <p>
-            {entry.category === 'usage_history'
-              ? 'Review the exact stored history and save a verified backup before clearing it. This is optional maintenance, not a registry fault. Other history stores and cached suggestions are not cleared; the backup retains these entries.'
-              : entry.category === 'mui_cache'
-                ? 'Review the cached display fields for this missing executable. A verified backup supports exact restoration while the evidence still matches. Other applications, registrations, files, keys and permissions are preserved.'
-                : entry.category === 'com_conversions'
-                  ? 'Review the owning class and exact AutoConvertTo target before disabling only this missing-local-target reference. A separate verified backup supports exact restore while the evidence still matches. Class keys, descriptions, permissions and documents are preserved.'
-                  : entry.category === 'com_redirections'
-                    ? 'Review the owning class, exact TreatAs target and a verified backup before disabling only this missing-local-target reference. Descriptions, keys, files and permissions stay intact. Backups & restore can put the original value back when the evidence still matches.'
-                    : entry.category === 'shell_menus'
-                      ? 'Review the exact command and a verified backup before hiding this custom missing-target menu. Only the ProgrammaticAccessOnly flag changes. Commands, metadata, keys, files, and permissions are preserved, and programmatic invocation remains possible.'
-                      : entry.category === 'application_icons'
-                        ? 'Review a verified backup before removing only a confirmed missing .ico reference. The application command, metadata, flags, keys, and files are preserved. Resource expressions and uncertain targets remain outside repair scope.'
-                        : entry.category === 'com_proxies'
-                          ? 'Review a verified backup before disabling an orphaned current-user 64-bit proxy reference. All user/machine 32/64-bit class views are checked again. TypeLib and Version metadata, 32-bit mappings, keys, permissions, and files are preserved. No proxy is loaded or activated.'
-                          : entry.category === 'interfaces'
-                            ? 'Only a verified orphaned current-user 64-bit TypeLib reference can change after backup. Version, proxy metadata, both registry views, keys, and files are preserved. New libraries, machine counterparts, or changed evidence block the operation.'
-                            : entry.category === 'prog_ids'
-                              ? 'Review a verified backup before disabling this orphaned ProgID mapping. Both user/machine 32/64-bit CLSID views are checked again; keys, descriptions, default selections, and files are preserved. No COM object is activated.'
-                              : entry.category === 'type_libraries'
-                                ? 'Review a verified backup before disabling this missing win64 library mapping. Version, locale, win32 mappings, help metadata, keys, files, and permissions are preserved. No library is loaded or registered.'
-                                : entry.category === 'registered_applications'
-                                  ? 'Review a verified backup before removing this orphaned application registration. Only its named value changes; default selections, Capabilities keys, commands, files, and permissions are preserved.'
-                                  : entry.category === 'shared_dlls'
-                                    ? 'Review a verified backup before removing only this missing DLL’s zero-count reference. Existing Windows write access is required. No DLL file or positive counter is changed.'
-                                    : entry.category === 'application_commands'
-                                      ? 'Review a verified backup before hiding this broken application suggestion. Its open command and default selections stay intact; no command is run.'
-                                      : entry.category === 'services'
-                                        ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
-                                        : entry.category === 'com'
-                                          ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
-                                          : entry.category === 'file_associations'
-                                            ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
-                                            : entry.category === 'uninstall'
-                                              ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
-                                              : entry.category === 'app_paths'
-                                                ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
-                                                : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
+            {entry.category === 'fonts'
+              ? 'Review the persisted font mapping and resolved missing file before removing only this supported user value. Machine font names, font files, packaged registrations, runtime font resources and permissions are preserved.'
+              : entry.category === 'help_files'
+                ? 'Review the exact help filename, original directory and resolved missing file. A verified backup supports restoration while the evidence still matches. No document is opened and no help search or security setting changes.'
+                : entry.category === 'usage_history'
+                  ? 'Review the exact stored history and save a verified backup before clearing it. This is optional maintenance, not a registry fault. Other history stores and cached suggestions are not cleared; the backup retains these entries.'
+                  : entry.category === 'mui_cache'
+                    ? 'Review the cached display fields for this missing executable. A verified backup supports exact restoration while the evidence still matches. Other applications, registrations, files, keys and permissions are preserved.'
+                    : entry.category === 'com_conversions'
+                      ? 'Review the owning class and exact AutoConvertTo target before disabling only this missing-local-target reference. A separate verified backup supports exact restore while the evidence still matches. Class keys, descriptions, permissions and documents are preserved.'
+                      : entry.category === 'com_redirections'
+                        ? 'Review the owning class, exact TreatAs target and a verified backup before disabling only this missing-local-target reference. Descriptions, keys, files and permissions stay intact. Backups & restore can put the original value back when the evidence still matches.'
+                        : entry.category === 'shell_menus'
+                          ? 'Review the exact command and a verified backup before hiding this custom missing-target menu. Only the ProgrammaticAccessOnly flag changes. Commands, metadata, keys, files, and permissions are preserved, and programmatic invocation remains possible.'
+                          : entry.category === 'application_icons'
+                            ? 'Review a verified backup before removing only a confirmed missing .ico reference. The application command, metadata, flags, keys, and files are preserved. Resource expressions and uncertain targets remain outside repair scope.'
+                            : entry.category === 'com_proxies'
+                              ? 'Review a verified backup before disabling an orphaned current-user 64-bit proxy reference. All user/machine 32/64-bit class views are checked again. TypeLib and Version metadata, 32-bit mappings, keys, permissions, and files are preserved. No proxy is loaded or activated.'
+                              : entry.category === 'interfaces'
+                                ? 'Only a verified orphaned current-user 64-bit TypeLib reference can change after backup. Version, proxy metadata, both registry views, keys, and files are preserved. New libraries, machine counterparts, or changed evidence block the operation.'
+                                : entry.category === 'prog_ids'
+                                  ? 'Review a verified backup before disabling this orphaned ProgID mapping. Both user/machine 32/64-bit CLSID views are checked again; keys, descriptions, default selections, and files are preserved. No COM object is activated.'
+                                  : entry.category === 'type_libraries'
+                                    ? 'Review a verified backup before disabling this missing win64 library mapping. Version, locale, win32 mappings, help metadata, keys, files, and permissions are preserved. No library is loaded or registered.'
+                                    : entry.category === 'registered_applications'
+                                      ? 'Review a verified backup before removing this orphaned application registration. Only its named value changes; default selections, Capabilities keys, commands, files, and permissions are preserved.'
+                                      : entry.category === 'shared_dlls'
+                                        ? 'Review a verified backup before removing only this missing DLL’s zero-count reference. Existing Windows write access is required. No DLL file or positive counter is changed.'
+                                        : entry.category === 'application_commands'
+                                          ? 'Review a verified backup before hiding this broken application suggestion. Its open command and default selections stay intact; no command is run.'
+                                          : entry.category === 'services'
+                                            ? 'Review a full configuration backup before changing this stopped service from Manual to Disabled. Its executable path and permissions stay intact; the service is not started or stopped.'
+                                            : entry.category === 'com'
+                                              ? 'Review a backup before disabling this missing 64-bit COM mapping. The class and server metadata stay in place. No COM object is activated and no command is run.'
+                                              : entry.category === 'file_associations'
+                                                ? 'Review a verified backup before removing this orphaned suggestion. Default applications and UserChoice stay untouched.'
+                                                : entry.category === 'uninstall'
+                                                  ? 'Review a full backup before hiding this orphaned listing. No installer or uninstaller will be executed.'
+                                                  : entry.category === 'app_paths'
+                                                    ? 'Review a backed-up repair of this broken default executable mapping. The key and other values are preserved.'
+                                                    : 'This missing-target entry belongs to your startup list. Review its exact value before creating a backup and disabling it.'}
           </p>
           <button className="secondary-button" disabled={busy} onClick={() => review(entry)}>
             {busy
               ? 'Preparing review…'
               : entry.category !== 'startup'
-                ? entry.category === 'usage_history'
-                  ? 'Review history cleanup'
-                  : entry.category === 'mui_cache'
-                    ? 'Review cache cleanup'
-                    : 'Review repair'
+                ? entry.category === 'fonts'
+                  ? 'Review font repair'
+                  : entry.category === 'help_files'
+                    ? 'Review help repair'
+                    : entry.category === 'usage_history'
+                      ? 'Review history cleanup'
+                      : entry.category === 'mui_cache'
+                        ? 'Review cache cleanup'
+                        : 'Review repair'
                 : 'Review disable'}
           </button>
         </div>
@@ -413,7 +427,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 58,
+    total: 64,
     entries: 0,
     current: '',
   });
@@ -477,7 +491,7 @@ export default function App() {
     setExportReceipt(null);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 58, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 64, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -1368,7 +1382,7 @@ export default function App() {
                 <div>
                   <h2>Focused scope. Transparent results.</h2>
                   <p>
-                    This release checks 58 scan sections, including separate 32-bit and 64-bit COM
+                    This release checks 64 scan sections, including separate 32-bit and 64-bit COM
                     views in both hives. ProgID and file association checks share Classes roots and
                     inspect different children. Services use the shared system view. Other
                     application locations use their documented 32-bit, 64-bit, or shared views.
@@ -1465,7 +1479,7 @@ export default function App() {
                         </strong>
                         <small>
                           {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/58 scan sections
+                          {formatDuration(item.durationMs)} · {item.scopes.length}/64 scan sections
                         </small>
                       </span>
                       <span className="readonly-pill">

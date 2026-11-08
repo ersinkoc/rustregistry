@@ -29,6 +29,11 @@ pub(super) struct PendingBatch {
 }
 
 pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
+    if matches!(entry.category, Category::Fonts | Category::HelpFiles) {
+        return entry.file_reference_repairable
+            && entry.file_reference.is_some()
+            && entry.assessment.status == EntryStatus::Review;
+    }
     if matches!(entry.category, Category::MuiCache | Category::UsageHistory) {
         return entry.hive == "HKCU"
             && entry.view == "shared"
@@ -156,7 +161,11 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 },
                 if matches!(
                     entry.category,
-                    Category::SharedDlls | Category::RegisteredApplications | Category::MuiCache
+                    Category::SharedDlls
+                        | Category::RegisteredApplications
+                        | Category::MuiCache
+                        | Category::Fonts
+                        | Category::HelpFiles
                 ) {
                     entry.value_name.to_ascii_lowercase()
                 } else {

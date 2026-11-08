@@ -27,6 +27,8 @@ const scopeLabels: Record<string, string> = {
   application_icon: 'Application icon reference',
   shell_menu: 'Context-menu visibility',
   com_redirection: 'COM class redirection',
+  font_reference: 'Font reference',
+  help_reference: 'Help-file reference',
   mui_cache: 'Application display cache',
   run_history: 'Run dialog registry history',
   typed_paths: 'Explorer typed-path registry history',

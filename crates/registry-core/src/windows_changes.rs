@@ -6,6 +6,8 @@ mod icons;
 pub(crate) use icons::open_icon_child;
 #[path = "windows_conversions.rs"]
 mod conversions;
+#[path = "windows_file_references.rs"]
+mod file_references;
 #[path = "windows_maintenance.rs"]
 mod maintenance;
 pub(crate) use maintenance::{open_maintenance_source, read_maintenance_snapshot};
@@ -44,6 +46,8 @@ pub(crate) use type_libraries::open_type_lib;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
 pub struct WindowsRegistryStore {
+    #[cfg(test)]
+    file_reference_test_root: Option<String>,
     #[cfg(test)]
     maintenance_test_root: Option<String>,
     path: String,
@@ -88,6 +92,8 @@ pub struct WindowsRegistryStore {
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
         Self {
+            #[cfg(test)]
+            file_reference_test_root: None,
             #[cfg(test)]
             maintenance_test_root: None,
             path: STARTUP_KEY.into(),
@@ -229,6 +235,27 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_file_reference(
+        &self,
+        app: &crate::file_references::FileReferenceBackup,
+    ) -> Result<Option<StoredValue>, String> {
+        self.file_reference_state(app)
+    }
+    fn check_file_reference_write_access(
+        &self,
+        app: &crate::file_references::FileReferenceBackup,
+    ) -> Result<(), String> {
+        self.file_reference_access(app)
+    }
+    fn compare_exchange_file_reference(
+        &self,
+        app: &crate::file_references::FileReferenceBackup,
+        expected: Option<&StoredValue>,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_file_reference(app, expected, replacement)
+    }
+
     fn read_maintenance_batch(
         &self,
         apps: &[crate::maintenance::MaintenanceBackup],
@@ -841,6 +868,8 @@ mod tests {
             interface_repairable: false,
             conversion_state: None,
             maintenance_state: None,
+            file_reference: None,
+            file_reference_repairable: false,
             maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
@@ -974,6 +1003,8 @@ mod tests {
             interface_repairable: false,
             conversion_state: None,
             maintenance_state: None,
+            file_reference: None,
+            file_reference_repairable: false,
             maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
@@ -1158,6 +1189,8 @@ mod tests {
                 interface_repairable: false,
                 conversion_state: None,
                 maintenance_state: None,
+                file_reference: None,
+                file_reference_repairable: false,
                 maintenance_repairable: false,
                 conversion_repairable: false,
                 redirection_state: None,

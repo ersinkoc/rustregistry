@@ -1,6 +1,6 @@
 # Registry Doctor: scope and next milestones
 
-RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions behind 0.1.20; future milestones below are plans, not implemented features.
+RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.21; future milestones below are plans, not implemented features.
 
 ## Research and current behavior
 
@@ -23,15 +23,23 @@ History is different from a missing reference. A stored Run command or typed net
 
 The engine removes supported values or applies documented visibility/startup changes. It does not remove whole application trees based on a vendor name, delete application files, run stored commands or promise a speed increase from a registry count.
 
+## Delivered in 0.1.21
+
+Persisted font registration and HTML Help/WinHelp directory-mapping diagnostics add six logical sections. Supported missing current-user `.ttf`/`.otf` references and literal machine help mappings have separate individual review, selected/category-scoped cleaning, schema 21 verified backups and exact-value restart restoration. System fonts, matching machine font names, ambiguous/expanded paths, multi-file resources and unsupported metadata remain read-only. Package children, runtime font resources, help search/security settings and files are preserved.
+
+Microsoft's [font installation model](https://learn.microsoft.com/en-us/windows/win32/gdi/font-installation-and-deletion) distinguishes persisted registration from the active system font table; [AddFontResourceEx](https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-addfontresourceexa) documents collections and multi-file resources. The implementation checks file presence without invoking these APIs. Microsoft's [WinHelp rules](<https://learn.microsoft.com/en-us/previous-versions/windows/desktop/legacy/bb776786(v=vs.85)>) and a help producer's [HTML Help deployment instructions](https://www.innovasys.com/help/dx/deployment.html) explain filename-to-directory registration. Missing candidates do not prove the absence of every possible fallback or working viewer.
+
+Native tests use isolated roots; the packaged UI flow uses only owned registration values, inert help files and independent raw/permission readers. The setup has explicit test elevation for machine controls; the production app still uses existing rights. Test-created global help roots are removed only while a transaction verifies that they remain empty. Existing registrations and data are preserved.
+
 ## Next concrete milestones
 
-| Area                            | Next implementation work                                                                              | Evidence required before enabling repair                                                                                    |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Fonts and help files            | Inventory registration shapes, local paths, shared views and legacy relative-path resolution          | Existing/missing/system/ambiguous controls, independently resolved paths, per-value backup/restore and no font/help loading |
-| Sound events                    | Inventory custom per-user sound mappings and distinguish empty/no-sound settings from missing media   | Default-scheme exclusions, exact metadata preservation, no playback, and tested user/system fallback behavior               |
-| Installed-application leftovers | Correlate application paths, uninstall records, suggestions and cached labels into explainable groups | Multiple independent signals; absent files alone must not imply that settings, licenses or user data are disposable         |
-| Review controls                 | Per-category selections, explicit exclusions and remembered user decisions                            | Excluded IDs cannot enter native batches; changes in scan evidence must invalidate old decisions                            |
-| Recovery workflow               | Group successful batch backups into a visible operation journal                                       | Partial-failure reporting, per-item outcomes, exact conflict handling and independently tested restart recovery             |
-| Diagnostics                     | Show why a finding is repairable, protected, inaccessible or uncertain                                | Reason codes map to visible explanations and exports; no fake severity or inflated issue counts                             |
+| Area                            | Next implementation work                                                                              | Evidence required before enabling repair                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Further font/help coverage      | Research packaged fonts, collections, Unicode/expanded paths and loader-specific relative resolution  | Verified lookup/fallback semantics, unchanged system/runtime resources and exact recovery before enabling more repairs |
+| Sound events                    | Inventory custom per-user sound mappings and distinguish empty/no-sound settings from missing media   | Default-scheme exclusions, exact metadata preservation, no playback, and tested user/system fallback behavior          |
+| Installed-application leftovers | Correlate application paths, uninstall records, suggestions and cached labels into explainable groups | Multiple independent signals; absent files alone must not imply that settings, licenses or user data are disposable    |
+| Review controls                 | Per-category selections, explicit exclusions and remembered user decisions                            | Excluded IDs cannot enter native batches; changes in scan evidence must invalidate old decisions                       |
+| Recovery workflow               | Group successful batch backups into a visible operation journal                                       | Partial-failure reporting, per-item outcomes, exact conflict handling and independently tested restart recovery        |
+| Diagnostics                     | Show why a finding is repairable, protected, inaccessible or uncertain                                | Reason codes map to visible explanations and exports; no fake severity or inflated issue counts                        |
 
 Each new category must bring an understandable user action and a complete recovery test, not merely a larger scan total. Future machine-wide changes must use existing rights and their own documented guards. UserChoice, installer databases, drivers, security configuration, application licenses and arbitrary empty keys are not disposable merely because they look old.

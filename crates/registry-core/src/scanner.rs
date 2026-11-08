@@ -210,6 +210,33 @@ fn sources() -> Vec<Source> {
             view: "shared",
         });
     }
+    for hive in ["HKCU", "HKLM"] {
+        result.push(Source {
+            category: Category::Fonts,
+            hive,
+            path: crate::file_references::FONTS_KEY,
+            flag: KEY_WOW64_64KEY,
+            view: "shared",
+        });
+    }
+    for location in [
+        crate::file_references::FileReferenceLocation::HtmlHelp64,
+        crate::file_references::FileReferenceLocation::HtmlHelp32,
+        crate::file_references::FileReferenceLocation::WinHelp64,
+        crate::file_references::FileReferenceLocation::WinHelp32,
+    ] {
+        result.push(Source {
+            category: Category::HelpFiles,
+            hive: "HKLM",
+            path: location.path(),
+            flag: if location.view() == "32" {
+                KEY_WOW64_32KEY
+            } else {
+                KEY_WOW64_64KEY
+            },
+            view: location.view(),
+        });
+    }
     result
 }
 
@@ -317,6 +344,8 @@ fn make_entry(
                         | Category::ComRedirections
                         | Category::MuiCache
                         | Category::UsageHistory
+                        | Category::Fonts
+                        | Category::HelpFiles
                         | Category::ComConversions
                         | Category::ApplicationIcons
                         | Category::ShellMenus
@@ -331,6 +360,8 @@ fn make_entry(
                             | Category::ComRedirections
                             | Category::MuiCache
                             | Category::UsageHistory
+                            | Category::Fonts
+                            | Category::HelpFiles
                             | Category::ComConversions
                             | Category::ApplicationIcons
                             | Category::ShellMenus
@@ -408,6 +439,8 @@ fn make_entry(
         interface_repairable: false,
         conversion_state: None,
         maintenance_state: None,
+        file_reference: None,
+        file_reference_repairable: false,
         maintenance_repairable: false,
         conversion_repairable: false,
         redirection_state: None,
@@ -436,6 +469,8 @@ use extra_scan::scan_shared_dlls;
 mod application_scan;
 #[path = "conversion_scan.rs"]
 mod conversion_scan;
+#[path = "file_reference_scan.rs"]
+mod file_reference_scan;
 #[path = "icon_scan.rs"]
 mod icon_scan;
 #[path = "interface_scan.rs"]
@@ -472,6 +507,40 @@ fn scan_source(
         entries: 0,
         notes: Vec::new(),
     };
+    if matches!(source.category, Category::Fonts | Category::HelpFiles) {
+        let hive = if source.hive == "HKCU" {
+            HKEY_CURRENT_USER
+        } else {
+            HKEY_LOCAL_MACHINE
+        };
+        match crate::windows_changes::open_registration_path(
+            hive,
+            source.path,
+            source.flag,
+            None,
+            false,
+        ) {
+            Ok(Some(root)) => {
+                let start = entries.len();
+                file_reference_scan::scan_file_references(
+                    source,
+                    &root,
+                    cancel,
+                    environment,
+                    entries,
+                    &mut scope,
+                    probe,
+                );
+                scope.entries = entries.len() - start;
+            }
+            Ok(None) => scope.status = "missing".into(),
+            Err(reason) => {
+                scope.status = "error".into();
+                scope.notes.push(reason);
+            }
+        }
+        return scope;
+    }
     if matches!(source.category, Category::MuiCache | Category::UsageHistory) {
         let kind = if source.category == Category::MuiCache {
             crate::maintenance::MaintenanceKind::MuiCache
@@ -548,6 +617,8 @@ fn scan_source(
                 | Category::ComRedirections
                 | Category::MuiCache
                 | Category::UsageHistory
+                | Category::Fonts
+                | Category::HelpFiles
                 | Category::ComConversions
                 | Category::ApplicationIcons
                 | Category::ShellMenus
@@ -581,6 +652,8 @@ fn scan_source(
             | Category::ComRedirections
             | Category::MuiCache
             | Category::UsageHistory
+            | Category::Fonts
+            | Category::HelpFiles
             | Category::ComConversions
             | Category::ApplicationIcons
             | Category::ShellMenus

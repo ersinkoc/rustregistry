@@ -341,6 +341,8 @@ mod tests {
                 interface_repairable: false,
                 conversion_state: None,
                 maintenance_state: None,
+                file_reference: None,
+                file_reference_repairable: false,
                 maintenance_repairable: false,
                 conversion_repairable: false,
                 redirection_state: None,
