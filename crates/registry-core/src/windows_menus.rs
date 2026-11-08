@@ -713,4 +713,45 @@ mod tests {
             f.command(2).bytes
         );
     }
+    #[test]
+    fn restores_frozen_v0118_folder_menu_backup_without_migration_or_command_changes() {
+        let f = Fixture::new();
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = include_bytes!("../tests/fixtures/menu-backup-v18.json");
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let id = record["id"].as_str().unwrap();
+        let original: StoredValue = serde_json::from_value(record["original"].clone()).unwrap();
+        let verb = RegKey::predef(HKEY_CURRENT_USER)
+            .create_subkey(format!(
+                r"{}\User\Folder\shell\RustRegistry.LegacyFolder",
+                f.base
+            ))
+            .unwrap()
+            .0;
+        verb.set_value(PROGRAMMATIC_ONLY, &"").unwrap();
+        let command = verb.create_subkey("command").unwrap().0;
+        command
+            .set_raw_value(
+                "",
+                &RegValue {
+                    vtype: REG_SZ,
+                    bytes: Cow::Borrowed(&original.bytes),
+                },
+            )
+            .unwrap();
+        let file = dir.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut m = ChangeManager::new(f.store(), dir.path().to_path_buf(), LocalPathProbe);
+        let p = m.prepare_restore(id).unwrap();
+        assert_eq!(p.scope, "shell_menu");
+        m.apply(&p.token).unwrap();
+        assert!(super::super::read_value(&verb, PROGRAMMATIC_ONLY)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            super::super::read_value(&command, "").unwrap(),
+            Some(original)
+        );
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+    }
 }

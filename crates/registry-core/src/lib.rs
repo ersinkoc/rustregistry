@@ -3,6 +3,7 @@ pub mod applications;
 pub mod associations;
 pub mod changes;
 pub mod com;
+pub mod com_conversions;
 pub mod com_redirects;
 mod model;
 pub mod prog_ids;

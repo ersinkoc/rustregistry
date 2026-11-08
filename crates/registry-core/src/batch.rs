@@ -54,6 +54,7 @@ pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
             entry.view == "shared" && entry.menu_repairable && !entry.menu_hidden
         }
         Category::ApplicationIcons => entry.view == "shared" && entry.icon_repairable,
+        Category::ComConversions => entry.view == "64" && entry.conversion_repairable,
         Category::ComRedirections => entry.view == "64" && entry.redirection_repairable,
         Category::ComProxies => entry.view == "64" && entry.proxy_repairable,
         Category::Interfaces => entry.view == "64" && entry.interface_repairable,

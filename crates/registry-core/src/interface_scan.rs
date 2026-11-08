@@ -184,7 +184,7 @@ mod tests {
             .delete_subkey_all(base)
             .unwrap();
         let sources = super::super::sources();
-        assert_eq!(sources.len(), 51);
+        assert_eq!(sources.len(), 55);
         assert_eq!(
             sources
                 .iter()

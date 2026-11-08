@@ -1,3 +1,5 @@
+import { verifyAppearance } from './appearance-smoke.mjs';
+import { verifyConversionRecovery } from './conversion-smoke.mjs';
 import { verifyRedirectionRecovery } from './redirection-smoke.mjs';
 import { chromium, expect } from '@playwright/test';
 import { spawn, execFile } from 'node:child_process';
@@ -32,6 +34,8 @@ const applicationOnly = process.argv.includes('--application-only');
 const sharedDllOnly = process.argv.includes('--shared-dll-only');
 const registeredAppOnly = process.argv.includes('--registered-app-only');
 const typeLibraryOnly = process.argv.includes('--type-library-only');
+const appearanceOnly = process.argv.includes('--appearance-only');
+const conversionOnly = process.argv.includes('--conversion-only');
 const redirectionOnly = process.argv.includes('--redirection-only');
 const menuOnly = process.argv.includes('--menu-only');
 const iconOnly = process.argv.includes('--icon-only');
@@ -54,6 +58,8 @@ if (
     iconOnly,
     menuOnly,
     redirectionOnly,
+    conversionOnly,
+    appearanceOnly,
   ].filter(Boolean).length > 1
 )
   throw new Error('Choose only one focused verification mode.');
@@ -129,31 +135,35 @@ const summary = {
   executable,
   sourceExecutable: process.env.RUSTREGISTRY_SOURCE_EXE || executable,
   version: appVersion,
-  mode: redirectionOnly
-    ? 'redirection-only'
-    : menuOnly
-      ? 'menu-only'
-      : iconOnly
-        ? 'icon-only'
-        : proxyOnly
-          ? 'proxy-only'
-          : interfaceOnly
-            ? 'interface-only'
-            : progIdOnly
-              ? 'prog-id-only'
-              : typeLibraryOnly
-                ? 'type-library-only'
-                : registeredAppOnly
-                  ? 'registered-app-only'
-                  : serviceOnly
-                    ? 'service-only'
-                    : expandedOnly
-                      ? 'expanded-only'
-                      : applicationOnly
-                        ? 'application-only'
-                        : sharedDllOnly
-                          ? 'shared-dll-only'
-                          : 'full',
+  mode: appearanceOnly
+    ? 'appearance-only'
+    : conversionOnly
+      ? 'conversion-only'
+      : redirectionOnly
+        ? 'redirection-only'
+        : menuOnly
+          ? 'menu-only'
+          : iconOnly
+            ? 'icon-only'
+            : proxyOnly
+              ? 'proxy-only'
+              : interfaceOnly
+                ? 'interface-only'
+                : progIdOnly
+                  ? 'prog-id-only'
+                  : typeLibraryOnly
+                    ? 'type-library-only'
+                    : registeredAppOnly
+                      ? 'registered-app-only'
+                      : serviceOnly
+                        ? 'service-only'
+                        : expandedOnly
+                          ? 'expanded-only'
+                          : applicationOnly
+                            ? 'application-only'
+                            : sharedDllOnly
+                              ? 'shared-dll-only'
+                              : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -217,7 +227,33 @@ try {
   expect(total).toBeGreaterThan(0);
   summary.entries = total;
   checked('Real registry scan completes through native IPC and populates the paginated table');
-  if (redirectionOnly) {
+  if (appearanceOnly) {
+    const setInitialTheme = async (theme) => {
+      const current = await page.locator('html').getAttribute('data-theme');
+      if (current !== theme)
+        await page
+          .getByRole('button', {
+            name: theme === 'light' ? 'Switch to light theme' : 'Switch to dark theme',
+            exact: true,
+          })
+          .click();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      await page.reload();
+      await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    };
+    for (const initial of ['dark', 'light']) {
+      await setInitialTheme(initial);
+      summary.appearanceInitialTheme = initial;
+      await verifyAppearance(page, cdp, output, checked, summary);
+    }
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (conversionOnly) {
+    await verifyConversionRecovery(page, output, checked, summary);
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (redirectionOnly) {
     await verifyRedirectionRecovery(page, output, checked, summary);
     expect(summary.errors).toEqual([]);
     summary.passed = true;
@@ -358,10 +394,10 @@ try {
     checked('Search empty state is honest and clearing filters restores real entries');
 
     await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-    await expect(page.locator('.scope-item')).toHaveCount(51);
+    await expect(page.locator('.scope-item')).toHaveCount(55);
     await page.locator('.scope-item summary').first().click();
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-    checked('Coverage lists all 51 registry scan sections with expandable read results');
+    checked('Coverage lists all 55 registry scan sections with expandable read results');
 
     await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
     await expect(page.locator('.history-item')).toHaveCount(1);
@@ -462,23 +498,9 @@ try {
     await verifyIconRecovery(page, output, checked, summary);
     await verifyMenuRecovery(page, output, checked, summary);
     await verifyRedirectionRecovery(page, output, checked, summary);
+    await verifyConversionRecovery(page, output, checked, summary);
 
-    await page.getByRole('link', { name: 'RustRegistry overview', exact: true }).click();
-    await page.getByRole('button', { name: 'Switch to light theme', exact: true }).click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
-    await page.screenshot({ path: resolve(output, 'desktop-overview-light.png'), fullPage: true });
-    await cdp.send('Emulation.setDeviceMetricsOverride', {
-      width: 940,
-      height: 700,
-      deviceScaleFactor: 1,
-      mobile: false,
-    });
-    expect(
-      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
-    ).toBe(true);
-    await page.screenshot({ path: resolve(output, 'desktop-compact-light.png'), fullPage: true });
-    await page.getByRole('button', { name: 'Switch to dark theme', exact: true }).click();
-    checked('Light/dark themes and the 940px minimum desktop layout render without page overflow');
+    await verifyAppearance(page, cdp, output, checked, summary);
 
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 1440,
@@ -591,31 +613,35 @@ try {
   await writeFile(
     resolve(
       output,
-      redirectionOnly
-        ? 'desktop-redirection-verification.json'
-        : menuOnly
-          ? 'desktop-menu-verification.json'
-          : iconOnly
-            ? 'desktop-icon-verification.json'
-            : proxyOnly
-              ? 'desktop-proxy-verification.json'
-              : interfaceOnly
-                ? 'desktop-interface-verification.json'
-                : progIdOnly
-                  ? 'desktop-prog-id-verification.json'
-                  : typeLibraryOnly
-                    ? 'desktop-type-library-verification.json'
-                    : registeredAppOnly
-                      ? 'desktop-registered-app-verification.json'
-                      : serviceOnly
-                        ? 'desktop-service-verification.json'
-                        : expandedOnly
-                          ? 'desktop-expanded-verification.json'
-                          : applicationOnly
-                            ? 'desktop-application-verification.json'
-                            : sharedDllOnly
-                              ? 'desktop-shared-dll-verification.json'
-                              : 'desktop-verification.json',
+      appearanceOnly
+        ? 'desktop-appearance-verification.json'
+        : conversionOnly
+          ? 'desktop-conversion-verification.json'
+          : redirectionOnly
+            ? 'desktop-redirection-verification.json'
+            : menuOnly
+              ? 'desktop-menu-verification.json'
+              : iconOnly
+                ? 'desktop-icon-verification.json'
+                : proxyOnly
+                  ? 'desktop-proxy-verification.json'
+                  : interfaceOnly
+                    ? 'desktop-interface-verification.json'
+                    : progIdOnly
+                      ? 'desktop-prog-id-verification.json'
+                      : typeLibraryOnly
+                        ? 'desktop-type-library-verification.json'
+                        : registeredAppOnly
+                          ? 'desktop-registered-app-verification.json'
+                          : serviceOnly
+                            ? 'desktop-service-verification.json'
+                            : expandedOnly
+                              ? 'desktop-expanded-verification.json'
+                              : applicationOnly
+                                ? 'desktop-application-verification.json'
+                                : sharedDllOnly
+                                  ? 'desktop-shared-dll-verification.json'
+                                  : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );

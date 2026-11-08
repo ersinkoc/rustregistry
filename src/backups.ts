@@ -27,6 +27,7 @@ const scopeLabels: Record<string, string> = {
   application_icon: 'Application icon reference',
   shell_menu: 'Context-menu visibility',
   com_redirection: 'COM class redirection',
+  com_conversion: 'COM conversion reference',
 };
 export function backupScopeLabel(scope: string, view?: string): string {
   if (scope === 'com') return `COM mapping · ${view || '64'} bit`;

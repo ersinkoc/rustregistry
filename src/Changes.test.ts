@@ -22,6 +22,30 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers individual AutoConvertTo recovery only for guarded native current-user references', () => {
+    const conversion = {
+      ...entry,
+      category: 'com_conversions' as const,
+      view: '64',
+      keyPath: 'Software\\Classes\\CLSID\\{11111111-1111-4111-8111-111111111111}\\AutoConvertTo',
+      valueName: '',
+      valueType: 'REG_SZ',
+      conversionRepairable: true,
+      assessment: { ...entry.assessment, code: 'conversion_clsid_missing' },
+    };
+    expect(canQuarantine(conversion)).toBe(true);
+    for (const changed of [
+      { ...conversion, hive: 'HKLM' },
+      { ...conversion, view: '32' },
+      { ...conversion, conversionRepairable: false },
+      { ...conversion, valueType: 'REG_EXPAND_SZ' },
+      { ...conversion, valueName: 'Other' },
+      { ...conversion, keyPath: `${conversion.keyPath}\\nested` },
+      { ...conversion, keyPath: conversion.keyPath.replace('AutoConvertTo', 'TreatAs') },
+      { ...conversion, assessment: { ...conversion.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers backed-up recovery for guarded folder and all-filesystem menu commands', () => {
     for (const root of ['AllFileSystemObjects', 'Folder']) {
       const menu = {

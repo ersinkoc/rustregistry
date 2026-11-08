@@ -19,6 +19,7 @@ pub enum Category {
     Interfaces,
     ComProxies,
     ComRedirections,
+    ComConversions,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +98,10 @@ pub struct RegistryEntry {
     pub redirection_state: Option<crate::com_redirects::RedirectionState>,
     #[serde(default)]
     pub redirection_repairable: bool,
+    #[serde(skip)]
+    pub conversion_state: Option<crate::com_conversions::ConversionState>,
+    #[serde(default)]
+    pub conversion_repairable: bool,
     #[serde(skip)]
     pub icon_state: Option<crate::application_icons::IconState>,
     #[serde(default)]

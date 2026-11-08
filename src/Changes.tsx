@@ -40,7 +40,8 @@ export interface ChangePlan {
     | 'com_proxy'
     | 'application_icon'
     | 'shell_menu'
-    | 'com_redirection';
+    | 'com_redirection'
+    | 'com_conversion';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -75,7 +76,8 @@ interface Backup {
     | 'com_proxy'
     | 'application_icon'
     | 'shell_menu'
-    | 'com_redirection';
+    | 'com_redirection'
+    | 'com_conversion';
   registryPath: string;
   registryView?: string;
 }
@@ -86,6 +88,20 @@ interface Inventory {
 }
 
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'com_conversions')
+    return (
+      entry.hive === 'HKCU' &&
+      entry.view === '64' &&
+      entry.conversionRepairable === true &&
+      entry.valueName === '' &&
+      entry.valueType === 'REG_SZ' &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'conversion_clsid_missing' &&
+      /^software\\classes\\clsid\\\{[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\}\\AutoConvertTo$/i.test(
+        entry.keyPath,
+      )
+    );
+
   if (entry.category === 'com_redirections')
     return (
       entry.hive === 'HKCU' &&
@@ -333,6 +349,7 @@ export function ChangeConfirmation({
   const appIcon = plan.scope === 'application_icon';
   const shellMenu = plan.scope === 'shell_menu';
   const comRedirection = plan.scope === 'com_redirection';
+  const comConversion = plan.scope === 'com_conversion';
   const expired = clock >= plan.expiresAt;
   useEffect(() => {
     const dialog = ref.current;
@@ -368,134 +385,142 @@ export function ChangeConfirmation({
         {restore ? <ArchiveRestore size={27} /> : <ShieldCheck size={27} />}
       </div>
       <h2 id="change-title">
-        {comRedirection
+        {comConversion
           ? restore
-            ? 'Restore COM class redirection?'
-            : 'Disable missing-target COM redirection?'
-          : shellMenu
+            ? 'Restore COM conversion reference?'
+            : 'Disable missing-target COM conversion reference?'
+          : comRedirection
             ? restore
-              ? 'Restore context-menu visibility?'
-              : 'Hide broken context-menu entry?'
-            : appIcon
+              ? 'Restore COM class redirection?'
+              : 'Disable missing-target COM redirection?'
+            : shellMenu
               ? restore
-                ? 'Restore application icon reference?'
-                : 'Remove missing application icon reference?'
-              : comProxy
+                ? 'Restore context-menu visibility?'
+                : 'Hide broken context-menu entry?'
+              : appIcon
                 ? restore
-                  ? 'Restore COM proxy reference?'
-                  : 'Disable orphaned COM proxy reference?'
-                : comInterface
+                  ? 'Restore application icon reference?'
+                  : 'Remove missing application icon reference?'
+                : comProxy
                   ? restore
-                    ? 'Restore interface TypeLib reference?'
-                    : 'Disable orphaned interface TypeLib reference?'
-                  : progId
+                    ? 'Restore COM proxy reference?'
+                    : 'Disable orphaned COM proxy reference?'
+                  : comInterface
                     ? restore
-                      ? 'Restore COM ProgID mapping?'
-                      : 'Disable orphaned COM ProgID mapping?'
-                    : typeLibrary
+                      ? 'Restore interface TypeLib reference?'
+                      : 'Disable orphaned interface TypeLib reference?'
+                    : progId
                       ? restore
-                        ? 'Restore type library mapping?'
-                        : 'Disable missing type library mapping?'
-                      : registeredApp
+                        ? 'Restore COM ProgID mapping?'
+                        : 'Disable orphaned COM ProgID mapping?'
+                      : typeLibrary
                         ? restore
-                          ? 'Restore application registration?'
-                          : 'Remove orphaned application registration?'
-                        : sharedDll
+                          ? 'Restore type library mapping?'
+                          : 'Disable missing type library mapping?'
+                        : registeredApp
                           ? restore
-                            ? 'Restore shared DLL reference?'
-                            : 'Remove zero-count shared DLL reference?'
-                          : application
+                            ? 'Restore application registration?'
+                            : 'Remove orphaned application registration?'
+                          : sharedDll
                             ? restore
-                              ? 'Restore application suggestion?'
-                              : 'Hide broken application suggestion?'
-                            : service
+                              ? 'Restore shared DLL reference?'
+                              : 'Remove zero-count shared DLL reference?'
+                            : application
                               ? restore
-                                ? 'Restore service startup?'
-                                : 'Disable this missing-target service?'
-                              : com
+                                ? 'Restore application suggestion?'
+                                : 'Hide broken application suggestion?'
+                              : service
                                 ? restore
-                                  ? `Restore ${comLabel}?`
-                                  : `Repair broken ${comLabel}?`
-                                : association
+                                  ? 'Restore service startup?'
+                                  : 'Disable this missing-target service?'
+                                : com
                                   ? restore
-                                    ? 'Restore Open with suggestion?'
-                                    : 'Repair orphaned file association?'
-                                  : uninstall
+                                    ? `Restore ${comLabel}?`
+                                    : `Repair broken ${comLabel}?`
+                                  : association
                                     ? restore
-                                      ? 'Restore uninstall entry visibility?'
-                                      : 'Repair orphaned uninstall entry?'
-                                    : appPath
+                                      ? 'Restore Open with suggestion?'
+                                      : 'Repair orphaned file association?'
+                                    : uninstall
                                       ? restore
-                                        ? 'Restore application path?'
-                                        : 'Repair broken application path?'
-                                      : restore
-                                        ? 'Restore startup entry?'
-                                        : 'Disable this startup entry?'}
+                                        ? 'Restore uninstall entry visibility?'
+                                        : 'Repair orphaned uninstall entry?'
+                                      : appPath
+                                        ? restore
+                                          ? 'Restore application path?'
+                                          : 'Repair broken application path?'
+                                        : restore
+                                          ? 'Restore startup entry?'
+                                          : 'Disable this startup entry?'}
       </h2>
       <p className="change-intro">
-        {comRedirection
+        {comConversion
           ? restore
-            ? 'Restore the exact original TreatAs value only while its default remains absent, its local target is still absent from both hives and architecture views, and the owning class description, structure, and counterpart checks still match.'
-            : 'After a verified backup, remove only this simple current-user 64-bit class’s TreatAs default reference. The class and TreatAs keys, descriptions, other classes, files and permissions remain intact. Local absence does not prove the application is broken or establish remote activation needs; review this redirection before disabling it.'
-          : shellMenu
+            ? 'Restore the exact original AutoConvertTo reference only while its default remains absent, the local target remains absent from all checked views, and all owning-class metadata and counterpart evidence still matches.'
+            : 'After a verified backup, remove only this simple current-user 64-bit class’s AutoConvertTo default reference. Class and reference keys, description bytes, other classes, permissions and documents remain intact. Local target absence does not establish legacy document conversion requirements; review before disabling.'
+          : comRedirection
             ? restore
-              ? 'Restore the original absent visibility flag only while the backed-up programmatic-only state, command, root/default and counterpart checks still match, and its executable remains missing.'
-              : 'After a verified backup, add only an empty ProgrammaticAccessOnly flag to this custom current-user menu entry. Its command and arguments, display metadata, keys, defaults, files, and permissions stay intact. This suppresses menu visibility; programmatic invocation remains possible. No command is executed.'
-            : appIcon
+              ? 'Restore the exact original TreatAs value only while its default remains absent, its local target is still absent from both hives and architecture views, and the owning class description, structure, and counterpart checks still match.'
+              : 'After a verified backup, remove only this simple current-user 64-bit class’s TreatAs default reference. The class and TreatAs keys, descriptions, other classes, files and permissions remain intact. Local absence does not prove the application is broken or establish remote activation needs; review this redirection before disabling it.'
+            : shellMenu
               ? restore
-                ? 'Restore the exact original icon reference only while its default remains absent, the icon file is still missing, and the application metadata and counterpart checks match.'
-                : 'After a verified backup, remove only this current-user application’s reference to a confirmed missing .ico file. The open command, visibility flags, application metadata, keys, permissions, and files are preserved. No icon is loaded or decoded. Shell caching can delay any visual change; no replacement icon is guessed.'
-              : comProxy
+                ? 'Restore the original absent visibility flag only while the backed-up programmatic-only state, command, root/default and counterpart checks still match, and its executable remains missing.'
+                : 'After a verified backup, add only an empty ProgrammaticAccessOnly flag to this custom current-user menu entry. Its command and arguments, display metadata, keys, defaults, files, and permissions stay intact. This suppresses menu visibility; programmatic invocation remains possible. No command is executed.'
+              : appIcon
                 ? restore
-                  ? 'Restore the exact original proxy CLSID only while its default remains absent, the class is still absent from both hives and architecture views, and every TypeLib, description, structure, and machine counterpart check matches.'
-                  : 'After a verified backup, remove only this current-user 64-bit interface’s orphaned ProxyStubClsid32 default reference. TypeLib and Version metadata, keys, 32-bit mappings, files, and permissions are preserved. No proxy is loaded or activated.'
-                : comInterface
+                  ? 'Restore the exact original icon reference only while its default remains absent, the icon file is still missing, and the application metadata and counterpart checks match.'
+                  : 'After a verified backup, remove only this current-user application’s reference to a confirmed missing .ico file. The open command, visibility flags, application metadata, keys, permissions, and files are preserved. No icon is loaded or decoded. Shell caching can delay any visual change; no replacement icon is guessed.'
+                : comProxy
                   ? restore
-                    ? 'Restore the exact original TypeLib reference only while it remains absent, the library remains absent from both hives, and the interface metadata and machine counterpart checks still match.'
-                    : 'After a verified backup, only this current-user 64-bit interface’s orphaned TypeLib default reference is removed. Version and proxy metadata, keys, 32-bit mappings, files, and permissions are preserved. No library is loaded or COM object activated.'
-                  : progId
+                    ? 'Restore the exact original proxy CLSID only while its default remains absent, the class is still absent from both hives and architecture views, and every TypeLib, description, structure, and machine counterpart check matches.'
+                    : 'After a verified backup, remove only this current-user 64-bit interface’s orphaned ProxyStubClsid32 default reference. TypeLib and Version metadata, keys, 32-bit mappings, files, and permissions are preserved. No proxy is loaded or activated.'
+                  : comInterface
                     ? restore
-                      ? 'Restore the exact original CLSID mapping only while its value remains absent, its target class is still absent from both user/machine 32/64-bit views, and every description and fallback check still matches.'
-                      : 'The referenced COM class is absent from both hives and both architecture views. After a verified backup, only this current-user ProgID’s default CLSID mapping is removed. Keys, descriptions, class registrations, default application selections, and files are preserved. No COM object is activated.'
-                    : typeLibrary
+                      ? 'Restore the exact original TypeLib reference only while it remains absent, the library remains absent from both hives, and the interface metadata and machine counterpart checks still match.'
+                      : 'After a verified backup, only this current-user 64-bit interface’s orphaned TypeLib default reference is removed. Version and proxy metadata, keys, 32-bit mappings, files, and permissions are preserved. No library is loaded or COM object activated.'
+                    : progId
                       ? restore
-                        ? 'Restore the exact original win64 mapping only while its value is absent, its file remains missing, and every guarded registration and fallback check still matches.'
-                        : 'The literal local win64 library file is missing. After a verified backup, only this default mapping value is removed. The library keys, win32 mappings, version and locale information, help metadata, and permissions are preserved. No library is loaded, registered, or unregistered.'
-                      : registeredApp
+                        ? 'Restore the exact original CLSID mapping only while its value remains absent, its target class is still absent from both user/machine 32/64-bit views, and every description and fallback check still matches.'
+                        : 'The referenced COM class is absent from both hives and both architecture views. After a verified backup, only this current-user ProgID’s default CLSID mapping is removed. Keys, descriptions, class registrations, default application selections, and files are preserved. No COM object is activated.'
+                      : typeLibrary
                         ? restore
-                          ? 'Restore the exact original application name and Capabilities path only while the value is absent, the target remains missing, and no machine counterpart exists.'
-                          : 'This current-user registration points to a missing Capabilities key. After a verified backup, only this named RegisteredApplications value is removed. Default application selections, UserChoice, ProgIDs, Capabilities keys, commands, files, and permissions are preserved.'
-                        : sharedDll
+                          ? 'Restore the exact original win64 mapping only while its value is absent, its file remains missing, and every guarded registration and fallback check still matches.'
+                          : 'The literal local win64 library file is missing. After a verified backup, only this default mapping value is removed. The library keys, win32 mappings, version and locale information, help metadata, and permissions are preserved. No library is loaded, registered, or unregistered.'
+                        : registeredApp
                           ? restore
-                            ? 'This restores the exact original DWORD zero only if the value is still absent and the local DLL remains missing. A new counter, changed key structure, or reappearing file blocks restore.'
-                            : 'The local DLL was not found and this reference count is exactly zero. After a verified backup, only this named registry value is removed. A zero count does not establish all application ownership; review the exact path. Positive counters and DLL files are preserved.'
-                          : application
+                            ? 'Restore the exact original application name and Capabilities path only while the value is absent, the target remains missing, and no machine counterpart exists.'
+                            : 'This current-user registration points to a missing Capabilities key. After a verified backup, only this named RegisteredApplications value is removed. Default application selections, UserChoice, ProgIDs, Capabilities keys, commands, files, and permissions are preserved.'
+                          : sharedDll
                             ? restore
-                              ? 'This removes the backed-up NoOpenWith flag only when all guarded application metadata and the original command still match. The application may appear in optional suggestions again.'
-                              : 'The executable in this simple open command is missing. After a verified backup, only an empty NoOpenWith flag is added to the application registration. The exact open command, keys, and default application selections are preserved.'
-                            : service
+                              ? 'This restores the exact original DWORD zero only if the value is still absent and the local DLL remains missing. A new counter, changed key structure, or reappearing file blocks restore.'
+                              : 'The local DLL was not found and this reference count is exactly zero. After a verified backup, only this named registry value is removed. A zero count does not establish all application ownership; review the exact path. Positive counters and DLL files are preserved.'
+                            : application
                               ? restore
-                                ? 'This restores the original Manual startup type through Windows Service Control Manager. The service remains stopped. Its executable, account, permissions, and configuration must still match the backup.'
-                                : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
-                              : com
+                                ? 'This removes the backed-up NoOpenWith flag only when all guarded application metadata and the original command still match. The application may appear in optional suggestions again.'
+                                : 'The executable in this simple open command is missing. After a verified backup, only an empty NoOpenWith flag is added to the application registration. The exact open command, keys, and default application selections are preserved.'
+                              : service
                                 ? restore
-                                  ? `This restores the exact original 64-bit ${comLocal ? 'server command' : 'DLL mapping'}. Applications may use it through COM later. The class and server metadata must still match the backup.`
-                                  : `The explicit local ${comLocal ? 'executable' : 'DLL'} is missing. After a verified backup, only the default ${comServer} value is removed. The registration keys and permissions are preserved; no COM object is activated and no command is run.`
-                                : association
+                                  ? 'This restores the original Manual startup type through Windows Service Control Manager. The service remains stopped. Its executable, account, permissions, and configuration must still match the backup.'
+                                  : 'This stopped, independent LocalService registration points to a missing executable. After a verified backup, only its startup type changes from Manual to Disabled through Windows Service Control Manager. No service is started, stopped, or deleted.'
+                                : com
                                   ? restore
-                                    ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
-                                    : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
-                                  : uninstall
+                                    ? `This restores the exact original 64-bit ${comLocal ? 'server command' : 'DLL mapping'}. Applications may use it through COM later. The class and server metadata must still match the backup.`
+                                    : `The explicit local ${comLocal ? 'executable' : 'DLL'} is missing. After a verified backup, only the default ${comServer} value is removed. The registration keys and permissions are preserved; no COM object is activated and no command is run.`
+                                  : association
                                     ? restore
-                                      ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
-                                      : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
-                                    : appPath
+                                      ? 'This restores the exact original Open with suggestion only if its guarded metadata is unchanged. Default application selections and UserChoice remain untouched.'
+                                      : 'This optional Open with suggestion points to an application registration missing from both user and machine Classes roots. A verified backup is saved before removing only this suggestion. It does not choose a replacement application or repair missing files.'
+                                    : uninstall
                                       ? restore
-                                        ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
-                                        : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
-                                      : restore
-                                        ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
-                                        : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
+                                        ? 'This restores the original visibility flag only if every other registry value still matches the backup. No installer or uninstaller will be run.'
+                                        : 'The installation folder and local uninstall executable are both missing. After a full verified backup, this sets SystemComponent=1 to hide the orphaned listing. The registration key and its permissions stay in place.'
+                                      : appPath
+                                        ? restore
+                                          ? 'This restores the exact original executable mapping. The existing key and all other metadata must still match the backup.'
+                                          : 'The explicit local executable target is missing. This removes only the broken default mapping after saving a verified backup. It does not guess a replacement location.'
+                                        : restore
+                                          ? 'This puts the exact original value back into your startup list. Its command may run at your next sign-in.'
+                                          : 'The local target is currently missing. After saving and verifying a backup, RustRegistry will remove only this value from your startup list.'}
       </p>
       <dl className="detail-fields">
         <div className="full-field">
@@ -506,7 +531,8 @@ export function ChangeConfirmation({
           <dt>Registry path</dt>
           <dd className="code-field">{plan.registryPath}</dd>
         </div>
-        {(comRedirection ||
+        {(comConversion ||
+          comRedirection ||
           com ||
           sharedDll ||
           typeLibrary ||
@@ -542,43 +568,54 @@ export function ChangeConfirmation({
         </div>
         <div className="full-field">
           <dt>
-            {comRedirection
-              ? 'Exact original TreatAs target CLSID'
-              : shellMenu
-                ? 'Original ProgrammaticAccessOnly flag'
-                : appIcon
-                  ? 'Exact original icon file path'
-                  : comProxy
-                    ? 'Exact original proxy CLSID reference'
-                    : comInterface
-                      ? 'Exact original TypeLib reference'
-                      : progId
-                        ? 'Exact original CLSID reference'
-                        : typeLibrary
-                          ? 'Exact original type library file path'
-                          : registeredApp
-                            ? 'Exact original Capabilities registry path'
-                            : sharedDll
-                              ? 'Original reference count'
-                              : application
-                                ? 'Original NoOpenWith flag'
-                                : service
-                                  ? 'Original startup type'
-                                  : com
-                                    ? comLocal
-                                      ? 'Exact original COM server command'
-                                      : 'Exact original COM DLL path'
-                                    : association
-                                      ? 'Original suggestion data'
-                                      : uninstall
-                                        ? 'Original installation folder'
-                                        : appPath
-                                          ? 'Exact original executable path'
-                                          : 'Exact original command'}
+            {comConversion
+              ? 'Exact original AutoConvertTo target CLSID'
+              : comRedirection
+                ? 'Exact original TreatAs target CLSID'
+                : shellMenu
+                  ? 'Original ProgrammaticAccessOnly flag'
+                  : appIcon
+                    ? 'Exact original icon file path'
+                    : comProxy
+                      ? 'Exact original proxy CLSID reference'
+                      : comInterface
+                        ? 'Exact original TypeLib reference'
+                        : progId
+                          ? 'Exact original CLSID reference'
+                          : typeLibrary
+                            ? 'Exact original type library file path'
+                            : registeredApp
+                              ? 'Exact original Capabilities registry path'
+                              : sharedDll
+                                ? 'Original reference count'
+                                : application
+                                  ? 'Original NoOpenWith flag'
+                                  : service
+                                    ? 'Original startup type'
+                                    : com
+                                      ? comLocal
+                                        ? 'Exact original COM server command'
+                                        : 'Exact original COM DLL path'
+                                      : association
+                                        ? 'Original suggestion data'
+                                        : uninstall
+                                          ? 'Original installation folder'
+                                          : appPath
+                                            ? 'Exact original executable path'
+                                            : 'Exact original command'}
           </dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
       </dl>
+      {comConversion && (
+        <p className="change-intro">
+          The backup preserves {plan.preservedValues} class-description value(s) and the exact
+          REG_SZ bytes. A 32-bit user or machine counterpart, TreatAs, AutoTreatAs,
+          server/conversion children, unknown metadata or missing evidence blocks changes. Removing
+          this reference can affect opening or upgrading legacy objects. No document is opened or
+          converted.
+        </p>
+      )}
       {comRedirection && (
         <p className="change-intro">
           The backup preserves {plan.preservedValues} description value(s) and the exact REG_SZ
@@ -698,37 +735,39 @@ export function ChangeConfirmation({
       <div className="change-guarantee">
         <LockKeyhole size={18} />
         <p>
-          {comRedirection
-            ? 'No COM object is activated, no resolution API is called, and no library or file is loaded. New targets in any checked view, counterparts, changed metadata, missing keys or a corrupt backup block repair and restore.'
-            : shellMenu
-              ? 'Only the programmatic-only visibility flag changes. A reappearing executable, new machine counterpart, changed command/display/root metadata or flags, missing keys, or a corrupt backup blocks repair and restore. No command, icon, handler or file is loaded or executed.'
-              : appIcon
-                ? 'A verified backup preserves exact icon reference bytes and the supported application metadata. Changed commands or flags, a new machine counterpart, missing keys, replacement values, or a reappearing file block repair and restore. This removes an orphan reference; it does not recover a missing icon file.'
-                : comProxy
-                  ? 'The backup preserves exact proxy mapping bytes and all supported description, TypeLib, and Version metadata. A new class in any checked view, machine counterpart, changed values or structure, or missing keys blocks repair and restore.'
-                  : comInterface
-                    ? 'The backup preserves exact mapping bytes and all supported description, Version, and proxy metadata. New libraries, machine counterparts, changed values or structure, and missing keys block changes.'
-                    : progId
-                      ? 'A separate verified backup preserves the original mapping type/bytes and description. A class appearing in any checked view, a same-named machine ProgID, changed metadata, or missing keys blocks repair and restore.'
-                      : typeLibrary
-                        ? 'A separate verified backup preserves the original mapping type and bytes and the supported registration metadata. New files, machine counterparts, modified metadata, or missing keys block both repair and restore.'
-                        : registeredApp
-                          ? 'A separate verified backup preserves the exact original REG_SZ bytes. New registrations, reappearing Capabilities, registry links, or changed evidence block repair and restore.'
-                          : sharedDll
-                            ? 'A verified backup preserves the original DWORD type and all four bytes. Repair and restore both recheck that the target is missing; no key or file is recreated.'
-                            : application
-                              ? 'Only suggestion visibility changes. The original open command, default application selections, registry keys, files, and permissions are preserved.'
-                              : service
-                                ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
-                                : com
-                                  ? 'No DLL is loaded or registered, no COM object is activated, no command is run, and no key, file, or permission is changed. A verified backup is required before removing this one value.'
-                                  : association
-                                    ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
-                                    : uninstall
-                                      ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
-                                      : restore
-                                        ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
-                                        : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
+          {comConversion
+            ? 'No COM object is activated and no conversion/resolution API is called. Class and reference keys are retained; documents, files and permissions remain intact. New target classes, counterparts, changed metadata, missing keys, replacement values or a corrupt backup block repair and restore.'
+            : comRedirection
+              ? 'No COM object is activated, no resolution API is called, and no library or file is loaded. New targets in any checked view, counterparts, changed metadata, missing keys or a corrupt backup block repair and restore.'
+              : shellMenu
+                ? 'Only the programmatic-only visibility flag changes. A reappearing executable, new machine counterpart, changed command/display/root metadata or flags, missing keys, or a corrupt backup blocks repair and restore. No command, icon, handler or file is loaded or executed.'
+                : appIcon
+                  ? 'A verified backup preserves exact icon reference bytes and the supported application metadata. Changed commands or flags, a new machine counterpart, missing keys, replacement values, or a reappearing file block repair and restore. This removes an orphan reference; it does not recover a missing icon file.'
+                  : comProxy
+                    ? 'The backup preserves exact proxy mapping bytes and all supported description, TypeLib, and Version metadata. A new class in any checked view, machine counterpart, changed values or structure, or missing keys blocks repair and restore.'
+                    : comInterface
+                      ? 'The backup preserves exact mapping bytes and all supported description, Version, and proxy metadata. New libraries, machine counterparts, changed values or structure, and missing keys block changes.'
+                      : progId
+                        ? 'A separate verified backup preserves the original mapping type/bytes and description. A class appearing in any checked view, a same-named machine ProgID, changed metadata, or missing keys blocks repair and restore.'
+                        : typeLibrary
+                          ? 'A separate verified backup preserves the original mapping type and bytes and the supported registration metadata. New files, machine counterparts, modified metadata, or missing keys block both repair and restore.'
+                          : registeredApp
+                            ? 'A separate verified backup preserves the exact original REG_SZ bytes. New registrations, reappearing Capabilities, registry links, or changed evidence block repair and restore.'
+                            : sharedDll
+                              ? 'A verified backup preserves the original DWORD type and all four bytes. Repair and restore both recheck that the target is missing; no key or file is recreated.'
+                              : application
+                                ? 'Only suggestion visibility changes. The original open command, default application selections, registry keys, files, and permissions are preserved.'
+                                : service
+                                  ? 'No executable path, service account, permissions, or files are changed. Restore does not start the service; a later explicit start can run its configured executable.'
+                                  : com
+                                    ? 'No DLL is loaded or registered, no COM object is activated, no command is run, and no key, file, or permission is changed. A verified backup is required before removing this one value.'
+                                    : association
+                                      ? 'Only this named suggestion can change. No key, default application selection, UserChoice value, application file, or permission is changed.'
+                                      : uninstall
+                                        ? 'A full verified value backup is required. Any changed metadata blocks repair or restore. Application files and key permissions are never changed.'
+                                        : restore
+                                          ? 'Restore is blocked if any value with this name already exists. Existing values are never overwritten.'
+                                          : 'No key or application file will be deleted. A verified backup is required before this one registry value can be removed.'}
         </p>
       </div>
       <label className="confirmation-check">
@@ -739,37 +778,39 @@ export function ChangeConfirmation({
           onChange={(event) => setAgreed(event.target.checked)}
         />
         <span>
-          {comRedirection
-            ? 'I reviewed this owning class and exact TreatAs target and understand that local absence does not establish remote activation needs.'
-            : shellMenu
-              ? 'I reviewed the preserved command and understand that only menu visibility changes, with programmatic access still possible.'
-              : appIcon
-                ? 'I reviewed this icon path and understand that the application command is preserved.'
-                : comProxy
-                  ? 'I reviewed this exact interface and proxy CLSID and understand the reference change.'
-                  : comInterface
-                    ? 'I reviewed this exact interface and TypeLib reference and understand the mapping change.'
-                    : progId
-                      ? 'I reviewed this exact ProgID and CLSID reference and understand the mapping change.'
-                      : typeLibrary
-                        ? 'I reviewed this exact library path and understand that only its win64 mapping changes.'
-                        : registeredApp
-                          ? 'I reviewed this exact application name and Capabilities path and understand this registration change.'
-                          : sharedDll
-                            ? 'I reviewed this exact DLL path and understand that only its zero-count registry reference changes.'
-                            : application
-                              ? 'I reviewed the original command and understand the suggestion visibility change.'
-                              : service
-                                ? 'I reviewed this service and understand that only its startup type changes.'
-                                : com
-                                  ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
-                                  : association
-                                    ? 'I reviewed this exact suggestion and understand the file association change.'
-                                    : uninstall
-                                      ? 'I reviewed this entry and understand this only changes listing visibility.'
-                                      : appPath
-                                        ? 'I reviewed this exact value and understand the application path change.'
-                                        : 'I reviewed this exact value and understand the startup change.'}
+          {comConversion
+            ? 'I reviewed the owning class and exact AutoConvertTo target and understand that this can affect legacy document conversion.'
+            : comRedirection
+              ? 'I reviewed this owning class and exact TreatAs target and understand that local absence does not establish remote activation needs.'
+              : shellMenu
+                ? 'I reviewed the preserved command and understand that only menu visibility changes, with programmatic access still possible.'
+                : appIcon
+                  ? 'I reviewed this icon path and understand that the application command is preserved.'
+                  : comProxy
+                    ? 'I reviewed this exact interface and proxy CLSID and understand the reference change.'
+                    : comInterface
+                      ? 'I reviewed this exact interface and TypeLib reference and understand the mapping change.'
+                      : progId
+                        ? 'I reviewed this exact ProgID and CLSID reference and understand the mapping change.'
+                        : typeLibrary
+                          ? 'I reviewed this exact library path and understand that only its win64 mapping changes.'
+                          : registeredApp
+                            ? 'I reviewed this exact application name and Capabilities path and understand this registration change.'
+                            : sharedDll
+                              ? 'I reviewed this exact DLL path and understand that only its zero-count registry reference changes.'
+                              : application
+                                ? 'I reviewed the original command and understand the suggestion visibility change.'
+                                : service
+                                  ? 'I reviewed this service and understand that only its startup type changes.'
+                                  : com
+                                    ? 'I reviewed this exact 64-bit COM mapping and understand the change.'
+                                    : association
+                                      ? 'I reviewed this exact suggestion and understand the file association change.'
+                                      : uninstall
+                                        ? 'I reviewed this entry and understand this only changes listing visibility.'
+                                        : appPath
+                                          ? 'I reviewed this exact value and understand the application path change.'
+                                          : 'I reviewed this exact value and understand the startup change.'}
         </span>
       </label>
       {expired && (
@@ -789,67 +830,71 @@ export function ChangeConfirmation({
           {busy ? <RotateCw className="spin" size={16} /> : <ShieldCheck size={16} />}
           {busy
             ? 'Applying…'
-            : comRedirection
+            : comConversion
               ? restore
-                ? 'Restore COM redirection'
-                : 'Back up & disable COM redirection'
-              : shellMenu
+                ? 'Restore conversion reference'
+                : 'Back up & disable conversion reference'
+              : comRedirection
                 ? restore
-                  ? 'Restore menu visibility'
-                  : 'Back up & hide menu entry'
-                : appIcon
+                  ? 'Restore COM redirection'
+                  : 'Back up & disable COM redirection'
+                : shellMenu
                   ? restore
-                    ? 'Restore icon reference'
-                    : 'Back up & remove icon reference'
-                  : comProxy
+                    ? 'Restore menu visibility'
+                    : 'Back up & hide menu entry'
+                  : appIcon
                     ? restore
-                      ? 'Restore proxy reference'
-                      : 'Back up & disable proxy reference'
-                    : comInterface
+                      ? 'Restore icon reference'
+                      : 'Back up & remove icon reference'
+                    : comProxy
                       ? restore
-                        ? 'Restore TypeLib reference'
-                        : 'Back up & disable TypeLib reference'
-                      : progId
+                        ? 'Restore proxy reference'
+                        : 'Back up & disable proxy reference'
+                      : comInterface
                         ? restore
-                          ? 'Restore ProgID mapping'
-                          : 'Back up & disable ProgID mapping'
-                        : typeLibrary
+                          ? 'Restore TypeLib reference'
+                          : 'Back up & disable TypeLib reference'
+                        : progId
                           ? restore
-                            ? 'Restore library mapping'
-                            : 'Back up & disable library mapping'
-                          : registeredApp
+                            ? 'Restore ProgID mapping'
+                            : 'Back up & disable ProgID mapping'
+                          : typeLibrary
                             ? restore
-                              ? 'Restore registration'
-                              : 'Back up & remove registration'
-                            : sharedDll
+                              ? 'Restore library mapping'
+                              : 'Back up & disable library mapping'
+                            : registeredApp
                               ? restore
-                                ? 'Restore zero-count reference'
-                                : 'Back up & remove reference'
-                              : application
+                                ? 'Restore registration'
+                                : 'Back up & remove registration'
+                              : sharedDll
                                 ? restore
-                                  ? 'Restore suggestion visibility'
-                                  : 'Back up & hide suggestion'
-                                : service
+                                  ? 'Restore zero-count reference'
+                                  : 'Back up & remove reference'
+                                : application
                                   ? restore
-                                    ? 'Restore Manual startup'
-                                    : 'Back up & disable service'
-                                  : com
+                                    ? 'Restore suggestion visibility'
+                                    : 'Back up & hide suggestion'
+                                  : service
                                     ? restore
-                                      ? 'Restore original value'
-                                      : 'Back up & disable mapping'
-                                    : association
+                                      ? 'Restore Manual startup'
+                                      : 'Back up & disable service'
+                                    : com
                                       ? restore
                                         ? 'Restore original value'
-                                        : 'Back up & remove suggestion'
-                                      : uninstall
+                                        : 'Back up & disable mapping'
+                                      : association
                                         ? restore
-                                          ? 'Restore original visibility'
-                                          : 'Back up & hide entry'
-                                        : restore
                                           ? 'Restore original value'
-                                          : appPath
-                                            ? 'Back up & repair'
-                                            : 'Back up & disable'}
+                                          : 'Back up & remove suggestion'
+                                        : uninstall
+                                          ? restore
+                                            ? 'Restore original visibility'
+                                            : 'Back up & hide entry'
+                                          : restore
+                                            ? 'Restore original value'
+                                            : appPath
+                                              ? 'Back up & repair'
+                                              : 'Back up & disable'}
         </button>
       </div>
     </dialog>

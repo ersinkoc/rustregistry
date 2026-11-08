@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.19 — 2026-11-08
+
+- Expand diagnostics from 51 to 55 logical sections with COM AutoConvertTo references under HKCU/HKLM in both architecture views. Check target CLSID-key existence across all four views, distinguishing existing, locally missing, absent, malformed, unsupported-type and self-referencing mappings. Never open or convert documents, activate classes, call conversion/resolution APIs, follow conversion chains or probe files.
+- Add individual change review and backed-up removal of guarded current-user 64-bit AutoConvertTo REG_SZ defaults, with selected Clean and Quick Clean using the same guards and separate backups. Preserve class descriptions, owning/reference keys, other classes, 32-bit data, permissions, documents and files.
+- Show owning/target evidence, recovery exclusions and the limits of local checks. Local absence does not establish legacy document conversion requirements; disabling a reference can affect opening or upgrading older objects. Existing targets, 32-bit user or machine counterparts, TreatAs/AutoTreatAs, server or alternative children, unknown/nested metadata, links and uncertain evidence remain read-only.
+- Flush and verify disjoint schema 19 backups before conditional registry transactions. Restore exact original REG_SZ bytes only while the value is absent, its local target remains absent in every checked view, and class metadata/structure/counterpart evidence still matches. New targets or counterparts, replacement values, missing keys and corrupted/scope-mismatched backups block changes. Keep formats 1–18 unchanged with a frozen v0.1.18 folder-menu restoration fixture.
+- Add policy, read-only inventory, existing-write-access, metadata/activation/target/counterpart conflicts, backup failure/corruption, batch-stop and restart/restore tests. Add owned packaged UI controls for both target architectures and a read-only machine target, detailed exclusions, review/cancel, individual/selected changes, real post-review 32-bit target conflicts during repair and restore, raw/permission preservation and complete cleanup.
+- Make desktop appearance verification independent of the saved starting theme. Reproduce the previous dark-only precondition failure with a saved light preference; explicitly verify both theme transitions, persisted values and the compact layout from dark and light starts, without changing test deadlines or weakening assertions.
+
 ## 0.1.18 — 2026-11-07
 
 - Expand context-menu diagnostics to shared HKCU/HKLM AllFileSystemObjects and Folder static-command roots, bringing coverage from 47 to 51 logical sections. Include found, missing, delegated, already-hidden and protected controls without executing commands, loading icons or activating handlers.

@@ -291,6 +291,8 @@ mod tests {
                 prog_id_repairable: false,
                 interface_state: None,
                 interface_repairable: false,
+                conversion_state: None,
+                conversion_repairable: false,
                 redirection_state: None,
                 redirection_repairable: false,
                 proxy_state: None,

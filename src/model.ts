@@ -14,7 +14,8 @@ export type Category =
   | 'com_proxies'
   | 'application_icons'
   | 'shell_menus'
-  | 'com_redirections';
+  | 'com_redirections'
+  | 'com_conversions';
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
@@ -45,6 +46,7 @@ export interface RegistryEntry {
   menuRepairable?: boolean;
   menuHidden?: boolean;
   redirectionRepairable?: boolean;
+  conversionRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -85,6 +87,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  com_conversions: {
+    label: 'COM conversion references',
+    description: 'AutoConvertTo target checks and protected reference recovery',
+    short: 'COM conversion',
+  },
   com_redirections: {
     label: 'COM class redirections',
     description: 'TreatAs target checks and protected reference recovery',

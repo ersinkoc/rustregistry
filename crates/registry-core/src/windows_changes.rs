@@ -4,6 +4,8 @@ pub(crate) use menus::open_menu_source;
 #[path = "windows_icons.rs"]
 mod icons;
 pub(crate) use icons::open_icon_child;
+#[path = "windows_conversions.rs"]
+mod conversions;
 #[path = "windows_interfaces.rs"]
 mod interfaces;
 #[path = "windows_proxies.rs"]
@@ -220,6 +222,27 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_conversion(
+        &self,
+        app: &crate::com_conversions::ConversionBackup,
+    ) -> Result<crate::com_conversions::ConversionState, String> {
+        self.conversion_state(app)
+    }
+    fn check_conversion_write_access(
+        &self,
+        app: &crate::com_conversions::ConversionBackup,
+    ) -> Result<(), String> {
+        self.conversion_write_access(app)
+    }
+    fn compare_exchange_conversion(
+        &self,
+        app: &crate::com_conversions::ConversionBackup,
+        expected: &crate::com_conversions::ConversionState,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_conversion(app, expected, replacement)
+    }
+
     fn read_redirection(
         &self,
         app: &crate::com_redirects::RedirectionBackup,
@@ -782,6 +805,8 @@ mod tests {
             prog_id_repairable: false,
             interface_state: None,
             interface_repairable: false,
+            conversion_state: None,
+            conversion_repairable: false,
             redirection_state: None,
             redirection_repairable: false,
             proxy_state: None,
@@ -911,6 +936,8 @@ mod tests {
             prog_id_repairable: false,
             interface_state: None,
             interface_repairable: false,
+            conversion_state: None,
+            conversion_repairable: false,
             redirection_state: None,
             redirection_repairable: false,
             proxy_state: None,
@@ -1091,6 +1118,8 @@ mod tests {
                 prog_id_repairable: false,
                 interface_state: None,
                 interface_repairable: false,
+                conversion_state: None,
+                conversion_repairable: false,
                 redirection_state: None,
                 redirection_repairable: false,
                 proxy_state: None,

@@ -18,7 +18,9 @@ struct Source {
 
 fn source_id(source: &Source) -> String {
     let id = format!("{}|{}|{}", source.hive, source.view, source.path);
-    if source.category == Category::ComRedirections {
+    if source.category == Category::ComConversions {
+        format!("{id}|com_conversions")
+    } else if source.category == Category::ComRedirections {
         format!("{id}|com_redirections")
     } else if source.category == Category::ApplicationIcons {
         format!("{id}|application_icons")
@@ -112,6 +114,17 @@ fn sources() -> Vec<Source> {
             flag: 0,
             view: "shared",
         });
+    }
+    for hive in ["HKCU", "HKLM"] {
+        for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
+            result.push(Source {
+                category: Category::ComConversions,
+                hive,
+                path: crate::com::CLSID_KEY,
+                flag,
+                view,
+            });
+        }
     }
     for hive in ["HKCU", "HKLM"] {
         for (flag, view) in [(KEY_WOW64_64KEY, "64"), (KEY_WOW64_32KEY, "32")] {
@@ -289,6 +302,7 @@ fn make_entry(
                         | Category::Interfaces
                         | Category::ComProxies
                         | Category::ComRedirections
+                        | Category::ComConversions
                         | Category::ApplicationIcons
                         | Category::ShellMenus
                         | Category::ProgIds => TargetKind::File,
@@ -300,6 +314,7 @@ fn make_entry(
                             | Category::Interfaces
                             | Category::ComProxies
                             | Category::ComRedirections
+                            | Category::ComConversions
                             | Category::ApplicationIcons
                             | Category::ShellMenus
                     ) {
@@ -374,6 +389,8 @@ fn make_entry(
         prog_id_repairable: false,
         interface_state: None,
         interface_repairable: false,
+        conversion_state: None,
+        conversion_repairable: false,
         redirection_state: None,
         redirection_repairable: false,
         proxy_state: None,
@@ -398,6 +415,8 @@ mod extra_scan;
 use extra_scan::scan_shared_dlls;
 #[path = "application_scan.rs"]
 mod application_scan;
+#[path = "conversion_scan.rs"]
+mod conversion_scan;
 #[path = "icon_scan.rs"]
 mod icon_scan;
 #[path = "interface_scan.rs"]
@@ -476,6 +495,7 @@ fn scan_source(
                 | Category::Interfaces
                 | Category::ComProxies
                 | Category::ComRedirections
+                | Category::ComConversions
                 | Category::ApplicationIcons
                 | Category::ShellMenus
         ) {
@@ -506,6 +526,7 @@ fn scan_source(
             | Category::Interfaces
             | Category::ComProxies
             | Category::ComRedirections
+            | Category::ComConversions
             | Category::ApplicationIcons
             | Category::ShellMenus
     ) && key
@@ -517,7 +538,17 @@ fn scan_source(
         return scope;
     }
     let start_count = entries.len();
-    if source.category == Category::ComRedirections {
+    if source.category == Category::ComConversions {
+        conversion_scan::scan_conversions(
+            source,
+            &key,
+            cancel,
+            environment,
+            entries,
+            &mut scope,
+            probe,
+        );
+    } else if source.category == Category::ComRedirections {
         redirection_scan::scan_redirections(
             source,
             &key,
