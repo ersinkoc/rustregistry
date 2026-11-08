@@ -44,7 +44,9 @@ use crate::uninstall::{
 use crate::{
     analyze_target, Category, EntryStatus, Environment, PathProbe, RegistryEntry, TargetKind,
 };
-pub use batch::{is_repair_candidate, CleanPlan, CleanResult, MAX_CLEAN_ENTRIES};
+pub use batch::{
+    is_quick_clean_candidate, is_repair_candidate, CleanPlan, CleanResult, MAX_CLEAN_ENTRIES,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -174,6 +176,33 @@ struct AppPathBackup {
 }
 
 pub trait RegistryStore {
+    fn read_maintenance_batch(
+        &self,
+        apps: &[crate::maintenance::MaintenanceBackup],
+    ) -> Vec<Result<crate::maintenance::MaintenanceSnapshot, String>> {
+        apps.iter().map(|app| self.read_maintenance(app)).collect()
+    }
+    fn read_maintenance(
+        &self,
+        _app: &crate::maintenance::MaintenanceBackup,
+    ) -> Result<crate::maintenance::MaintenanceSnapshot, String> {
+        Err("Maintenance is unavailable.".into())
+    }
+    fn check_maintenance_write_access(
+        &self,
+        _app: &crate::maintenance::MaintenanceBackup,
+    ) -> Result<(), String> {
+        Err("Maintenance is unavailable.".into())
+    }
+    fn compare_exchange_maintenance(
+        &self,
+        _app: &crate::maintenance::MaintenanceBackup,
+        _expected: &crate::maintenance::MaintenanceSnapshot,
+        _replacement: &crate::maintenance::MaintenanceSnapshot,
+    ) -> Result<(), String> {
+        Err("Maintenance is unavailable.".into())
+    }
+
     fn read_conversion(&self, _app: &ConversionBackup) -> Result<ConversionState, String> {
         Err("COM conversion recovery is unavailable.".into())
     }
@@ -467,6 +496,8 @@ struct BackupRecord {
     redirection: Option<RedirectionBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     conversion: Option<ConversionBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    maintenance: Option<crate::maintenance::MaintenanceBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -562,6 +593,42 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     fn validate_record(record: &BackupRecord) -> Result<(), String> {
         if record.name.len() > 65_536 {
             return Err("Unsupported backup format.".into());
+        }
+        if let Some(app) = &record.maintenance {
+            if record.schema_version != 20
+                || [
+                    record.app_path.is_some(),
+                    record.uninstall.is_some(),
+                    record.association.is_some(),
+                    record.com.is_some(),
+                    record.service.is_some(),
+                    record.application.is_some(),
+                    record.shared_dll.is_some(),
+                    record.registered_app.is_some(),
+                    record.type_library.is_some(),
+                    record.prog_id.is_some(),
+                    record.interface.is_some(),
+                    record.proxy.is_some(),
+                    record.icon.is_some(),
+                    record.menu.is_some(),
+                    record.redirection.is_some(),
+                    record.conversion.is_some(),
+                ]
+                .into_iter()
+                .any(|v| v)
+            {
+                return Err("Unsupported maintenance backup namespace or format.".into());
+            }
+            app.validate()?;
+            if record.value_name != app.item || record.original != app.sentinel() {
+                return Err("Maintenance backup evidence does not match.".into());
+            }
+            if record.integrity_sha256 != Self::checksum(record)? {
+                return Err(
+                    "The backup integrity checksum does not match. Restore is blocked.".into(),
+                );
+            }
+            return Ok(());
         }
         match (
             &record.app_path,
@@ -1002,7 +1069,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.original,
         ))
         .map_err(|e| e.to_string())?;
-        let bytes = if record.schema_version == 2 {
+        let bytes = if record.schema_version == 20 {
+            serde_json::to_vec(&(bytes, &record.maintenance)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 2 {
             serde_json::to_vec(&(bytes, &record.app_path)).map_err(|e| e.to_string())?
         } else if record.schema_version == 3 {
             serde_json::to_vec(&(bytes, &record.uninstall)).map_err(|e| e.to_string())?
@@ -1127,6 +1196,10 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     pub fn prepare_quarantine(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        if matches!(entry.category, Category::MuiCache | Category::UsageHistory) {
+            self.cancel();
+            return self.prepare_maintenance(entry, None);
+        }
         self.pending = None;
         self.batch_pending = None;
         if entry.category == Category::ComConversions {
@@ -1262,9 +1335,85 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_maintenance(
+        &mut self,
+        entry: &RegistryEntry,
+        prepared_state: Option<&crate::maintenance::MaintenanceSnapshot>,
+    ) -> Result<ChangePlan, String> {
+        let app = entry
+            .maintenance_state
+            .clone()
+            .ok_or("Maintenance scan evidence is unavailable.")?;
+        app.verify_target(&self.probe)?;
+        let history = app.kind.history();
+        if entry.hive != "HKCU"
+            || entry.view != "shared"
+            || entry.key_path != app.kind.path()
+            || entry.value_name != app.item
+            || !entry.maintenance_repairable
+            || entry.raw_value != app.summary()?
+            || entry.assessment.status
+                != if history {
+                    EntryStatus::Found
+                } else {
+                    EntryStatus::Review
+                }
+            || entry.assessment.code
+                != if history {
+                    "optional_history"
+                } else {
+                    "cache_target_missing"
+                }
+            || entry.category
+                != if history {
+                    Category::UsageHistory
+                } else {
+                    Category::MuiCache
+                }
+        {
+            return Err("Unsupported maintenance location or scan evidence. Scan again.".into());
+        }
+        let current = match prepared_state {
+            Some(state) => state.clone(),
+            None => self.store.read_maintenance(&app)?,
+        };
+        if current != app.snapshot {
+            return Err("Maintenance data changed after scanning. Nothing was changed.".into());
+        }
+        let mut record = BackupRecord {
+            schema_version: 20,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: app.item.clone(),
+            created_at: now()?,
+            original: app.sentinel(),
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: None,
+            association: None,
+            com: None,
+            service: None,
+            application: None,
+            shared_dll: None,
+            registered_app: None,
+            type_library: None,
+            prog_id: None,
+            interface: None,
+            proxy: None,
+            icon: None,
+            menu: None,
+            redirection: None,
+            conversion: None,
+            maintenance: Some(app),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1334,6 +1483,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: Some(app),
+            maintenance: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1402,6 +1552,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: Some(app),
             conversion: None,
+            maintenance: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1467,6 +1618,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1533,6 +1685,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             proxy: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
@@ -1600,6 +1753,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1663,6 +1817,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1733,6 +1888,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: Some(app),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
@@ -1789,6 +1945,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: Some(RegisteredApplicationBackup {
                 capabilities_path: path,
@@ -1838,6 +1995,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: None,
             shared_dll: Some(SharedDllBackup {
@@ -1912,6 +2070,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: Some(app),
             redirection: None,
             conversion: None,
+            maintenance: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1957,6 +2116,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2023,6 +2183,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2080,6 +2241,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2139,6 +2301,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2199,6 +2362,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             menu: None,
             redirection: None,
             conversion: None,
+            maintenance: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2222,6 +2386,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn prepare(&mut self, record: BackupRecord, restore: bool) -> Result<ChangePlan, String> {
+        if let Some(app) = &record.maintenance {
+            self.store.check_maintenance_write_access(app)?;
+        }
         if let Some(app) = &record.conversion {
             self.store.check_conversion_write_access(app)?;
         }
@@ -2270,7 +2437,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "shared"
             }
             .into(),
-            original_value: if record.shared_dll.is_some() {
+            original_value: if let Some(app) = &record.maintenance {
+                app.summary()?
+            } else if record.shared_dll.is_some() {
                 "0".into()
             } else if record.application.is_some() || record.menu.is_some() {
                 "(absent)".into()
@@ -2296,7 +2465,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.conversion.is_some() {
+            scope: if let Some(app) = &record.maintenance {
+                app.kind.scope()
+            } else if record.conversion.is_some() {
                 "com_conversion"
             } else if record.redirection.is_some() {
                 "com_redirection"
@@ -2332,7 +2503,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "startup"
             }
             .into(),
-            preserved_values: if let Some(app) = &record.conversion {
+            preserved_values: if let Some(app) = &record.maintenance {
+                app.snapshot.preserved.len()
+            } else if let Some(app) = &record.conversion {
                 app.guard.values.len()
             } else if let Some(app) = &record.redirection {
                 app.guard.values.len()
@@ -2409,6 +2582,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if let Some(app) = &record.maintenance {
+            return format!("HKCU\\{}", app.kind.path());
+        }
         if let Some(app) = &record.conversion {
             return format!(
                 "HKCU\\{}\\{}\\AutoConvertTo",
@@ -2471,6 +2647,18 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
+        if let Some(app) = &record.maintenance {
+            app.verify_target(&self.probe)?;
+            let state = self.store.read_maintenance(app)?;
+            if state == app.snapshot {
+                return Ok(Some(record.original.clone()));
+            }
+            if state == app.cleared() {
+                return Ok(None);
+            }
+            return Err("Maintenance data changed. Cleaning and restore are blocked; new history is never overwritten.".into());
+        }
+
         if let Some(app) = &record.conversion {
             let state = self.store.read_conversion(app)?;
             if state.guard != app.guard {
@@ -2616,6 +2804,23 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         expected: Option<StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if let Some(app) = &record.maintenance {
+            app.verify_target(&self.probe)?;
+            let cleared = app.cleared();
+            return self.store.compare_exchange_maintenance(
+                app,
+                if expected.is_some() {
+                    &app.snapshot
+                } else {
+                    &cleared
+                },
+                if replacement.is_some() {
+                    &app.snapshot
+                } else {
+                    &cleared
+                },
+            );
+        }
         if let Some(app) = &record.conversion {
             return self.store.compare_exchange_conversion(
                 app,
@@ -2783,7 +2988,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             self.read_record(&record)?;
             self.exchange_record(&record, None, Some(&record.original))?;
         } else {
-            if let Some(app) = &record.conversion {
+            if let Some(app) = &record.maintenance {
+                app.verify_target(&self.probe)?;
+            } else if let Some(app) = &record.conversion {
                 self.store.read_conversion(app)?;
             } else if let Some(app) = &record.redirection {
                 self.store.read_redirection(app)?;
@@ -2835,7 +3042,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
+            message: if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
                 if restore {"Original 64-bit COM mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
@@ -2905,7 +3112,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.conversion.is_some() {
+            let scope = if let Some(app) = &record.maintenance {
+                app.kind.scope()
+            } else if record.conversion.is_some() {
                 "com_conversion"
             } else if record.redirection.is_some() {
                 "com_redirection"
@@ -3202,6 +3411,8 @@ mod tests {
             interface_state: None,
             interface_repairable: false,
             conversion_state: None,
+            maintenance_state: None,
+            maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
             redirection_repairable: false,

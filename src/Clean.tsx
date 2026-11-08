@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckCheck, ShieldCheck, TriangleAlert, X, Zap } from 'lucide-react';
-import type { RegistryEntry } from './model';
+import type { Category, RegistryEntry } from './model';
 import { categories, viewLabel } from './model';
-import { canQuarantine, type ChangePlan } from './Changes';
+import { canQuarantine, isQuickCleanCandidate, type ChangePlan } from './Changes';
 
 export interface CleanPlan {
   token: string;
@@ -27,15 +27,27 @@ export function CleanPanel({
   entries: RegistryEntry[];
   complete: boolean;
   busy: boolean;
-  onReview: (mode: 'quick' | 'selected', ids: string[]) => void;
+  onReview: (mode: 'quick' | 'selected', ids: string[], category?: Category) => void;
   onScan: () => void;
 }) {
-  const candidates = entries.filter(canQuarantine);
+  const [includeHistory, setIncludeHistory] = useState(false);
+  const [category, setCategory] = useState('all');
+  const allCandidates = entries.filter(canQuarantine);
+  const quickCandidates = entries.filter(
+    (entry) => isQuickCleanCandidate(entry) && (category === 'all' || entry.category === category),
+  );
+  const candidates = allCandidates.filter(
+    (entry) => includeHistory || entry.category !== 'usage_history',
+  );
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const available = candidates.filter(
     (entry) =>
-      !query || `${entry.name} ${entry.keyPath}`.toLowerCase().includes(query.toLowerCase()),
+      (category === 'all' || entry.category === category) &&
+      (!query ||
+        `${entry.name} ${entry.keyPath} ${entry.valueName} ${entry.rawValue}`
+          .toLowerCase()
+          .includes(query.toLowerCase())),
   );
   const selectedIds = selected.filter((id) => candidates.some((entry) => entry.id === id));
   return (
@@ -56,13 +68,24 @@ export function CleanPanel({
           <Zap size={25} />
           <h2>Quick Clean</h2>
           <p>
-            Review up to 100 eligible entries from your latest scan. Unverified entries are
+            Review up to 100 eligible repair/cache entries in the selected cleaning category from
+            your latest scan. Optional personal history is always excluded. Unverified entries are
             excluded. Service repairs require existing Windows configuration access.
+          </p>
+          <p className="clean-footnote" aria-label="Quick Clean scope">
+            {category === 'all'
+              ? 'All cleaning categories'
+              : categories[category as Category].label}
+            {' · '}
+            {quickCandidates.length} eligible entries. The list search below applies to manual
+            selection.
           </p>
           <button
             className="primary-button"
-            disabled={busy || !complete || !candidates.length}
-            onClick={() => onReview('quick', [])}
+            disabled={busy || !complete || !quickCandidates.length}
+            onClick={() =>
+              onReview('quick', [], category === 'all' ? undefined : (category as Category))
+            }
           >
             <Zap size={16} />
             Review Quick Clean
@@ -116,9 +139,33 @@ export function CleanPanel({
               {selectedIds.length ? 'Clear selection' : 'Select visible (up to 100)'}
             </button>
           </div>
-          {candidates.length ? (
+          {allCandidates.length ? (
             <>
+              <label className="confirmation-check">
+                <input
+                  type="checkbox"
+                  checked={includeHistory}
+                  onChange={(event) => setIncludeHistory(event.target.checked)}
+                />
+                <span>Include optional registry history in manual selection</span>
+              </label>
+              <p className="clean-footnote">
+                History is a personal maintenance choice, not a registry fault. Quick Clean always
+                excludes it. Its backup retains the original history.
+              </p>
               <div className="table-toolbar">
+                <select
+                  aria-label="Cleaning category"
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                >
+                  <option value="all">All cleaning categories</option>
+                  {Object.entries(categories).map(([key, value]) => (
+                    <option key={key} value={key}>
+                      {value.label}
+                    </option>
+                  ))}
+                </select>
                 <input
                   className="clean-search"
                   aria-label="Search cleaning candidates"
@@ -243,39 +290,43 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'com_conversion'
-                  ? 'Disable missing-local-target COM conversion reference'
-                  : item.scope === 'com_redirection'
-                    ? 'Disable missing-local-target COM redirection'
-                    : item.scope === 'shell_menu'
-                      ? 'Hide missing-target context-menu entry'
-                      : item.scope === 'application_icon'
-                        ? 'Remove missing application icon reference'
-                        : item.scope === 'com_proxy'
-                          ? 'Disable orphaned COM proxy reference'
-                          : item.scope === 'interface'
-                            ? 'Disable orphaned interface TypeLib reference'
-                            : item.scope === 'prog_id'
-                              ? 'Disable orphaned COM ProgID mapping'
-                              : item.scope === 'type_library'
-                                ? 'Disable missing type library mapping · win64'
-                                : item.scope === 'registered_app'
-                                  ? 'Remove orphaned application registration'
-                                  : item.scope === 'shared_dll'
-                                    ? 'Remove missing zero-count DLL reference · 64 bit'
-                                    : item.scope === 'application'
-                                      ? 'Hide broken application suggestion · NoOpenWith'
-                                      : item.scope === 'service'
-                                        ? 'Disable stopped service · Manual → Disabled'
-                                        : item.scope === 'uninstall'
-                                          ? 'Hide orphaned listing · SystemComponent → 1'
-                                          : item.scope === 'association'
-                                            ? 'Remove Open with suggestion'
-                                            : item.scope === 'com'
-                                              ? 'Disable COM mapping'
-                                              : item.scope === 'app_path'
-                                                ? 'Remove broken application path'
-                                                : 'Disable startup value'}
+                {item.scope === 'mui_cache'
+                  ? 'Clear stale application display cache'
+                  : ['run_history', 'typed_paths'].includes(item.scope)
+                    ? 'Clear explicitly selected optional registry history'
+                    : item.scope === 'com_conversion'
+                      ? 'Disable missing-local-target COM conversion reference'
+                      : item.scope === 'com_redirection'
+                        ? 'Disable missing-local-target COM redirection'
+                        : item.scope === 'shell_menu'
+                          ? 'Hide missing-target context-menu entry'
+                          : item.scope === 'application_icon'
+                            ? 'Remove missing application icon reference'
+                            : item.scope === 'com_proxy'
+                              ? 'Disable orphaned COM proxy reference'
+                              : item.scope === 'interface'
+                                ? 'Disable orphaned interface TypeLib reference'
+                                : item.scope === 'prog_id'
+                                  ? 'Disable orphaned COM ProgID mapping'
+                                  : item.scope === 'type_library'
+                                    ? 'Disable missing type library mapping · win64'
+                                    : item.scope === 'registered_app'
+                                      ? 'Remove orphaned application registration'
+                                      : item.scope === 'shared_dll'
+                                        ? 'Remove missing zero-count DLL reference · 64 bit'
+                                        : item.scope === 'application'
+                                          ? 'Hide broken application suggestion · NoOpenWith'
+                                          : item.scope === 'service'
+                                            ? 'Disable stopped service · Manual → Disabled'
+                                            : item.scope === 'uninstall'
+                                              ? 'Hide orphaned listing · SystemComponent → 1'
+                                              : item.scope === 'association'
+                                                ? 'Remove Open with suggestion'
+                                                : item.scope === 'com'
+                                                  ? 'Disable COM mapping'
+                                                  : item.scope === 'app_path'
+                                                    ? 'Remove broken application path'
+                                                    : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -418,6 +469,25 @@ export function CleanConfirmation({
           application selections, and files are preserved. New classes, machine counterparts, or
           changed metadata block repair and restore.
         </p>
+      )}
+      {plan.items.some((item) => ['run_history', 'typed_paths'].includes(item.scope)) && (
+        <div className="notice info-notice">
+          <ShieldCheck size={18} />
+          <p>
+            Optional history is included by your explicit selection. Its backup retains the original
+            entries. Other history stores and files remain unchanged; new history blocks restore.
+          </p>
+        </div>
+      )}
+      {plan.items.some((item) => item.scope === 'mui_cache') && (
+        <div className="notice info-notice">
+          <ShieldCheck size={18} />
+          <p>
+            Only recognized display-cache fields for missing executable files are removed. Other
+            applications, default handlers, keys, permissions and files remain intact. Windows may
+            recreate cache entries later.
+          </p>
+        </div>
       )}
       <label className="confirmation-check">
         <input

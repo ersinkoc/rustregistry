@@ -29,6 +29,18 @@ pub(super) struct PendingBatch {
 }
 
 pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
+    if matches!(entry.category, Category::MuiCache | Category::UsageHistory) {
+        return entry.hive == "HKCU"
+            && entry.view == "shared"
+            && entry.maintenance_repairable
+            && entry.maintenance_state.is_some()
+            && entry.assessment.status
+                == if entry.category == Category::UsageHistory {
+                    EntryStatus::Found
+                } else {
+                    EntryStatus::Review
+                };
+    }
     if entry.category == Category::SharedDlls {
         return entry.hive == "HKLM"
             && entry.view == "64"
@@ -74,6 +86,10 @@ pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
     }
 }
 
+pub fn is_quick_clean_candidate(entry: &RegistryEntry) -> bool {
+    entry.category != Category::UsageHistory && is_repair_candidate(entry)
+}
+
 impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     pub fn prepare_clean(
         &mut self,
@@ -93,7 +109,34 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         let mut guarded_locations = std::collections::HashSet::new();
         let mut records = Vec::new();
         let mut skipped = Vec::new();
+        // Preparation is a read-only point-in-time review. Read the shared cache
+        // once for all requested groups; applying every record still uses fresh
+        // file checks, fresh live values and its own conditional transaction.
+        let cache_apps: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.category == Category::MuiCache)
+            .filter_map(|entry| entry.maintenance_state.as_ref())
+            .filter(|app| app.kind == crate::maintenance::MaintenanceKind::MuiCache)
+            .cloned()
+            .collect();
+        let cache_states = if cache_apps.is_empty() {
+            vec![]
+        } else {
+            self.store.read_maintenance_batch(&cache_apps)
+        };
+        if cache_states.len() != cache_apps.len() {
+            return Err("The store returned an incomplete cache review snapshot.".into());
+        }
+        let prepared_cache: std::collections::HashMap<_, _> = cache_apps
+            .iter()
+            .zip(cache_states)
+            .map(|(app, state)| (app.item.to_ascii_lowercase(), state))
+            .collect();
         for entry in entries {
+            if mode == "quick" && entry.category == Category::UsageHistory {
+                skipped.push(CleanSkipped{name:entry.name.clone(),reason:"Optional history requires an explicit selected or individual review; Quick Clean excludes it.".into()});
+                continue;
+            }
             if !ids.insert(entry.id.clone()) {
                 self.cancel();
                 return Err("Duplicate entries are not allowed in one cleaning review.".into());
@@ -113,7 +156,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 },
                 if matches!(
                     entry.category,
-                    Category::SharedDlls | Category::RegisteredApplications
+                    Category::SharedDlls | Category::RegisteredApplications | Category::MuiCache
                 ) {
                     entry.value_name.to_ascii_lowercase()
                 } else {
@@ -124,7 +167,20 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 skipped.push(CleanSkipped {name: entry.name.clone(), reason: "Another change to this guarded registration is already included. Scan again after cleaning to review the remaining value.".into()});
                 continue;
             }
-            match self.prepare_quarantine(entry) {
+            let prepared = if entry.category == Category::MuiCache {
+                match entry
+                    .maintenance_state
+                    .as_ref()
+                    .and_then(|app| prepared_cache.get(&app.item.to_ascii_lowercase()))
+                {
+                    Some(Ok(state)) => self.prepare_maintenance(entry, Some(state)),
+                    Some(Err(reason)) => Err(reason.clone()),
+                    None => self.prepare_quarantine(entry),
+                }
+            } else {
+                self.prepare_quarantine(entry)
+            };
+            match prepared {
                 Ok(plan) => {
                     let pending = self
                         .pending

@@ -6,6 +6,9 @@ mod icons;
 pub(crate) use icons::open_icon_child;
 #[path = "windows_conversions.rs"]
 mod conversions;
+#[path = "windows_maintenance.rs"]
+mod maintenance;
+pub(crate) use maintenance::{open_maintenance_source, read_maintenance_snapshot};
 #[path = "windows_interfaces.rs"]
 mod interfaces;
 #[path = "windows_proxies.rs"]
@@ -41,6 +44,8 @@ pub(crate) use type_libraries::open_type_lib;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
 pub struct WindowsRegistryStore {
+    #[cfg(test)]
+    maintenance_test_root: Option<String>,
     path: String,
     app_paths_path: String,
     uninstall_path: String,
@@ -83,6 +88,8 @@ pub struct WindowsRegistryStore {
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
         Self {
+            #[cfg(test)]
+            maintenance_test_root: None,
             path: STARTUP_KEY.into(),
             app_paths_path: APP_PATHS_KEY.into(),
             uninstall_path: UNINSTALL_KEY.into(),
@@ -222,6 +229,33 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_maintenance_batch(
+        &self,
+        apps: &[crate::maintenance::MaintenanceBackup],
+    ) -> Vec<Result<crate::maintenance::MaintenanceSnapshot, String>> {
+        self.maintenance_batch(apps)
+    }
+    fn read_maintenance(
+        &self,
+        app: &crate::maintenance::MaintenanceBackup,
+    ) -> Result<crate::maintenance::MaintenanceSnapshot, String> {
+        self.maintenance_state(app)
+    }
+    fn check_maintenance_write_access(
+        &self,
+        app: &crate::maintenance::MaintenanceBackup,
+    ) -> Result<(), String> {
+        self.maintenance_access(app)
+    }
+    fn compare_exchange_maintenance(
+        &self,
+        app: &crate::maintenance::MaintenanceBackup,
+        expected: &crate::maintenance::MaintenanceSnapshot,
+        replacement: &crate::maintenance::MaintenanceSnapshot,
+    ) -> Result<(), String> {
+        self.exchange_maintenance(app, expected, replacement)
+    }
+
     fn read_conversion(
         &self,
         app: &crate::com_conversions::ConversionBackup,
@@ -806,6 +840,8 @@ mod tests {
             interface_state: None,
             interface_repairable: false,
             conversion_state: None,
+            maintenance_state: None,
+            maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
             redirection_repairable: false,
@@ -937,6 +973,8 @@ mod tests {
             interface_state: None,
             interface_repairable: false,
             conversion_state: None,
+            maintenance_state: None,
+            maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
             redirection_repairable: false,
@@ -1119,6 +1157,8 @@ mod tests {
                 interface_state: None,
                 interface_repairable: false,
                 conversion_state: None,
+                maintenance_state: None,
+                maintenance_repairable: false,
                 conversion_repairable: false,
                 redirection_state: None,
                 redirection_repairable: false,

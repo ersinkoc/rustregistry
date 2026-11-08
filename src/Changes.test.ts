@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canQuarantine } from './Changes';
+import { canQuarantine, isQuickCleanCandidate } from './Changes';
 import type { RegistryEntry } from './model';
 
 const entry: RegistryEntry = {
@@ -22,6 +22,38 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers stale MUI cache cleanup and optional history through separate native evidence', () => {
+    const cache = {
+      ...entry,
+      category: 'mui_cache',
+      maintenanceRepairable: true,
+      keyPath: 'Software\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\Shell\\MuiCache',
+      valueName: 'C:\\Missing\\app.exe',
+      assessment: { ...entry.assessment, code: 'cache_target_missing' },
+    } as unknown as RegistryEntry;
+    expect(canQuarantine(cache)).toBe(true);
+    for (const changed of [
+      { ...cache, hive: 'HKLM' },
+      { ...cache, view: '32' },
+      { ...cache, maintenanceRepairable: false },
+      { ...cache, keyPath: `${cache.keyPath}\\Other` },
+      { ...cache, assessment: { ...cache.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+    const history = {
+      ...cache,
+      category: 'usage_history',
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\RunMRU',
+      valueName: 'RunMRU',
+      assessment: { ...entry.assessment, status: 'found', code: 'optional_history' },
+    } as unknown as RegistryEntry;
+    expect(canQuarantine(history)).toBe(true);
+    expect(isQuickCleanCandidate(history)).toBe(false);
+    expect(isQuickCleanCandidate(cache)).toBe(true);
+    expect(
+      canQuarantine({ ...history, keyPath: history.keyPath.replace('RunMRU', 'RecentDocs') }),
+    ).toBe(false);
+  });
   it('offers individual AutoConvertTo recovery only for guarded native current-user references', () => {
     const conversion = {
       ...entry,

@@ -2129,3 +2129,13 @@ tr:hover td {
   color: var(--muted);
   font-size: 11px;
 }
+
+.maintenance-queue {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.maintenance-queue .clean-mode > strong {
+  font-size: 1.8rem;
+}

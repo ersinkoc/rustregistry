@@ -1,4 +1,6 @@
 export type Category =
+  | 'mui_cache'
+  | 'usage_history'
   | 'startup'
   | 'app_paths'
   | 'application_commands'
@@ -47,6 +49,7 @@ export interface RegistryEntry {
   menuHidden?: boolean;
   redirectionRepairable?: boolean;
   conversionRepairable?: boolean;
+  maintenanceRepairable?: boolean;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -87,6 +90,16 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  mui_cache: {
+    label: 'Application display cache',
+    description: 'Missing-executable MUI cache diagnostics and reversible cleanup',
+    short: 'MUI cache',
+  },
+  usage_history: {
+    label: 'Optional registry history',
+    description: 'Explicitly selected Run dialog and Explorer typed-path history maintenance',
+    short: 'Optional history',
+  },
   com_conversions: {
     label: 'COM conversion references',
     description: 'AutoConvertTo target checks and protected reference recovery',

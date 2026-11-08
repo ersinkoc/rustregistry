@@ -27,6 +27,9 @@ const scopeLabels: Record<string, string> = {
   application_icon: 'Application icon reference',
   shell_menu: 'Context-menu visibility',
   com_redirection: 'COM class redirection',
+  mui_cache: 'Application display cache',
+  run_history: 'Run dialog registry history',
+  typed_paths: 'Explorer typed-path registry history',
   com_conversion: 'COM conversion reference',
 };
 export function backupScopeLabel(scope: string, view?: string): string {

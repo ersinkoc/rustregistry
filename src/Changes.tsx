@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import type { RegistryEntry } from './model';
+import { MaintenanceConfirmation } from './Maintenance';
 import { backupScopeLabel, filterBackups, type BackupStateFilter } from './backups';
 
 export interface ChangePlan {
@@ -41,7 +42,10 @@ export interface ChangePlan {
     | 'application_icon'
     | 'shell_menu'
     | 'com_redirection'
-    | 'com_conversion';
+    | 'com_conversion'
+    | 'mui_cache'
+    | 'run_history'
+    | 'typed_paths';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -77,7 +81,10 @@ interface Backup {
     | 'application_icon'
     | 'shell_menu'
     | 'com_redirection'
-    | 'com_conversion';
+    | 'com_conversion'
+    | 'mui_cache'
+    | 'run_history'
+    | 'typed_paths';
   registryPath: string;
   registryView?: string;
 }
@@ -87,7 +94,29 @@ interface Inventory {
   warnings: string[];
 }
 
+export function isQuickCleanCandidate(entry: RegistryEntry) {
+  return entry.category !== 'usage_history' && canQuarantine(entry);
+}
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'mui_cache' || entry.category === 'usage_history') {
+    if (entry.hive !== 'HKCU' || entry.view !== 'shared' || entry.maintenanceRepairable !== true)
+      return false;
+    if (entry.category === 'mui_cache')
+      return (
+        entry.assessment.status === 'review' &&
+        entry.assessment.code === 'cache_target_missing' &&
+        entry.keyPath.toLowerCase() ===
+          'software\\classes\\local settings\\software\\microsoft\\windows\\shell\\muicache' &&
+        /^[a-z]:\\.+\.exe$/i.test(entry.valueName)
+      );
+    return (
+      entry.assessment.status === 'found' &&
+      entry.assessment.code === 'optional_history' &&
+      ['RunMRU', 'TypedPaths'].includes(entry.valueName) &&
+      entry.keyPath === `Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\${entry.valueName}`
+    );
+  }
+
   if (entry.category === 'com_conversions')
     return (
       entry.hive === 'HKCU' &&
@@ -312,7 +341,19 @@ export function canQuarantine(entry: RegistryEntry) {
   );
 }
 
-export function ChangeConfirmation({
+export function ChangeConfirmation(props: {
+  plan: ChangePlan;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return ['mui_cache', 'run_history', 'typed_paths'].includes(props.plan.scope) ? (
+    <MaintenanceConfirmation {...props} />
+  ) : (
+    <ExistingChangeConfirmation {...props} />
+  );
+}
+function ExistingChangeConfirmation({
   plan,
   busy,
   onCancel,

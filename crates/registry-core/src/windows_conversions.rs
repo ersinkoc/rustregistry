@@ -268,6 +268,25 @@ mod tests {
         }
     }
     #[test]
+    fn restores_frozen_schema19_conversion_backup_without_migration_or_document_operations() {
+        let f = Fixture::new();
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = include_bytes!("../tests/fixtures/conversion-backup-v19.json");
+        let record: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        let id = record["id"].as_str().unwrap();
+        let owner = record["conversion"]["owner"].as_str().unwrap();
+        let original: StoredValue = serde_json::from_value(record["original"].clone()).unwrap();
+        let leaf = f.create(&format!(r"User\CLSID\{owner}\AutoConvertTo"));
+        let file = dir.path().join(format!("{id}.json"));
+        std::fs::write(&file, bytes).unwrap();
+        let mut m = ChangeManager::new(f.store(), dir.path().to_path_buf(), NoProbe);
+        let p = m.prepare_restore(id).unwrap();
+        assert_eq!(p.scope, "com_conversion");
+        m.apply(&p.token).unwrap();
+        assert_eq!(read_value(&leaf, "").unwrap(), Some(original));
+        assert_eq!(std::fs::read(file).unwrap(), bytes);
+    }
+    #[test]
     fn conversion_single_quick_and_selected_changes_keep_individual_backups_and_restore_exact_bytes_after_restart(
     ) {
         for mode in ["single", "quick", "selected"] {

@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
+    MuiCache,
+    UsageHistory,
     Startup,
     AppPaths,
     ApplicationCommands,
@@ -102,6 +104,10 @@ pub struct RegistryEntry {
     pub conversion_state: Option<crate::com_conversions::ConversionState>,
     #[serde(default)]
     pub conversion_repairable: bool,
+    #[serde(skip)]
+    pub maintenance_state: Option<crate::maintenance::MaintenanceBackup>,
+    #[serde(default)]
+    pub maintenance_repairable: bool,
     #[serde(skip)]
     pub icon_state: Option<crate::application_icons::IconState>,
     #[serde(default)]

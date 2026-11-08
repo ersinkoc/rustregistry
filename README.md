@@ -1,6 +1,6 @@
 # RustRegistry
 
-A Windows registry health explorer with read-only scanning and separately reviewed, reversible application suggestion, startup, application path, orphaned uninstall-listing, Open with suggestion, guarded COM DLL/handler/local-server mapping, supported service startup changes, missing zero-count shared DLL reference recovery, orphaned application registration recovery, guarded type library mapping recovery, orphaned COM ProgID reference recovery, orphaned COM interface TypeLib reference recovery, orphaned COM proxy reference recovery, guarded application icon reference recovery, guarded custom context-menu visibility recovery, guarded COM class redirection recovery, and guarded COM conversion-reference recovery. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
+A Windows Registry Doctor for diagnosing broken references, reviewing supported repairs, and clearing selected cache/history data with verified backups and exact-value restoration. Scanning is read-only; each supported change requires a separate review. Built with Rust, Tauri 2, React, and TypeScript. English is the primary application language.
 
 Open source under the [MIT license](LICENSE). See the [changelog](CHANGELOG.md) and [GitHub releases](https://github.com/ersinkoc/rustregistry/releases) for version history and Windows downloads.
 
@@ -26,21 +26,62 @@ The executable requires WebView2 on the target computer. This release does not c
 
 ## What it reads
 
-The scanner has a fixed scope of 55 logical registry scan sections:
+The scanner covers **58 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
 
-| Category          | Location under `Software\Microsoft\Windows\CurrentVersion` | Check                                    |
-| ----------------- | ---------------------------------------------------------- | ---------------------------------------- |
-| Startup entries   | `Run`, `RunOnce`                                           | Clearly resolved local executable target |
-| Application paths | `App Paths`                                                | Default executable path                  |
-| Uninstall records | `Uninstall`                                                | `InstallLocation` folder, when provided  |
+| Category                                           | Registry area                                                         | Sections |
+| -------------------------------------------------- | --------------------------------------------------------------------- | -------: |
+| Startup                                            | CurrentVersion Run / RunOnce                                          |        6 |
+| Application paths / uninstall listings             | CurrentVersion App Paths / Uninstall                                  |        6 |
+| Open with suggestions                              | Classes extension OpenWithProgids                                     |        2 |
+| COM DLL, handler and local-server mappings         | Classes CLSID server children                                         |        4 |
+| Application open commands / icons                  | Classes Applications                                                  |        4 |
+| Static context menus                               | File, folder, filesystem and directory-background verbs               |        8 |
+| Services and shared DLL references                 | SYSTEM Services / CurrentVersion SharedDLLs                           |        3 |
+| Registered applications / type libraries / ProgIDs | RegisteredApplications / Classes TypeLib / ProgID CLSID               |        6 |
+| COM interface TypeLib / proxy references           | Classes Interface                                                     |        8 |
+| COM TreatAs / AutoConvertTo references             | Classes CLSID redirection children                                    |        8 |
+| Application display cache                          | HKCU Classes Local Settings Software Microsoft Windows Shell MuiCache |        1 |
+| Optional personal registry history                 | HKCU CurrentVersion Explorer RunMRU / TypedPaths                      |        2 |
 
-The four locations above are each read once under HKCU (shared view) and twice under HKLM (32-bit and 64-bit views), giving 12 scopes. Two additional scopes read `Software\Classes\.extension\OpenWithProgids` under HKCU and HKLM once each: these extension/ProgID keys are shared on supported Windows. See [Microsoft’s registry view table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Four more scopes inventory `Software\Classes\CLSID\{GUID}\InprocServer32` under HKCU and HKLM in separate 32-bit and 64-bit views. COM inventory also includes LocalServer32 and InprocHandler32 mappings. Two more scopes inventory registered application open commands under shared HKCU/HKLM `Software\Classes\Applications` roots. Three more scopes cover shared-system Services ImagePath values and 32/64-bit SharedDLLs reference counts. Shared-file registrations were initially read-only; 0.1.9 adds the guarded zero-count recovery described below. Service repair in 0.1.6 is limited to the guarded policy described below. COM and shared-file target probing is limited to 64-bit mappings; 32-bit targets remain unverified because their filesystem/environment resolution requires a 32-bit context. Uninstall records also show their reported display name, publisher, and version when available. Two additional shared HKCU/HKLM RegisteredApplications scopes check supported Capabilities registry references, bringing the total to 25 locations. Two more shared HKCU/HKLM TypeLib scopes inventory version/locale/platform library mappings, bringing that coverage to 27 locations. Two more logical HKCU/HKLM ProgID scan sections share the Classes roots with association inventory but inspect different children; coverage in 0.1.12 is 29 logical sections. Four redirected Interface TypeLib scopes bring 0.1.13 coverage to 33 sections. Four proxy reference sections bring 0.1.14 coverage to 37. Two application icon sections bring 0.1.15 coverage to 39. Four static context-menu sections bring 0.1.16 coverage to 43. Four TreatAs redirection sections bring 0.1.17 coverage to 47. Four filesystem/folder menu sections bring 0.1.18 coverage to 51. Four AutoConvertTo sections bring current coverage to 55; logical checks can share physical root paths.
+HKCU shared locations are read once. Applicable machine locations and redirected COM registrations use the 32/64-bit views described in [Microsoft's registry architecture table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Shared keys are not counted twice merely because both architecture flags can read them. File probing for redirected COM and SharedDLLs remains limited to native 64-bit mappings. Existing class or library keys prove registration presence, not working activation. Uninstall display metadata is shown when available.
 
-- **Found:** the expected local file, directory, or suggested file-type registration existed at scan time.
+- **Found:** the expected target/registration existed, or a valid optional history snapshot was inventoried. Optional history is not a registry error.
 - **Review:** an unambiguously resolved local target was not found. A disconnected drive or uninstalled application may explain this; this is not a recommendation to delete the record.
 - **Unverified:** the target is absent, ambiguous, inaccessible, unsupported, or could not be resolved reliably.
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
+
+## Registry Doctor maintenance in 0.1.20
+
+The overview now separates **Ready for review**, **Optional personal history**, and **Needs investigation**. A missing or unverified reference is evidence to inspect, not a blanket deletion recommendation. Open the reason behind a result, then review the exact supported action. The Clean screen has category and text filters; Quick Clean uses the selected category, while manual selection lets you choose exact entries.
+
+### Stale application display cache
+
+Inventory `HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\MuiCache` in one bounded grouping pass. Recognized `.FriendlyAppName` and `.ApplicationCompany` values are grouped by literal executable identity. This cache stores display metadata; it is distinct from application settings, installations and default handlers. See [NirSoft's first-hand description of the cache](https://www.nirsoft.net/utils/muicache_view.html). Windows may recreate these values when applications run again.
+
+For a confirmed missing local `.exe` outside Windows, **Review cache cleanup** previews both covered fields (or the single field present). **Back up & clear cache** flushes and verifies a separate backup before a conditional transaction removes only those values. Individual, selected and category-scoped Quick Clean use the same policy. Cleanup currently requires bounded ASCII executable paths; display labels retain their Unicode text and exact bytes. Other cached applications, registry keys, permissions, files and default registrations remain intact. Existing files, unsupported value types, unknown fields for that executable, relative/network/ambiguous paths, links and oversized snapshots are excluded.
+
+Restore exact original REG_SZ bytes through **Backups & restore** after an app restart. The existing cache key and covered fields must still match the cleared snapshot, and the executable must remain confirmed missing. New display fields, replacement values, changed structure, reappearing targets or missing keys block restoration. Other cache groups can continue to grow independently.
+
+Batch review preparation reads the cache once for up to 100 requested groups. This snapshot is used only to prepare the review: applying and restoring every entry still use fresh file/value checks and a conditional registry transaction. A native regression covers 8,500 cache values and 100 candidates without relying on timing thresholds.
+
+### Optional registry history
+
+Run dialog `RunMRU` and Explorer `TypedPaths` are **optional maintenance**, not broken registry entries. Their presence never produces a Review finding. They are always excluded from Quick Clean, including through native IPC. Use an individual **Review history cleanup** or explicitly enable **Include optional registry history in manual selection** before selecting a store. The review shows the actual values and explains that the backup retains their original contents.
+
+Supported RunMRU snapshots contain letter-named REG_SZ commands and a complete, unique matching `MRUList`; supported TypedPaths snapshots contain only `url1`–`url25` REG_SZ entries. Only flat existing keys, bounded snapshots (16 KiB, at most 27 covered values), and an optional empty default value are accepted. Unknown metadata, incomplete ordering, unsupported types and unreadable evidence remain read-only. Commands are never executed, and stored paths—including network paths—are never probed.
+
+**Back up & clear history** saves a verified snapshot and atomically clears its covered values, preserving the default value and key permissions. Restore puts back exact types/bytes and ordering only when the entire cleared snapshot still matches. New history written by Windows, changed defaults, added fields or child keys, missing keys and damaged backups block the action. No key is recreated. This covers only these registry stores: it does not clear files, browser history, other Windows history databases or Explorer's cached suggestions, and is not secure erasure.
+
+New maintenance records use disjoint schema 20 alongside unchanged formats 1–19. Private backups may contain commands, paths and personal history. No backup import or arbitrary registry editing is supported.
+
+### Verification and research
+
+`cargo test -p registry-core maintenance` exercises isolated owned keys for policy, inventory, read-only review, individual/selected changes, native Quick Clean history exclusion, exact restart/restore, file/data conflicts and corruption. The normal Rust suite also restores a fixed schema 19 conversion backup without migration.
+
+`node scripts/desktop-smoke.mjs --maintenance-only` runs the packaged app against owned MUI values. It independently compares raw bytes in both views, permissions, controls and every pre-existing unrelated cache value, and preserves concurrently appended unrelated values during cleanup. It checks category-scoped Quick Clean cancellation, individual/selected cleanup, restart/restore and real inert executable conflicts. It only inspects, reviews and cancels live personal-history actions; history mutation/restore is tested on isolated native registry roots. The complete Windows suite includes this flow.
+
+See [Registry Doctor scope and next milestones](docs/registry-doctor.md) for the researched cleaning categories, current coverage, deliberate exclusions and planned next steps.
 
 ## Protected changes in 0.1.1
 

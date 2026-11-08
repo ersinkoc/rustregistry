@@ -197,6 +197,19 @@ fn sources() -> Vec<Source> {
             });
         }
     }
+    for (category, path) in [
+        (Category::MuiCache, crate::maintenance::MUI_CACHE_KEY),
+        (Category::UsageHistory, crate::maintenance::RUN_HISTORY_KEY),
+        (Category::UsageHistory, crate::maintenance::TYPED_PATHS_KEY),
+    ] {
+        result.push(Source {
+            category,
+            hive: "HKCU",
+            path,
+            flag: KEY_WOW64_64KEY,
+            view: "shared",
+        });
+    }
     result
 }
 
@@ -302,6 +315,8 @@ fn make_entry(
                         | Category::Interfaces
                         | Category::ComProxies
                         | Category::ComRedirections
+                        | Category::MuiCache
+                        | Category::UsageHistory
                         | Category::ComConversions
                         | Category::ApplicationIcons
                         | Category::ShellMenus
@@ -314,6 +329,8 @@ fn make_entry(
                             | Category::Interfaces
                             | Category::ComProxies
                             | Category::ComRedirections
+                            | Category::MuiCache
+                            | Category::UsageHistory
                             | Category::ComConversions
                             | Category::ApplicationIcons
                             | Category::ShellMenus
@@ -390,6 +407,8 @@ fn make_entry(
         interface_state: None,
         interface_repairable: false,
         conversion_state: None,
+        maintenance_state: None,
+        maintenance_repairable: false,
         conversion_repairable: false,
         redirection_state: None,
         redirection_repairable: false,
@@ -421,6 +440,8 @@ mod conversion_scan;
 mod icon_scan;
 #[path = "interface_scan.rs"]
 mod interface_scan;
+#[path = "maintenance_scan.rs"]
+mod maintenance_scan;
 #[path = "menu_scan.rs"]
 mod menu_scan;
 #[path = "prog_id_scan.rs"]
@@ -451,6 +472,36 @@ fn scan_source(
         entries: 0,
         notes: Vec::new(),
     };
+    if matches!(source.category, Category::MuiCache | Category::UsageHistory) {
+        let kind = if source.category == Category::MuiCache {
+            crate::maintenance::MaintenanceKind::MuiCache
+        } else if source.path == crate::maintenance::RUN_HISTORY_KEY {
+            crate::maintenance::MaintenanceKind::RunHistory
+        } else {
+            crate::maintenance::MaintenanceKind::TypedPaths
+        };
+        match crate::windows_changes::open_maintenance_source(kind, None, false) {
+            Ok(Some(root)) => {
+                let start = entries.len();
+                maintenance_scan::scan_maintenance(
+                    source,
+                    &root,
+                    cancel,
+                    environment,
+                    entries,
+                    &mut scope,
+                    probe,
+                );
+                scope.entries = entries.len() - start;
+            }
+            Ok(None) => scope.status = "missing".into(),
+            Err(reason) => {
+                scope.status = "error".into();
+                scope.notes.push(reason);
+            }
+        }
+        return scope;
+    }
     if source.category == Category::ShellMenus {
         let location =
             crate::shell_menus::MenuLocation::from_path(source.path).expect("fixed menu source");
@@ -495,6 +546,8 @@ fn scan_source(
                 | Category::Interfaces
                 | Category::ComProxies
                 | Category::ComRedirections
+                | Category::MuiCache
+                | Category::UsageHistory
                 | Category::ComConversions
                 | Category::ApplicationIcons
                 | Category::ShellMenus
@@ -526,6 +579,8 @@ fn scan_source(
             | Category::Interfaces
             | Category::ComProxies
             | Category::ComRedirections
+            | Category::MuiCache
+            | Category::UsageHistory
             | Category::ComConversions
             | Category::ApplicationIcons
             | Category::ShellMenus

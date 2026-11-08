@@ -91,6 +91,8 @@ pub(super) fn scan_shared_dlls(
             interface_state: None,
             interface_repairable: false,
             conversion_state: None,
+            maintenance_state: None,
+            maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
             redirection_repairable: false,

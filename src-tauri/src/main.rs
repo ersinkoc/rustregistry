@@ -2,11 +2,11 @@
 
 use registry_core::{
     changes::{
-        is_repair_candidate, BackupInventory, ChangeManager, ChangePlan, ChangeResult, CleanPlan,
-        CleanResult, MAX_CLEAN_ENTRIES,
+        is_quick_clean_candidate, BackupInventory, ChangeManager, ChangePlan, ChangeResult,
+        CleanPlan, CleanResult, MAX_CLEAN_ENTRIES,
     },
     windows_changes::WindowsRegistryStore,
-    LocalPathProbe, ScanProgress, ScanReport,
+    Category, LocalPathProbe, ScanProgress, ScanReport,
 };
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -174,6 +174,7 @@ async fn prepare_clean(
     changes: State<'_, Changes>,
     mode: String,
     entry_ids: Vec<String>,
+    category: Option<Category>,
 ) -> Result<CleanPlan, String> {
     let guard = acquire(&control)?;
     let entries = {
@@ -192,7 +193,9 @@ async fn prepare_clean(
             report
                 .entries
                 .iter()
-                .filter(|entry| is_repair_candidate(entry))
+                .filter(|entry| {
+                    is_quick_clean_candidate(entry) && category.is_none_or(|c| entry.category == c)
+                })
                 .take(MAX_CLEAN_ENTRIES)
                 .cloned()
                 .collect::<Vec<_>>()
