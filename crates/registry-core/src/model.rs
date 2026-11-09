@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Category {
+    ApplicationLeftovers,
     SoundEvents,
     Fonts,
     HelpFiles,
@@ -119,6 +120,12 @@ pub struct RegistryEntry {
     pub sound_state: Option<crate::sound_events::SoundBackup>,
     #[serde(default)]
     pub sound_repairable: bool,
+    #[serde(skip)]
+    pub leftover_state: Option<crate::app_leftovers::LeftoverBackup>,
+    #[serde(default)]
+    pub leftover_repairable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leftover_evidence: Option<crate::app_leftovers::LeftoverEvidence>,
     #[serde(skip)]
     pub icon_state: Option<crate::application_icons::IconState>,
     #[serde(default)]

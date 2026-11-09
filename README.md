@@ -26,7 +26,7 @@ The executable requires WebView2 on the target computer. This release does not c
 
 ## What it reads
 
-The scanner covers **66 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
+The scanner covers **67 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
 
 | Category                                           | Registry area                                                         | Sections |
 | -------------------------------------------------- | --------------------------------------------------------------------- | -------: |
@@ -45,6 +45,7 @@ The scanner covers **66 logical registry sections**, including independent 32/64
 | Persisted font registrations                       | Shared HKCU/HKLM Windows NT CurrentVersion Fonts                      |        2 |
 | Registered help files                              | HKLM Windows HTML Help / Help in separate 32/64-bit views             |        4 |
 | Sound-event file assignments                       | Shared HKCU/HKLM AppEvents Schemes Apps, including saved variants     |        2 |
+| Correlated application leftovers                   | Existing HKCU App Paths / Uninstall and exact-file display-cache data |        1 |
 
 HKCU shared locations are read once. Applicable machine locations and redirected COM registrations use the 32/64-bit views described in [Microsoft's registry architecture table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Shared keys are not counted twice merely because both architecture flags can read them. File probing for redirected COM and SharedDLLs remains limited to native 64-bit mappings. Existing class or library keys prove registration presence, not working activation. Uninstall display metadata is shown when available.
 
@@ -53,6 +54,22 @@ HKCU shared locations are read once. Applicable machine locations and redirected
 - **Unverified:** the target is absent, ambiguous, inaccessible, unsupported, or could not be resolved reliably.
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
+
+## Application leftovers in 0.1.23
+
+The **Application leftovers** workspace groups likely remnants using an exact installation directory shared by a current-user App Paths search-path value and a unique non-MSI Uninstall registration. The installation directory, named application executable and direct uninstaller must all be confirmed missing. Similar product/publisher names, a missing file alone or a shared directory are insufficient. The page shows the matching directory, application and uninstaller targets, registry owner and available actions. This is evidence suggesting a removed application, not proof that every setting is disposable.
+
+Supported existing executable-mapping, uninstall-visibility and exact-file MUI cache actions can be reviewed together from a group. Each successful action keeps its own backup and native guards. The new **Review search-path cleanup** action removes only a single literal REG_SZ `Path` value under the current-user App Paths entry, retaining its key and every other value. It is offered only after the default executable mapping is absent, no alternate activation metadata or other user application registration exists, and no matching machine application/uninstall counterpart is present in either architecture view. If an executable mapping remains, review its existing supported action first, then scan again to inspect the remaining search path.
+
+New search-path cleanup requires a bounded local ASCII directory outside Windows and direct literal uninstall executable targets inside that same directory. Multi-directory/expanded search paths, MSI/product-code owners, ambiguous/shared directories, existing targets, inaccessible evidence and uncertain ownership stay read-only. Expanded uninstall directories can disqualify ownership as duplicates; they never grant cleanup. Application settings, license data, other metadata, installer databases, default application selections, files, keys and permissions are preserved. The new action does not execute an application or uninstaller and does not claim a performance improvement.
+
+An immutable **schema 23** backup stores the exact original value name/type/bytes plus bounded application and uninstall evidence. It is flushed and read back with its checksum verified before a conditional transaction removes only the selected search-path value. Both apply and restore recheck missing targets, unique ownership and metadata. Restore requires the existing application key, an absent Path value and an absent executable mapping; it never overwrites a new value or recreates a key. Restore this search-path backup before an older executable-mapping backup. Supported uninstall visibility changes can be restored independently: a valid `SystemComponent` visibility flag is preserved but does not itself establish ownership or invalidate the search-path guard. Other anchor changes, new files/mappings, duplicate owners, missing keys and corrupt/scope-mismatched backups block changes. Formats 1–22 retain their original checksums/layouts.
+
+The groups use existing registry inventory; the new logical section is not an additional physical registry root. Microsoft's [application-registration model](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) describes executable and optional search-path values, including custom application metadata. The [Uninstall registry model](https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key) and [Windows Installer ARP rules](https://learn.microsoft.com/en-us/windows/win32/msi/configuring-add-remove-programs-with-windows-installer) explain why installer/product-code records and visibility must not be mistaken for disposable application settings.
+
+Backup discovery now reads shared display-cache state once for its bounded read-only list, avoiding repeated full-cache reads when hundreds of backups exist. The inventory remains limited to 1,000 directory entries; cleaning remains limited to 100 entries per review. Every actual review/apply/restore still checks fresh live data. Windows-managed root aliases are supported while per-application links remain protected.
+
+`cargo test -p registry-core leftover` covers exact correlation, protected types/owners, individual/selected/Quick Clean, restart/exact restore, reinstall/anchor/mapping/ownership/machine conflicts, backup failure/corruption and missing keys on isolated owned roots. `scripts/elevated-desktop-smoke.ps1 -Mode leftover-only -Token <new-guid>` exercises the packaged groups with GUID-owned application/uninstall controls and cache fields, independent raw/permission readers, mixed legacy/new backups and staged cleanup. Its conditional cleanup preserves all pre-existing registrations and unrelated cache values. The complete Windows suite includes the same flow.
 
 ## Sound-event diagnostics and repair in 0.1.22
 

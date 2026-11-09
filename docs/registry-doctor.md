@@ -1,6 +1,6 @@
 # Registry Doctor: scope and next milestones
 
-RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.22; future milestones below are plans, not implemented features.
+RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.23; future milestones below are plans, not implemented features.
 
 ## Research and current behavior
 
@@ -39,15 +39,25 @@ Microsoft's [theme format](https://learn.microsoft.com/en-us/windows/win32/contr
 
 Native tests use isolated roots for selected-scheme, saved metadata, machine-counterpart, current-value and real-file conflicts during apply/restore. The packaged fixture uses only a GUID-owned current-user sound application and inert controls, preserves the real selected scheme and unrelated applications, and checks original bytes and permissions independently. Owned registry-tree cleanup compares the snapshot inside a transaction before deletion.
 
+## Delivered in 0.1.23
+
+The Application leftovers workspace correlates an exact current-user installation directory across application search paths and one non-MSI uninstall owner. Missing installation/application/uninstaller targets are shown with their provenance and related supported actions. Names alone do not establish ownership, and missing targets do not prove every setting is disposable. One logical correlation section brings coverage to 67 while reusing existing roots.
+
+Supported group actions retain their existing per-item backups. The new action removes only an unused literal App Paths Path value after a verified schema 23 backup, with missing-target, ownership, metadata and counterpart guards before apply/restore. New mappings, reinstall directories, changed anchors, expanded duplicate owners, missing keys and corrupt backups block changes. Existing executable mappings must be reviewed first; after another scan, a remaining search path can be reviewed separately. Restore that newer search-path backup before an older executable-mapping backup. Supported uninstall visibility changes remain independently reversible. No key, application setting, license, installer database or file is removed by the new action.
+
+Microsoft's [application registration documentation](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) distinguishes executable lookup, optional search paths and custom metadata. [Uninstall registration](https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key) and [Windows Installer ARP behavior](https://learn.microsoft.com/en-us/windows/win32/msi/configuring-add-remove-programs-with-windows-installer) support retaining installer/product-code data and separating visibility from actual installation state. This release does not infer a vendor-wide deletion rule from these sources.
+
+Native tests use isolated roots. The packaged flow uses only owned controls, independently compares original bytes/settings/license markers/permissions, tests real reinstall and ownership conflicts, restores mixed schema 23/3/20 groups and staged schema 2/3/23 actions, and removes only its own fixtures through conditional transactions.
+
 ## Next concrete milestones
 
-| Area                            | Next implementation work                                                                              | Evidence required before enabling repair                                                                               |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Further font/help coverage      | Research packaged fonts, collections, Unicode/expanded paths and loader-specific relative resolution  | Verified lookup/fallback semantics, unchanged system/runtime resources and exact recovery before enabling more repairs |
-| Further sound coverage          | Research expanded/relative paths, aliases, saved scheme editing and application-specific fallback     | Verified resolution and consumer behavior, default protections and exact recovery before enabling further repairs      |
-| Installed-application leftovers | Correlate application paths, uninstall records, suggestions and cached labels into explainable groups | Multiple independent signals; absent files alone must not imply that settings, licenses or user data are disposable    |
-| Review controls                 | Per-category selections, explicit exclusions and remembered user decisions                            | Excluded IDs cannot enter native batches; changes in scan evidence must invalidate old decisions                       |
-| Recovery workflow               | Group successful batch backups into a visible operation journal                                       | Partial-failure reporting, per-item outcomes, exact conflict handling and independently tested restart recovery        |
-| Diagnostics                     | Show why a finding is repairable, protected, inaccessible or uncertain                                | Reason codes map to visible explanations and exports; no fake severity or inflated issue counts                        |
+| Area                          | Next implementation work                                                                             | Evidence required before enabling repair                                                                               |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Further font/help coverage    | Research packaged fonts, collections, Unicode/expanded paths and loader-specific relative resolution | Verified lookup/fallback semantics, unchanged system/runtime resources and exact recovery before enabling more repairs |
+| Further sound coverage        | Research expanded/relative paths, aliases, saved scheme editing and application-specific fallback    | Verified resolution and consumer behavior, default protections and exact recovery before enabling further repairs      |
+| Further application leftovers | Research additional owner identities, package/installer presence and supported leftover stores       | Strong ownership evidence, live reinstall conflicts and exact recovery; no vendor-wide deletion of settings/licenses   |
+| Review controls               | Per-category selections, explicit exclusions and remembered user decisions                           | Excluded IDs cannot enter native batches; changes in scan evidence must invalidate old decisions                       |
+| Recovery workflow             | Group successful batch backups into a visible operation journal                                      | Partial-failure reporting, per-item outcomes, exact conflict handling and independently tested restart recovery        |
+| Diagnostics                   | Show why a finding is repairable, protected, inaccessible or uncertain                               | Reason codes map to visible explanations and exports; no fake severity or inflated issue counts                        |
 
 Each new category must bring an understandable user action and a complete recovery test, not merely a larger scan total. Future machine-wide changes must use existing rights and their own documented guards. UserChoice, installer databases, drivers, security configuration, application licenses and arbitrary empty keys are not disposable merely because they look old.

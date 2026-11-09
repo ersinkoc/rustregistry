@@ -15,6 +15,7 @@ import type { RegistryEntry } from './model';
 import { MaintenanceConfirmation } from './Maintenance';
 import { FileReferenceConfirmation } from './FileReferences';
 import { SoundConfirmation } from './Sounds';
+import { LeftoverConfirmation } from './Leftovers';
 import { backupScopeLabel, filterBackups, type BackupStateFilter } from './backups';
 
 export interface ChangePlan {
@@ -26,6 +27,7 @@ export interface ChangePlan {
   registryView?: string;
   originalValue: string;
   resolvedFile?: string | null;
+  supportingEvidence?: [string, string][];
   valueType: string;
   expiresAt: number;
   scope:
@@ -51,7 +53,8 @@ export interface ChangePlan {
     | 'typed_paths'
     | 'font_reference'
     | 'help_reference'
-    | 'sound_event';
+    | 'sound_event'
+    | 'application_leftover';
   preservedValues: number;
   uninstallCommand?: string | null;
   componentWasPresent: boolean;
@@ -93,7 +96,8 @@ interface Backup {
     | 'typed_paths'
     | 'font_reference'
     | 'help_reference'
-    | 'sound_event';
+    | 'sound_event'
+    | 'application_leftover';
   registryPath: string;
   registryView?: string;
 }
@@ -107,6 +111,19 @@ export function isQuickCleanCandidate(entry: RegistryEntry) {
   return entry.category !== 'usage_history' && canQuarantine(entry);
 }
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.category === 'application_leftovers')
+    return (
+      entry.leftoverRepairable === true &&
+      entry.hive === 'HKCU' &&
+      entry.view === 'shared' &&
+      entry.valueType === 'REG_SZ' &&
+      entry.valueName.toLowerCase() === 'path' &&
+      /^Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\[^\\]+\.exe$/i.test(
+        entry.keyPath,
+      ) &&
+      entry.assessment.status === 'review' &&
+      entry.assessment.code === 'application_leftover_candidate'
+    );
   if (entry.category === 'sound_events')
     return (
       entry.soundRepairable === true &&
@@ -391,6 +408,7 @@ export function ChangeConfirmation(props: {
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  if (props.plan.scope === 'application_leftover') return <LeftoverConfirmation {...props} />;
   if (props.plan.scope === 'sound_event') return <SoundConfirmation {...props} />;
   if (['font_reference', 'help_reference'].includes(props.plan.scope))
     return <FileReferenceConfirmation {...props} />;

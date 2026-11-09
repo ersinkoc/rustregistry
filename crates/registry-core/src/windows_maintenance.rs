@@ -91,8 +91,9 @@ pub(crate) fn read_maintenance_snapshot(
 fn read_cache_batch(
     key: &RegKey,
     apps: &[MaintenanceBackup],
+    limit: usize,
 ) -> Result<Vec<Result<MaintenanceSnapshot, String>>, String> {
-    if apps.len() > 100 || key.enum_keys().next().is_some() {
+    if apps.len() > limit || key.enum_keys().next().is_some() {
         return Err("Nested, unreadable or oversized cache batches remain read-only.".into());
     }
     let mut indices = std::collections::HashMap::<String, Vec<usize>>::new();
@@ -167,7 +168,30 @@ impl WindowsRegistryStore {
         }
         match self
             .maintenance_root(MaintenanceKind::MuiCache, None, false)
-            .and_then(|root| read_cache_batch(&root, apps))
+            .and_then(|root| read_cache_batch(&root, apps, 100))
+        {
+            Ok(states) => states,
+            Err(reason) => apps.iter().map(|_| Err(reason.clone())).collect(),
+        }
+    }
+    pub(crate) fn maintenance_inventory(
+        &self,
+        apps: &[MaintenanceBackup],
+    ) -> Vec<Result<MaintenanceSnapshot, String>> {
+        if apps.is_empty() {
+            return vec![];
+        }
+        if apps.iter().any(|app| app.kind != MaintenanceKind::MuiCache) {
+            return apps
+                .iter()
+                .map(|_| {
+                    Err("Only display-cache records support the shared inventory snapshot.".into())
+                })
+                .collect();
+        }
+        match self
+            .maintenance_root(MaintenanceKind::MuiCache, None, false)
+            .and_then(|root| read_cache_batch(&root, apps, 1000))
         {
             Ok(states) => states,
             Err(reason) => apps.iter().map(|_| Err(reason.clone())).collect(),
@@ -456,6 +480,32 @@ mod tests {
             "Apply must read live evidence again rather than trusting the prepared batch snapshot"
         );
         assert!(!backups.exists());
+    }
+
+    #[test]
+    fn readonly_cache_inventory_accepts_615_backups_without_relaxing_mutation_batch_limits() {
+        let f = Fixture::new();
+        let one = f.cache(r"C:\RustRegistryMissing\inventory.exe");
+        let apps = vec![one.clone(); 615];
+        let states = f.store().read_maintenance_inventory(&apps);
+        assert_eq!(states.len(), 615);
+        for state in states {
+            assert_eq!(state.unwrap(), one.snapshot);
+        }
+        assert!(
+            f.store()
+                .read_maintenance_batch(&apps)
+                .into_iter()
+                .all(|state| state.is_err()),
+            "Cleaning review remains limited to 100 entries"
+        );
+        assert!(
+            f.store()
+                .read_maintenance_inventory(&vec![one; 1001])
+                .into_iter()
+                .all(|state| state.is_err()),
+            "Backup inventory remains bounded to 1000 entries"
+        );
     }
     #[test]
     fn cache_single_quick_and_selected_use_individual_verified_backups_and_restore_exact_bytes_after_restart(

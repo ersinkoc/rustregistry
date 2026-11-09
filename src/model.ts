@@ -1,4 +1,5 @@
 export type Category =
+  | 'application_leftovers'
   | 'sound_events'
   | 'fonts'
   | 'help_files'
@@ -55,6 +56,16 @@ export interface RegistryEntry {
   maintenanceRepairable?: boolean;
   fileReferenceRepairable?: boolean;
   soundRepairable?: boolean;
+  leftoverRepairable?: boolean;
+  leftoverEvidence?: {
+    applicationName: string;
+    directory: string;
+    executable: string;
+    uninstaller: string;
+    uninstallPath: string;
+    applicationPath: string;
+    relatedIds: string[];
+  } | null;
   publisher: string | null;
   version: string | null;
   assessment: {
@@ -95,6 +106,11 @@ export interface ScanProgress {
 }
 
 export const categories: Record<Category, { label: string; description: string; short: string }> = {
+  application_leftovers: {
+    label: 'Application leftovers',
+    description: 'Correlated missing-installation evidence and protected search-path cleanup',
+    short: 'App leftover',
+  },
   sound_events: {
     label: 'Sound events',
     description: 'Sound-file assignments and protected current-event repair',

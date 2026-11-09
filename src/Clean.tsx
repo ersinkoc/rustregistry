@@ -290,49 +290,51 @@ export function CleanConfirmation({
             <summary>
               <strong>{item.name}</strong>
               <span>
-                {item.scope === 'sound_event'
-                  ? 'Clear missing current sound assignment'
-                  : item.scope === 'font_reference'
-                    ? 'Remove supported missing font reference'
-                    : item.scope === 'help_reference'
-                      ? 'Remove missing help-file registration'
-                      : item.scope === 'mui_cache'
-                        ? 'Clear stale application display cache'
-                        : ['run_history', 'typed_paths'].includes(item.scope)
-                          ? 'Clear explicitly selected optional registry history'
-                          : item.scope === 'com_conversion'
-                            ? 'Disable missing-local-target COM conversion reference'
-                            : item.scope === 'com_redirection'
-                              ? 'Disable missing-local-target COM redirection'
-                              : item.scope === 'shell_menu'
-                                ? 'Hide missing-target context-menu entry'
-                                : item.scope === 'application_icon'
-                                  ? 'Remove missing application icon reference'
-                                  : item.scope === 'com_proxy'
-                                    ? 'Disable orphaned COM proxy reference'
-                                    : item.scope === 'interface'
-                                      ? 'Disable orphaned interface TypeLib reference'
-                                      : item.scope === 'prog_id'
-                                        ? 'Disable orphaned COM ProgID mapping'
-                                        : item.scope === 'type_library'
-                                          ? 'Disable missing type library mapping · win64'
-                                          : item.scope === 'registered_app'
-                                            ? 'Remove orphaned application registration'
-                                            : item.scope === 'shared_dll'
-                                              ? 'Remove missing zero-count DLL reference · 64 bit'
-                                              : item.scope === 'application'
-                                                ? 'Hide broken application suggestion · NoOpenWith'
-                                                : item.scope === 'service'
-                                                  ? 'Disable stopped service · Manual → Disabled'
-                                                  : item.scope === 'uninstall'
-                                                    ? 'Hide orphaned listing · SystemComponent → 1'
-                                                    : item.scope === 'association'
-                                                      ? 'Remove Open with suggestion'
-                                                      : item.scope === 'com'
-                                                        ? 'Disable COM mapping'
-                                                        : item.scope === 'app_path'
-                                                          ? 'Remove broken application path'
-                                                          : 'Disable startup value'}
+                {item.scope === 'application_leftover'
+                  ? 'Remove correlated unused application search path'
+                  : item.scope === 'sound_event'
+                    ? 'Clear missing current sound assignment'
+                    : item.scope === 'font_reference'
+                      ? 'Remove supported missing font reference'
+                      : item.scope === 'help_reference'
+                        ? 'Remove missing help-file registration'
+                        : item.scope === 'mui_cache'
+                          ? 'Clear stale application display cache'
+                          : ['run_history', 'typed_paths'].includes(item.scope)
+                            ? 'Clear explicitly selected optional registry history'
+                            : item.scope === 'com_conversion'
+                              ? 'Disable missing-local-target COM conversion reference'
+                              : item.scope === 'com_redirection'
+                                ? 'Disable missing-local-target COM redirection'
+                                : item.scope === 'shell_menu'
+                                  ? 'Hide missing-target context-menu entry'
+                                  : item.scope === 'application_icon'
+                                    ? 'Remove missing application icon reference'
+                                    : item.scope === 'com_proxy'
+                                      ? 'Disable orphaned COM proxy reference'
+                                      : item.scope === 'interface'
+                                        ? 'Disable orphaned interface TypeLib reference'
+                                        : item.scope === 'prog_id'
+                                          ? 'Disable orphaned COM ProgID mapping'
+                                          : item.scope === 'type_library'
+                                            ? 'Disable missing type library mapping · win64'
+                                            : item.scope === 'registered_app'
+                                              ? 'Remove orphaned application registration'
+                                              : item.scope === 'shared_dll'
+                                                ? 'Remove missing zero-count DLL reference · 64 bit'
+                                                : item.scope === 'application'
+                                                  ? 'Hide broken application suggestion · NoOpenWith'
+                                                  : item.scope === 'service'
+                                                    ? 'Disable stopped service · Manual → Disabled'
+                                                    : item.scope === 'uninstall'
+                                                      ? 'Hide orphaned listing · SystemComponent → 1'
+                                                      : item.scope === 'association'
+                                                        ? 'Remove Open with suggestion'
+                                                        : item.scope === 'com'
+                                                          ? 'Disable COM mapping'
+                                                          : item.scope === 'app_path'
+                                                            ? 'Remove broken application path'
+                                                            : 'Disable startup value'}
               </span>
             </summary>
             <dl className="detail-fields">
@@ -490,6 +492,15 @@ export function CleanConfirmation({
             entries. Other history stores and files remain unchanged; new history blocks restore.
           </p>
         </div>
+      )}
+      {plan.items.some((item) => item.scope === 'application_leftover') && (
+        <p className="change-intro">
+          Leftover search-path cleanup requires a unique matching non-MSI uninstall registration,
+          missing installation/application/uninstaller targets, no executable mapping and no machine
+          counterpart. Only the Path value is removed. Keys, application settings, licenses,
+          uninstall metadata, files and permissions remain intact. Restore this search-path backup
+          before an older executable-mapping backup; new mappings or evidence block restoration.
+        </p>
       )}
       {plan.items.some((item) => item.scope === 'sound_event') && (
         <p className="clean-footnote">

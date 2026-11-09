@@ -22,6 +22,28 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers correlated leftover search-path cleanup only for exact native user evidence', () => {
+    const leftover = {
+      ...entry,
+      category: 'application_leftovers',
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\old.exe',
+      valueName: 'Path',
+      rawValue: 'C:\\Removed App',
+      leftoverRepairable: true,
+      assessment: { ...entry.assessment, code: 'application_leftover_candidate' },
+    } as unknown as RegistryEntry;
+    expect(canQuarantine(leftover)).toBe(true);
+    for (const changed of [
+      { ...leftover, hive: 'HKLM' },
+      { ...leftover, view: '32' },
+      { ...leftover, valueName: '' },
+      { ...leftover, leftoverRepairable: false },
+      { ...leftover, valueType: 'REG_EXPAND_SZ' },
+      { ...leftover, keyPath: leftover.keyPath + '\\Child' },
+      { ...leftover, assessment: { ...leftover.assessment, status: 'found' as const } },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers missing current sound assignments only with native guarded evidence', () => {
     const sound = {
       ...entry,

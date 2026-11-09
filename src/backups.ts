@@ -11,6 +11,7 @@ export interface SearchableBackup {
 }
 
 const scopeLabels: Record<string, string> = {
+  application_leftover: 'Correlated application search path',
   sound_event: 'Current sound assignment',
   startup: 'Startup',
   app_path: 'Application path',

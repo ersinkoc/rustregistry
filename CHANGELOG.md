@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.23 — 2026-11-09
+
+- Add an Application leftovers workspace that groups exact missing-directory evidence across current-user application paths and a unique non-MSI uninstall registration, alongside missing application/uninstaller targets. Show related supported executable-mapping, uninstall-visibility and exact-file display-cache actions without treating product names as ownership proof.
+- Add reviewed per-value cleanup of an unused App Paths Path value when no executable mapping, alternate activation, machine counterpart or ambiguous owner remains. Add one logical correlation section, bringing coverage to 67; this reuses existing registry roots. Preserve settings, licenses, uninstall metadata, installer databases, keys, files and permissions.
+- Add disjoint schema 23 verified backups and exact-name/type/byte restoration after restart. Recheck missing targets, unique ownership, application metadata and the uninstall anchor before apply/restore. Expanded duplicate owners block cleanup; MSI/product-code records, shared directories, changed evidence, new values/files and missing keys remain protected. Formats 1–22 keep their layouts/checksums. Review group actions through existing individual backups; search-path restoration precedes an older executable-mapping restoration.
+- Add native correlation, transaction, restart/restore, ambiguity, counterpart, storage/corruption and missing-key tests; frontend eligibility coverage; and an owned packaged group flow covering protected controls, individual and mixed-format recovery, staged cleanup and conditional fixture cleanup. No installer/uninstaller or application is executed.
+- Fix slow backup discovery after hundreds of display-cache cleanups: read the cache once for the bounded read-only inventory instead of once per backup. A 615-record regression preserves the 100-entry cleaning limit and proves restore still reads fresh live evidence.
+
 ## 0.1.22 — 2026-11-09
 
 - Add shared current-user/machine sound-event inventory under AppEvents Schemes Apps, bringing coverage from 64 to 66 logical sections. Distinguish missing/found .wav files, explicit empty assignments, absent values, expanded/relative paths and unsupported settings without playing audio.

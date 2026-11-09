@@ -29,6 +29,13 @@ pub(super) struct PendingBatch {
 }
 
 pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
+    if entry.category == Category::ApplicationLeftovers {
+        return entry.hive == "HKCU"
+            && entry.view == "shared"
+            && entry.leftover_repairable
+            && entry.leftover_state.is_some()
+            && entry.assessment.status == EntryStatus::Review;
+    }
     if entry.category == Category::SoundEvents {
         return entry.hive == "HKCU"
             && entry.view == "shared"

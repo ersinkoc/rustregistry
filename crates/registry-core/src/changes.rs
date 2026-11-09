@@ -176,6 +176,27 @@ struct AppPathBackup {
 }
 
 pub trait RegistryStore {
+    fn read_leftover(
+        &self,
+        _app: &crate::app_leftovers::LeftoverBackup,
+    ) -> Result<Option<StoredValue>, String> {
+        Err("Leftover cleanup is unavailable.".into())
+    }
+    fn check_leftover_access(
+        &self,
+        _app: &crate::app_leftovers::LeftoverBackup,
+    ) -> Result<(), String> {
+        Err("Leftover cleanup is unavailable.".into())
+    }
+    fn compare_exchange_leftover(
+        &self,
+        _app: &crate::app_leftovers::LeftoverBackup,
+        _expected: Option<&StoredValue>,
+        _replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        Err("Leftover cleanup is unavailable.".into())
+    }
+
     fn read_sound(
         &self,
         _app: &crate::sound_events::SoundBackup,
@@ -223,6 +244,12 @@ pub trait RegistryStore {
         apps: &[crate::maintenance::MaintenanceBackup],
     ) -> Vec<Result<crate::maintenance::MaintenanceSnapshot, String>> {
         apps.iter().map(|app| self.read_maintenance(app)).collect()
+    }
+    fn read_maintenance_inventory(
+        &self,
+        apps: &[crate::maintenance::MaintenanceBackup],
+    ) -> Vec<Result<crate::maintenance::MaintenanceSnapshot, String>> {
+        self.read_maintenance_batch(apps)
     }
     fn read_maintenance(
         &self,
@@ -487,6 +514,7 @@ pub struct ChangePlan {
     pub registry_view: String,
     pub original_value: String,
     pub resolved_file: Option<String>,
+    pub supporting_evidence: Vec<(String, String)>,
     pub value_type: String,
     pub expires_at: u64,
     pub scope: String,
@@ -545,6 +573,8 @@ struct BackupRecord {
     file_reference: Option<crate::file_references::FileReferenceBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sound: Option<crate::sound_events::SoundBackup>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    leftover: Option<crate::app_leftovers::LeftoverBackup>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -640,6 +670,48 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     fn validate_record(record: &BackupRecord) -> Result<(), String> {
         if record.name.len() > 65_536 {
             return Err("Unsupported backup format.".into());
+        }
+        if let Some(app) = &record.leftover {
+            if record.schema_version != 23
+                || [
+                    record.app_path.is_some(),
+                    record.uninstall.is_some(),
+                    record.association.is_some(),
+                    record.com.is_some(),
+                    record.service.is_some(),
+                    record.application.is_some(),
+                    record.shared_dll.is_some(),
+                    record.registered_app.is_some(),
+                    record.type_library.is_some(),
+                    record.prog_id.is_some(),
+                    record.interface.is_some(),
+                    record.proxy.is_some(),
+                    record.icon.is_some(),
+                    record.menu.is_some(),
+                    record.redirection.is_some(),
+                    record.conversion.is_some(),
+                    record.maintenance.is_some(),
+                    record.file_reference.is_some(),
+                    record.sound.is_some(),
+                ]
+                .into_iter()
+                .any(|v| v)
+            {
+                return Err("Unsupported leftover backup namespace or format.".into());
+            }
+            app.validate()?;
+            if record.value_name != app.value_name
+                || !crate::app_leftovers::literal_directory(&record.original)?
+                    .eq_ignore_ascii_case(&app.directory)
+            {
+                return Err("Leftover backup evidence does not match its original value.".into());
+            }
+            if record.integrity_sha256 != Self::checksum(record)? {
+                return Err(
+                    "The backup integrity checksum does not match. Restore is blocked.".into(),
+                );
+            }
+            return Ok(());
         }
         if let Some(app) = &record.sound {
             if record.schema_version != 22
@@ -1200,7 +1272,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.original,
         ))
         .map_err(|e| e.to_string())?;
-        let bytes = if record.schema_version == 22 {
+        let bytes = if record.schema_version == 23 {
+            serde_json::to_vec(&(bytes, &record.leftover)).map_err(|e| e.to_string())?
+        } else if record.schema_version == 22 {
             serde_json::to_vec(&(bytes, &record.sound)).map_err(|e| e.to_string())?
         } else if record.schema_version == 21 {
             serde_json::to_vec(&(bytes, &record.file_reference)).map_err(|e| e.to_string())?
@@ -1331,6 +1405,10 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     pub fn prepare_quarantine(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        if entry.category == Category::ApplicationLeftovers {
+            self.cancel();
+            return self.prepare_leftover(entry);
+        }
         if entry.category == Category::SoundEvents {
             self.cancel();
             return self.prepare_sound(entry);
@@ -1481,9 +1559,69 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
+        };
+        record.integrity_sha256 = Self::checksum(&record)?;
+        self.prepare(record, false)
+    }
+
+    fn prepare_leftover(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        let app = entry
+            .leftover_state
+            .clone()
+            .ok_or("Correlated leftover evidence is unavailable.")?;
+        let original = entry
+            .snapshot
+            .clone()
+            .ok_or("Original leftover value is unavailable.")?;
+        app.verify_original(&original, &self.probe)?;
+        if entry.category != Category::ApplicationLeftovers
+            || entry.hive != "HKCU"
+            || entry.view != "shared"
+            || !entry.key_path.eq_ignore_ascii_case(&app.key_path())
+            || entry.value_name != app.value_name
+            || !entry.leftover_repairable
+            || entry.assessment.status != EntryStatus::Review
+            || entry.assessment.code != "application_leftover_candidate"
+            || entry.raw_value != original.text()?
+            || self.store.read_leftover(&app)?.as_ref() != Some(&original)
+        {
+            return Err(
+                "Correlated leftover location or evidence changed after scanning. Scan again."
+                    .into(),
+            );
+        }
+        let mut record = BackupRecord {
+            schema_version: 23,
+            id: Uuid::new_v4(),
+            name: entry.name.clone(),
+            value_name: app.value_name.clone(),
+            created_at: now()?,
+            original,
+            integrity_sha256: String::new(),
+            app_path: None,
+            uninstall: None,
+            association: None,
+            com: None,
+            service: None,
+            application: None,
+            shared_dll: None,
+            registered_app: None,
+            type_library: None,
+            prog_id: None,
+            interface: None,
+            proxy: None,
+            icon: None,
+            menu: None,
+            redirection: None,
+            conversion: None,
+            maintenance: None,
+            file_reference: None,
+            sound: None,
+            leftover: Some(app),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1539,6 +1677,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: Some(app),
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1606,6 +1745,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: Some(app),
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1683,6 +1823,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: Some(app),
             file_reference: None,
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1755,6 +1896,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1826,6 +1968,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1894,6 +2037,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -1963,6 +2107,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             proxy: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
@@ -2033,6 +2178,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -2099,6 +2245,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -2172,6 +2319,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: Some(app),
         };
         record.integrity_sha256 = Self::checksum(&record)?;
@@ -2231,6 +2379,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: Some(RegisteredApplicationBackup {
                 capabilities_path: path,
@@ -2283,6 +2432,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: None,
             shared_dll: Some(SharedDllBackup {
@@ -2360,6 +2510,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
         };
         record.integrity_sha256 = Self::checksum(&record)?;
         self.prepare(record, false)
@@ -2408,6 +2559,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2477,6 +2629,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2537,6 +2690,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2599,6 +2753,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2662,6 +2817,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             maintenance: None,
             file_reference: None,
             sound: None,
+            leftover: None,
             type_library: None,
             registered_app: None,
             shared_dll: None,
@@ -2685,6 +2841,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn prepare(&mut self, record: BackupRecord, restore: bool) -> Result<ChangePlan, String> {
+        if let Some(app) = &record.leftover {
+            self.store.check_leftover_access(app)?;
+        }
         if let Some(app) = &record.sound {
             self.store.check_sound_write_access(app)?;
         }
@@ -2744,10 +2903,37 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "shared"
             }
             .into(),
+            supporting_evidence: if let Some(app) = &record.leftover {
+                vec![
+                    (
+                        "Missing installation directory".into(),
+                        app.directory.clone(),
+                    ),
+                    (
+                        "Missing application executable".into(),
+                        format!(r"{}\{}", app.directory, app.executable_name),
+                    ),
+                    (
+                        "Original uninstall command".into(),
+                        app.anchor.text("UninstallString")?,
+                    ),
+                    (
+                        "Correlated uninstall registration".into(),
+                        format!(
+                            r"HKCU\{}\{}",
+                            crate::uninstall::UNINSTALL_KEY,
+                            app.uninstall_key
+                        ),
+                    ),
+                ]
+            } else {
+                vec![]
+            },
             resolved_file: record
-                .sound
+                .leftover
                 .as_ref()
-                .map(|app| app.target.clone())
+                .map(|app| app.directory.clone())
+                .or_else(|| record.sound.as_ref().map(|app| app.target.clone()))
                 .or_else(|| record.file_reference.as_ref().map(|app| app.target.clone())),
             original_value: if let Some(app) = &record.maintenance {
                 app.summary()?
@@ -2777,7 +2963,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             expires_at: now()? + PLAN_LIFETIME,
-            scope: if record.sound.is_some() {
+            scope: if record.leftover.is_some() {
+                "application_leftover"
+            } else if record.sound.is_some() {
                 "sound_event"
             } else if let Some(app) = &record.file_reference {
                 app.location.scope()
@@ -2819,7 +3007,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 "startup"
             }
             .into(),
-            preserved_values: if let Some(app) = &record.maintenance {
+            preserved_values: if let Some(app) = &record.leftover {
+                app.application_values.len() + app.anchor.values.len()
+            } else if let Some(app) = &record.maintenance {
                 app.snapshot.preserved.len()
             } else if let Some(app) = &record.conversion {
                 app.guard.values.len()
@@ -2898,6 +3088,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn registry_path(record: &BackupRecord) -> String {
+        if let Some(app) = &record.leftover {
+            return format!("HKCU\\{}", app.key_path());
+        }
         if let Some(app) = &record.sound {
             return format!("HKCU\\{}", app.key_path());
         }
@@ -2968,7 +3161,28 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         )
     }
 
+    fn maintenance_record_value(
+        record: &BackupRecord,
+        state: &crate::maintenance::MaintenanceSnapshot,
+    ) -> Result<Option<StoredValue>, String> {
+        let app = record
+            .maintenance
+            .as_ref()
+            .ok_or("Maintenance backup evidence is unavailable.")?;
+        if *state == app.snapshot {
+            return Ok(Some(record.original.clone()));
+        }
+        if *state == app.cleared() {
+            return Ok(None);
+        }
+        Err("Maintenance data changed. Cleaning and restore are blocked; new history is never overwritten.".into())
+    }
+
     fn read_record(&self, record: &BackupRecord) -> Result<Option<StoredValue>, String> {
+        if let Some(app) = &record.leftover {
+            app.verify_original(&record.original, &self.probe)?;
+            return self.store.read_leftover(app);
+        }
         if let Some(app) = &record.sound {
             app.verify_original(&record.original, &self.probe)?;
             return self.store.read_sound(app);
@@ -2980,13 +3194,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         if let Some(app) = &record.maintenance {
             app.verify_target(&self.probe)?;
             let state = self.store.read_maintenance(app)?;
-            if state == app.snapshot {
-                return Ok(Some(record.original.clone()));
-            }
-            if state == app.cleared() {
-                return Ok(None);
-            }
-            return Err("Maintenance data changed. Cleaning and restore are blocked; new history is never overwritten.".into());
+            return Self::maintenance_record_value(record, &state);
         }
 
         if let Some(app) = &record.conversion {
@@ -3134,6 +3342,12 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         expected: Option<StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if let Some(app) = &record.leftover {
+            app.verify_original(&record.original, &self.probe)?;
+            return self
+                .store
+                .compare_exchange_leftover(app, expected.as_ref(), replacement);
+        }
         if let Some(app) = &record.sound {
             app.verify_original(&record.original, &self.probe)?;
             return self
@@ -3330,7 +3544,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             self.read_record(&record)?;
             self.exchange_record(&record, None, Some(&record.original))?;
         } else {
-            if let Some(app) = &record.sound {
+            if let Some(app) = &record.leftover {
+                app.verify_original(&record.original, &self.probe)?;
+            } else if let Some(app) = &record.sound {
                 app.verify_original(&record.original, &self.probe)?;
             } else if let Some(app) = &record.file_reference {
                 app.verify_original(&record.original, &self.probe)?;
@@ -3388,7 +3604,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.sound.is_some(){if restore {"Original sound assignment restored and verified. No audio was played."}else{"Missing current sound assignment cleared after a verified backup. Saved schemes, keys, metadata, audio files and permissions were preserved. No audio was played."}}else if let Some(app)=&record.file_reference{if restore {"Original font/help registration restored and verified. No font or document was loaded."}else if app.location.font(){"Missing font mapping removed after a verified backup. Font files, runtime resources, other registrations and permissions were preserved."}else{"Missing help-file mapping removed after a verified backup. Documents, search settings, other registrations and permissions were preserved."}}else if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
+            message: if record.leftover.is_some(){if restore{"Original correlated application search path restored and verified. No application or uninstaller was executed."}else{"Unused application search-path value removed after a verified backup. Uninstall metadata, keys, settings, licenses, files and permissions were preserved."}}else if record.sound.is_some(){if restore {"Original sound assignment restored and verified. No audio was played."}else{"Missing current sound assignment cleared after a verified backup. Saved schemes, keys, metadata, audio files and permissions were preserved. No audio was played."}}else if let Some(app)=&record.file_reference{if restore {"Original font/help registration restored and verified. No font or document was loaded."}else if app.location.font(){"Missing font mapping removed after a verified backup. Font files, runtime resources, other registrations and permissions were preserved."}else{"Missing help-file mapping removed after a verified backup. Documents, search settings, other registrations and permissions were preserved."}}else if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
                 if restore {"Original 64-bit COM mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
@@ -3415,6 +3631,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(inventory),
             Err(error) => return Err(format!("Cannot list backups: {error}")),
         };
+        let mut records = Vec::new();
         for (index, file) in files.enumerate() {
             if index >= 1000 {
                 inventory
@@ -3443,7 +3660,51 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     continue;
                 }
             };
-            let (state, note) = match self.read_record(&record) {
+            records.push(record);
+        }
+        // Inventory is a read-only point-in-time view. Share one bounded cache
+        // snapshot across its records; prepare/apply/restore retain fresh reads.
+        let cache_records: Vec<_> = records
+            .iter()
+            .filter_map(|record| {
+                record
+                    .maintenance
+                    .as_ref()
+                    .filter(|app| app.kind == crate::maintenance::MaintenanceKind::MuiCache)
+                    .map(|app| (record.id, app.clone()))
+            })
+            .collect();
+        let apps: Vec<_> = cache_records.iter().map(|(_, app)| app.clone()).collect();
+        let states = if apps.is_empty() {
+            vec![]
+        } else {
+            self.store.read_maintenance_inventory(&apps)
+        };
+        if states.len() != apps.len() {
+            return Err("The store returned an incomplete backup cache inventory snapshot.".into());
+        }
+        let mut cache_states: std::collections::HashMap<_, _> = cache_records
+            .into_iter()
+            .map(|(id, _)| id)
+            .zip(states)
+            .collect();
+        for record in records {
+            let current = if let Some(app) = record
+                .maintenance
+                .as_ref()
+                .filter(|app| app.kind == crate::maintenance::MaintenanceKind::MuiCache)
+            {
+                app.verify_target(&self.probe)
+                    .and_then(|_| {
+                        cache_states
+                            .remove(&record.id)
+                            .ok_or("A backup cache inventory result is missing.")?
+                    })
+                    .and_then(|state| Self::maintenance_record_value(&record, &state))
+            } else {
+                self.read_record(&record)
+            };
+            let (state, note) = match current {
                 Ok(None) => (
                     "restore_available",
                     if record.menu.is_some(){"The menu matches its backed-up programmatic-only state. Original visibility can be reviewed for restore."}else if record.application.is_some() { "The application matches its backed-up NoOpenWith state. Its original suggestion visibility can be restored." } else if record.service.is_some() { "The service matches its backed-up Disabled state. Its original Manual startup can be restored." } else if record.uninstall.is_some() { "The uninstall entry matches its backed-up hidden state. Its original visibility can be restored." } else { "The value is absent. Its original can be reviewed for restore." }.into(),
@@ -3458,7 +3719,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 ),
                 Err(error) => ("unverified", error),
             };
-            let scope = if record.sound.is_some() {
+            let scope = if record.leftover.is_some() {
+                "application_leftover"
+            } else if record.sound.is_some() {
                 "sound_event"
             } else if let Some(app) = &record.file_reference {
                 app.location.scope()
@@ -3544,6 +3807,155 @@ mod tests {
         path::Path,
         rc::Rc,
     };
+    #[test]
+    fn backup_inventory_reads_shared_cache_once_for_615_records_and_restore_still_reads_live_data()
+    {
+        use crate::maintenance::{MaintenanceBackup, MaintenanceKind, MaintenanceSnapshot};
+        struct CacheStore {
+            bulk: Cell<usize>,
+            single: Cell<usize>,
+            changed: Cell<bool>,
+        }
+        impl CacheStore {
+            fn state(&self, app: &MaintenanceBackup) -> MaintenanceSnapshot {
+                if app.item.ends_with("app0.exe") {
+                    if self.changed.get() {
+                        let mut changed = app.snapshot.clone();
+                        changed.values[0].value = StoredValue {
+                            kind: 1,
+                            bytes: "new label\0"
+                                .encode_utf16()
+                                .flat_map(u16::to_le_bytes)
+                                .collect(),
+                        };
+                        changed
+                    } else {
+                        app.cleared()
+                    }
+                } else {
+                    app.snapshot.clone()
+                }
+            }
+        }
+        impl RegistryStore for CacheStore {
+            fn read(&self, _: &str) -> Result<Option<StoredValue>, String> {
+                Ok(None)
+            }
+            fn compare_exchange(
+                &self,
+                _: &str,
+                _: Option<&StoredValue>,
+                _: Option<&StoredValue>,
+            ) -> Result<(), String> {
+                panic!("Inventory must never write")
+            }
+            fn read_maintenance(
+                &self,
+                app: &MaintenanceBackup,
+            ) -> Result<MaintenanceSnapshot, String> {
+                self.single.set(self.single.get() + 1);
+                Ok(self.state(app))
+            }
+            fn read_maintenance_batch(
+                &self,
+                apps: &[MaintenanceBackup],
+            ) -> Vec<Result<MaintenanceSnapshot, String>> {
+                self.bulk.set(self.bulk.get() + 1);
+                apps.iter().map(|app| Ok(self.state(app))).collect()
+            }
+            fn check_maintenance_write_access(&self, _: &MaintenanceBackup) -> Result<(), String> {
+                Ok(())
+            }
+            fn compare_exchange_maintenance(
+                &self,
+                _: &MaintenanceBackup,
+                _: &MaintenanceSnapshot,
+                _: &MaintenanceSnapshot,
+            ) -> Result<(), String> {
+                panic!("Changed live evidence must block restore before mutation")
+            }
+        }
+        struct Missing;
+        impl PathProbe for Missing {
+            fn probe(&self, _: &str, _: TargetKind) -> ProbeResult {
+                ProbeResult::Missing
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut m = ChangeManager::new(
+            CacheStore {
+                bulk: Cell::new(0),
+                single: Cell::new(0),
+                changed: Cell::new(false),
+            },
+            dir.path().join("backups"),
+            Missing,
+        );
+        let mut first = None;
+        for i in 0..615 {
+            let item = format!(r"C:\RustRegistryMissing\inventory-app{i}.exe");
+            let app = MaintenanceBackup {
+                kind: MaintenanceKind::MuiCache,
+                item: item.clone(),
+                snapshot: MaintenanceSnapshot {
+                    values: vec![NamedValue {
+                        name: format!("{item}.FriendlyAppName"),
+                        value: StoredValue {
+                            kind: 1,
+                            bytes: "Original label\0"
+                                .encode_utf16()
+                                .flat_map(u16::to_le_bytes)
+                                .collect(),
+                        },
+                    }],
+                    preserved: vec![],
+                },
+            };
+            let mut record:BackupRecord=serde_json::from_value(serde_json::json!({"schemaVersion":20,"id":Uuid::new_v4(),"name":format!("Cached app {i}"),"valueName":item,"createdAt":1,"original":app.sentinel(),"integritySha256":"","maintenance":app})).unwrap();
+            record.integrity_sha256 =
+                ChangeManager::<CacheStore, Missing>::checksum(&record).unwrap();
+            m.save(&record).unwrap();
+            if i == 0 {
+                first = Some(record.id.to_string())
+            }
+        }
+        let inventory = m.inventory().unwrap();
+        assert_eq!(inventory.backups.len(), 615);
+        assert!(inventory.warnings.is_empty());
+        assert_eq!(
+            m.store.bulk.get(),
+            1,
+            "Readonly backup inventory must read shared cache once, independent of backup count"
+        );
+        assert_eq!(m.store.single.get(), 0);
+        assert_eq!(
+            inventory
+                .backups
+                .iter()
+                .filter(|b| b.state == "restore_available")
+                .count(),
+            1
+        );
+        assert_eq!(
+            inventory
+                .backups
+                .iter()
+                .filter(|b| b.state == "original_present")
+                .count(),
+            614
+        );
+        let id = first.unwrap();
+        let file = m.directory.join(format!("{id}.json"));
+        let before = fs::read(&file).unwrap();
+        let plan = m.prepare_restore(&id).unwrap();
+        assert!(
+            m.store.single.get() > 0,
+            "Restore review must fetch live data"
+        );
+        m.store.changed.set(true);
+        assert!(m.apply(&plan.token).is_err());
+        assert_eq!(fs::read(file).unwrap(), before);
+    }
     #[derive(Clone, Default)]
     struct Memory(
         Rc<RefCell<HashMap<String, StoredValue>>>,
@@ -3768,6 +4180,9 @@ mod tests {
             file_reference_repairable: false,
             sound_state: None,
             sound_repairable: false,
+            leftover_state: None,
+            leftover_repairable: false,
+            leftover_evidence: None,
             maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,

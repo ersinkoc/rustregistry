@@ -18,7 +18,9 @@ struct Source {
 
 fn source_id(source: &Source) -> String {
     let id = format!("{}|{}|{}", source.hive, source.view, source.path);
-    if source.category == Category::ComConversions {
+    if source.category == Category::ApplicationLeftovers {
+        format!("{id}|application_leftovers")
+    } else if source.category == Category::ComConversions {
         format!("{id}|com_conversions")
     } else if source.category == Category::ComRedirections {
         format!("{id}|com_redirections")
@@ -246,6 +248,13 @@ fn sources() -> Vec<Source> {
             view: "shared",
         });
     }
+    result.push(Source {
+        category: Category::ApplicationLeftovers,
+        hive: "HKCU",
+        path: crate::changes::APP_PATHS_KEY,
+        flag: KEY_WOW64_64KEY,
+        view: "shared",
+    });
     result
 }
 
@@ -353,6 +362,7 @@ fn make_entry(
                         | Category::ComRedirections
                         | Category::MuiCache
                         | Category::UsageHistory
+                        | Category::ApplicationLeftovers
                         | Category::SoundEvents
                         | Category::Fonts
                         | Category::HelpFiles
@@ -453,6 +463,9 @@ fn make_entry(
         file_reference_repairable: false,
         sound_state: None,
         sound_repairable: false,
+        leftover_state: None,
+        leftover_repairable: false,
+        leftover_evidence: None,
         maintenance_repairable: false,
         conversion_repairable: false,
         redirection_state: None,
@@ -487,6 +500,8 @@ mod file_reference_scan;
 mod icon_scan;
 #[path = "interface_scan.rs"]
 mod interface_scan;
+#[path = "leftovers_scan.rs"]
+mod leftovers_scan;
 #[path = "maintenance_scan.rs"]
 mod maintenance_scan;
 #[path = "menu_scan.rs"]
@@ -521,6 +536,10 @@ fn scan_source(
         entries: 0,
         notes: Vec::new(),
     };
+    if source.category == Category::ApplicationLeftovers {
+        leftovers_scan::scan_leftovers(source, cancel, environment, entries, &mut scope, probe);
+        return scope;
+    }
     if source.category == Category::SoundEvents {
         sound_events_scan::scan_sounds(source, cancel, environment, entries, &mut scope, probe);
         return scope;
@@ -995,6 +1014,9 @@ pub fn scan(cancel: &AtomicBool, progress: impl Fn(ScanProgress)) -> Result<Scan
         entries: entries.len(),
         current: "Scan complete".into(),
     });
+    if !cancel.load(Ordering::Relaxed) {
+        crate::app_leftovers::link_related(&mut entries);
+    }
     Ok(ScanReport {
         id: format!("scan-{started_at}"),
         started_at,

@@ -92,7 +92,7 @@ impl Environment {
         )
     }
 
-    fn expand(&self, value: &str) -> Result<String, ()> {
+    pub(crate) fn expand(&self, value: &str) -> Result<String, ()> {
         let mut output = String::new();
         let mut remainder = value;
         while let Some(start) = remainder.find('%') {

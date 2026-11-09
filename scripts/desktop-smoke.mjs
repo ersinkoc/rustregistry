@@ -1,3 +1,4 @@
+import { verifyLeftoverRecovery } from './leftover-smoke.mjs';
 import { verifySoundRecovery } from './sound-smoke.mjs';
 import { verifyFileReferenceRecovery } from './file-reference-smoke.mjs';
 import { verifyMaintenanceRecovery } from './maintenance-smoke.mjs';
@@ -37,6 +38,7 @@ const applicationOnly = process.argv.includes('--application-only');
 const sharedDllOnly = process.argv.includes('--shared-dll-only');
 const registeredAppOnly = process.argv.includes('--registered-app-only');
 const typeLibraryOnly = process.argv.includes('--type-library-only');
+const leftoverOnly = process.argv.includes('--leftover-only');
 const soundOnly = process.argv.includes('--sound-only');
 const fileReferenceOnly = process.argv.includes('--file-reference-only');
 const maintenanceOnly = process.argv.includes('--maintenance-only');
@@ -69,6 +71,7 @@ if (
     maintenanceOnly,
     fileReferenceOnly,
     soundOnly,
+    leftoverOnly,
   ].filter(Boolean).length > 1
 )
   throw new Error('Choose only one focused verification mode.');
@@ -144,41 +147,43 @@ const summary = {
   executable,
   sourceExecutable: process.env.RUSTREGISTRY_SOURCE_EXE || executable,
   version: appVersion,
-  mode: soundOnly
-    ? 'sound-only'
-    : fileReferenceOnly
-      ? 'file-reference-only'
-      : maintenanceOnly
-        ? 'maintenance-only'
-        : appearanceOnly
-          ? 'appearance-only'
-          : conversionOnly
-            ? 'conversion-only'
-            : redirectionOnly
-              ? 'redirection-only'
-              : menuOnly
-                ? 'menu-only'
-                : iconOnly
-                  ? 'icon-only'
-                  : proxyOnly
-                    ? 'proxy-only'
-                    : interfaceOnly
-                      ? 'interface-only'
-                      : progIdOnly
-                        ? 'prog-id-only'
-                        : typeLibraryOnly
-                          ? 'type-library-only'
-                          : registeredAppOnly
-                            ? 'registered-app-only'
-                            : serviceOnly
-                              ? 'service-only'
-                              : expandedOnly
-                                ? 'expanded-only'
-                                : applicationOnly
-                                  ? 'application-only'
-                                  : sharedDllOnly
-                                    ? 'shared-dll-only'
-                                    : 'full',
+  mode: leftoverOnly
+    ? 'leftover-only'
+    : soundOnly
+      ? 'sound-only'
+      : fileReferenceOnly
+        ? 'file-reference-only'
+        : maintenanceOnly
+          ? 'maintenance-only'
+          : appearanceOnly
+            ? 'appearance-only'
+            : conversionOnly
+              ? 'conversion-only'
+              : redirectionOnly
+                ? 'redirection-only'
+                : menuOnly
+                  ? 'menu-only'
+                  : iconOnly
+                    ? 'icon-only'
+                    : proxyOnly
+                      ? 'proxy-only'
+                      : interfaceOnly
+                        ? 'interface-only'
+                        : progIdOnly
+                          ? 'prog-id-only'
+                          : typeLibraryOnly
+                            ? 'type-library-only'
+                            : registeredAppOnly
+                              ? 'registered-app-only'
+                              : serviceOnly
+                                ? 'service-only'
+                                : expandedOnly
+                                  ? 'expanded-only'
+                                  : applicationOnly
+                                    ? 'application-only'
+                                    : sharedDllOnly
+                                      ? 'shared-dll-only'
+                                      : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -262,6 +267,10 @@ try {
       summary.appearanceInitialTheme = initial;
       await verifyAppearance(page, cdp, output, checked, summary);
     }
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (leftoverOnly) {
+    await verifyLeftoverRecovery(page, output, checked, summary);
     expect(summary.errors).toEqual([]);
     summary.passed = true;
   } else if (soundOnly) {
@@ -421,10 +430,10 @@ try {
     checked('Search empty state is honest and clearing filters restores real entries');
 
     await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-    await expect(page.locator('.scope-item')).toHaveCount(66);
+    await expect(page.locator('.scope-item')).toHaveCount(67);
     await page.locator('.scope-item summary').first().click();
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-    checked('Coverage lists all 66 registry scan sections with expandable read results');
+    checked('Coverage lists all 67 registry scan sections with expandable read results');
 
     await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
     await expect(page.locator('.history-item')).toHaveCount(1);
@@ -530,6 +539,7 @@ try {
     await verifyMaintenanceRecovery(page, output, checked, summary);
     await verifyFileReferenceRecovery(page, output, checked, summary);
     await verifySoundRecovery(page, output, checked, summary);
+    await verifyLeftoverRecovery(page, output, checked, summary);
     await verifyAppearance(page, cdp, output, checked, summary);
 
     await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -643,41 +653,43 @@ try {
   await writeFile(
     resolve(
       output,
-      soundOnly
-        ? 'desktop-sound-verification.json'
-        : fileReferenceOnly
-          ? 'desktop-file-reference-verification.json'
-          : maintenanceOnly
-            ? 'desktop-maintenance-verification.json'
-            : appearanceOnly
-              ? 'desktop-appearance-verification.json'
-              : conversionOnly
-                ? 'desktop-conversion-verification.json'
-                : redirectionOnly
-                  ? 'desktop-redirection-verification.json'
-                  : menuOnly
-                    ? 'desktop-menu-verification.json'
-                    : iconOnly
-                      ? 'desktop-icon-verification.json'
-                      : proxyOnly
-                        ? 'desktop-proxy-verification.json'
-                        : interfaceOnly
-                          ? 'desktop-interface-verification.json'
-                          : progIdOnly
-                            ? 'desktop-prog-id-verification.json'
-                            : typeLibraryOnly
-                              ? 'desktop-type-library-verification.json'
-                              : registeredAppOnly
-                                ? 'desktop-registered-app-verification.json'
-                                : serviceOnly
-                                  ? 'desktop-service-verification.json'
-                                  : expandedOnly
-                                    ? 'desktop-expanded-verification.json'
-                                    : applicationOnly
-                                      ? 'desktop-application-verification.json'
-                                      : sharedDllOnly
-                                        ? 'desktop-shared-dll-verification.json'
-                                        : 'desktop-verification.json',
+      leftoverOnly
+        ? 'desktop-leftover-verification.json'
+        : soundOnly
+          ? 'desktop-sound-verification.json'
+          : fileReferenceOnly
+            ? 'desktop-file-reference-verification.json'
+            : maintenanceOnly
+              ? 'desktop-maintenance-verification.json'
+              : appearanceOnly
+                ? 'desktop-appearance-verification.json'
+                : conversionOnly
+                  ? 'desktop-conversion-verification.json'
+                  : redirectionOnly
+                    ? 'desktop-redirection-verification.json'
+                    : menuOnly
+                      ? 'desktop-menu-verification.json'
+                      : iconOnly
+                        ? 'desktop-icon-verification.json'
+                        : proxyOnly
+                          ? 'desktop-proxy-verification.json'
+                          : interfaceOnly
+                            ? 'desktop-interface-verification.json'
+                            : progIdOnly
+                              ? 'desktop-prog-id-verification.json'
+                              : typeLibraryOnly
+                                ? 'desktop-type-library-verification.json'
+                                : registeredAppOnly
+                                  ? 'desktop-registered-app-verification.json'
+                                  : serviceOnly
+                                    ? 'desktop-service-verification.json'
+                                    : expandedOnly
+                                      ? 'desktop-expanded-verification.json'
+                                      : applicationOnly
+                                        ? 'desktop-application-verification.json'
+                                        : sharedDllOnly
+                                          ? 'desktop-shared-dll-verification.json'
+                                          : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );

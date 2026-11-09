@@ -1,0 +1,311 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArchiveRestore, Boxes, Search, ShieldCheck, X } from 'lucide-react';
+import type { RegistryEntry, ScanReport } from './model';
+import { categories } from './model';
+import { canQuarantine, type ChangePlan } from './Changes';
+
+export function LeftoversPage({
+  report,
+  busy,
+  onScan,
+  onReview,
+  onReviewGroup,
+}: {
+  report: ScanReport | null;
+  busy: boolean;
+  onScan: () => void;
+  onReview: (entry: RegistryEntry) => void;
+  onReviewGroup: (ids: string[]) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const byId = useMemo(() => new Map((report?.entries ?? []).map((e) => [e.id, e])), [report]);
+  const groups = (report?.entries ?? []).filter(
+    (e) =>
+      e.category === 'application_leftovers' &&
+      e.leftoverEvidence &&
+      e.assessment.status === 'review',
+  );
+  const q = query.trim().toLocaleLowerCase();
+  const visible = groups.filter((e) =>
+    [e.name, e.keyPath, e.leftoverEvidence?.directory, e.leftoverEvidence?.uninstallPath].some(
+      (s) => s?.toLocaleLowerCase().includes(q),
+    ),
+  );
+  const complete = !!report && !report.cancelled;
+  return (
+    <>
+      <section className="panel clean-hero">
+        <div>
+          <span className="eyebrow">APPLICATION REMNANT DIAGNOSIS</span>
+          <h2>Follow the evidence. Review the leftovers.</h2>
+          <p>
+            Groups match an exact missing installation directory across application and uninstall
+            records, with missing application and uninstaller files. This suggests a removed
+            application; it does not prove that every setting is disposable.
+          </p>
+        </div>
+        <Boxes size={42} />
+      </section>
+      {!complete ? (
+        <section className="panel empty-state">
+          <h3>A completed scan comes first</h3>
+          <p>Complete a fresh registry scan before reviewing correlated application leftovers.</p>
+          <button className="primary-button" disabled={busy} onClick={onScan}>
+            Scan registry
+          </button>
+        </section>
+      ) : (
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h2>
+                Likely application leftovers <span className="count-chip">{groups.length}</span>
+              </h2>
+              <p>
+                Each supported change gets its own verified backup. Keys, licenses, user settings,
+                installer databases and files are preserved.
+              </p>
+            </div>
+          </div>
+          <label className="search-field">
+            <Search size={16} />
+            <input
+              aria-label="Search application leftovers"
+              placeholder="Search application, directory or registration"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </label>
+          {!visible.length ? (
+            <div className="empty-state">
+              <h3>
+                {groups.length
+                  ? 'No matching leftover groups'
+                  : 'No corroborated application leftovers'}
+              </h3>
+              <p>
+                {groups.length
+                  ? 'Try another application name or directory.'
+                  : 'A missing file or similar product name alone is insufficient. Uncertain and protected records remain available in Scan results.'}
+              </p>
+            </div>
+          ) : (
+            visible.slice(0, 50).map((entry) => {
+              const e = entry.leftoverEvidence!;
+              const ids = [...new Set([entry.id, ...e.relatedIds])]
+                .filter((id) => {
+                  const item = byId.get(id);
+                  return !!item && canQuarantine(item);
+                })
+                .slice(0, 100);
+              return (
+                <article className="leftover-group" key={entry.id}>
+                  <div className="panel-heading">
+                    <div>
+                      <h3>{e.applicationName}</h3>
+                      <p>
+                        {entry.publisher ?? 'Current-user application'} ·{' '}
+                        {e.executable.split('\\').pop()}
+                      </p>
+                    </div>
+                    <span className="status-badge review">Review evidence</span>
+                  </div>
+                  <dl className="detail-fields">
+                    <div className="full-field">
+                      <dt>Matching installation directory</dt>
+                      <dd className="code-field">{e.directory}</dd>
+                    </div>
+                    <div>
+                      <dt>Application executable</dt>
+                      <dd className="code-field">{e.executable}</dd>
+                    </div>
+                    <div>
+                      <dt>Uninstaller executable</dt>
+                      <dd className="code-field">{e.uninstaller}</dd>
+                    </div>
+                    <div className="full-field">
+                      <dt>Correlated uninstall registration</dt>
+                      <dd className="code-field">{e.uninstallPath}</dd>
+                    </div>
+                  </dl>
+                  <details>
+                    <summary>Why this group?</summary>
+                    <p>{entry.assessment.explanation}</p>
+                  </details>
+                  <p>
+                    {ids.length} supported cleanup actions. Each action is checked again against
+                    live registry and file evidence.
+                  </p>
+                  {ids.length > 0 && (
+                    <ul>
+                      {ids.map((id) => {
+                        const item = byId.get(id)!;
+                        return (
+                          <li key={id}>
+                            {categories[item.category].label}: {item.name}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  <div className="change-buttons">
+                    {canQuarantine(entry) && (
+                      <button
+                        className="secondary-button"
+                        disabled={busy}
+                        onClick={() => onReview(entry)}
+                      >
+                        Review search-path cleanup
+                      </button>
+                    )}
+                    <button
+                      className="primary-button"
+                      aria-label={`Review cleanup for ${e.applicationName}`}
+                      disabled={busy || !ids.length}
+                      onClick={() => onReviewGroup(ids)}
+                    >
+                      <ShieldCheck size={16} /> Review group cleanup ({ids.length})
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+          {visible.length > 50 && (
+            <p className="clean-footnote">
+              Showing the first 50 of {visible.length} matching groups. Narrow the search to review
+              the rest.
+            </p>
+          )}
+        </section>
+      )}
+    </>
+  );
+}
+
+export function LeftoverConfirmation({
+  plan,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  plan: ChangePlan;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [agreed, setAgreed] = useState(false);
+  const [clock, setClock] = useState(Date.now());
+  const expired = clock >= plan.expiresAt;
+  const restore = plan.action === 'restore';
+  useEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => {
+      clearInterval(timer);
+      dialog?.close();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="change-dialog"
+      aria-labelledby="leftover-title"
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!busy) onCancel();
+      }}
+    >
+      <div className="detail-top">
+        <span className="eyebrow">CORRELATED APPLICATION LEFTOVER</span>
+        <button
+          className="icon-button"
+          aria-label="Cancel change"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          <X size={19} />
+        </button>
+      </div>
+      <h2 id="leftover-title">
+        {restore ? 'Restore application search path?' : 'Remove unused application search path?'}
+      </h2>
+      <p className="change-intro">
+        {restore
+          ? 'Restore only the exact original search-path value while its key, missing-file evidence and correlated metadata still match.'
+          : 'Remove only the unused Path value from this current-user application registration after a verified backup. The uninstall registration remains intact.'}
+      </p>
+      <dl className="detail-fields">
+        <div>
+          <dt>Application</dt>
+          <dd>{plan.name}</dd>
+        </div>
+        <div>
+          <dt>Value</dt>
+          <dd>{plan.valueName} · REG_SZ</dd>
+        </div>
+        <div className="full-field">
+          <dt>Registry path</dt>
+          <dd className="code-field">{plan.registryPath}</dd>
+        </div>
+        <div className="full-field">
+          <dt>Original search directory</dt>
+          <dd className="code-field">{plan.originalValue}</dd>
+        </div>
+        {(plan.supportingEvidence ?? []).map(([label, value]) => (
+          <div className="full-field" key={label}>
+            <dt>{label}</dt>
+            <dd className="code-field">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="notice info-notice">
+        <ShieldCheck size={20} />
+        <p>
+          Multiple matching missing references suggest a leftover, not proof of a complete
+          uninstall. Settings, licenses, uninstall metadata, keys, files and permissions are
+          preserved. No application or uninstaller is executed. Restore this search-path backup
+          before an older executable-mapping backup. New mappings, files, ownership conflicts or
+          changed evidence block cleanup and restore.
+        </p>
+      </div>
+      <label className="confirmation-check">
+        <input
+          type="checkbox"
+          checked={agreed}
+          disabled={busy || expired}
+          onChange={(e) => setAgreed(e.target.checked)}
+        />
+        <span>
+          {restore
+            ? 'I reviewed the exact search-path value and matching evidence and want to restore it without overwriting a new value.'
+            : 'I reviewed the correlated evidence and want a verified backup before removing only this unused search-path value.'}
+        </span>
+      </label>
+      {expired && (
+        <p role="alert" className="amber">
+          This review expired. Cancel and review current evidence again.
+        </p>
+      )}
+      <div className="change-buttons">
+        <button className="secondary-button" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          className="primary-button"
+          disabled={busy || expired || !agreed}
+          onClick={onConfirm}
+        >
+          {restore ? <ArchiveRestore size={16} /> : <ShieldCheck size={16} />}{' '}
+          {busy
+            ? 'Applying…'
+            : restore
+              ? 'Restore application search path'
+              : 'Back up & remove search path'}
+        </button>
+      </div>
+    </dialog>
+  );
+}

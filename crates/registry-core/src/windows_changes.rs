@@ -8,6 +8,8 @@ pub(crate) use icons::open_icon_child;
 mod conversions;
 #[path = "windows_file_references.rs"]
 mod file_references;
+#[path = "windows_leftovers.rs"]
+mod leftovers;
 #[path = "windows_maintenance.rs"]
 mod maintenance;
 #[path = "windows_sound_events.rs"]
@@ -48,6 +50,8 @@ pub(crate) use type_libraries::open_type_lib;
 use winreg::{enums::*, transaction::Transaction, RegKey, RegValue};
 
 pub struct WindowsRegistryStore {
+    #[cfg(test)]
+    leftover_test_root: Option<String>,
     #[cfg(test)]
     sound_test_root: Option<String>,
     #[cfg(test)]
@@ -98,6 +102,8 @@ pub struct WindowsRegistryStore {
 impl Default for WindowsRegistryStore {
     fn default() -> Self {
         Self {
+            #[cfg(test)]
+            leftover_test_root: None,
             #[cfg(test)]
             sound_test_root: None,
             #[cfg(test)]
@@ -245,6 +251,33 @@ fn read_value(key: &RegKey, name: &str) -> Result<Option<StoredValue>, String> {
     }
 }
 impl RegistryStore for WindowsRegistryStore {
+    fn read_maintenance_inventory(
+        &self,
+        apps: &[crate::maintenance::MaintenanceBackup],
+    ) -> Vec<Result<crate::maintenance::MaintenanceSnapshot, String>> {
+        self.maintenance_inventory(apps)
+    }
+    fn read_leftover(
+        &self,
+        app: &crate::app_leftovers::LeftoverBackup,
+    ) -> Result<Option<StoredValue>, String> {
+        self.leftover_value(app)
+    }
+    fn check_leftover_access(
+        &self,
+        app: &crate::app_leftovers::LeftoverBackup,
+    ) -> Result<(), String> {
+        self.leftover_access(app)
+    }
+    fn compare_exchange_leftover(
+        &self,
+        app: &crate::app_leftovers::LeftoverBackup,
+        expected: Option<&StoredValue>,
+        replacement: Option<&StoredValue>,
+    ) -> Result<(), String> {
+        self.exchange_leftover_value(app, expected, replacement)
+    }
+
     fn read_sound(
         &self,
         app: &crate::sound_events::SoundBackup,
@@ -903,6 +936,9 @@ mod tests {
             file_reference_repairable: false,
             sound_state: None,
             sound_repairable: false,
+            leftover_state: None,
+            leftover_repairable: false,
+            leftover_evidence: None,
             maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
@@ -1040,6 +1076,9 @@ mod tests {
             file_reference_repairable: false,
             sound_state: None,
             sound_repairable: false,
+            leftover_state: None,
+            leftover_repairable: false,
+            leftover_evidence: None,
             maintenance_repairable: false,
             conversion_repairable: false,
             redirection_state: None,
@@ -1228,6 +1267,9 @@ mod tests {
                 file_reference_repairable: false,
                 sound_state: None,
                 sound_repairable: false,
+                leftover_state: None,
+                leftover_repairable: false,
+                leftover_evidence: None,
                 maintenance_repairable: false,
                 conversion_repairable: false,
                 redirection_state: None,
