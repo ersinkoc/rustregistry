@@ -4,6 +4,8 @@ use crate::{
     changes::{RegistryStore, StoredValue},
     windows_changes::{open_registration_path, WindowsRegistryStore},
 };
+#[path = "leftover_urls_scan.rs"]
+mod urls;
 pub(super) fn scan_leftovers(
     source: &Source,
     cancel: &AtomicBool,
@@ -63,6 +65,23 @@ pub(super) fn scan_leftovers(
             Ok(v) => v,
             Err(_) => continue,
         };
+        let remaining = MAX_ENTRIES_PER_SCOPE.saturating_sub(entries.len() - start);
+        if remaining == 0 {
+            scope.status = "limited".into();
+            break;
+        }
+        urls::UrlInventory {
+            source,
+            environment,
+            probe,
+            store: &store,
+            anchors: &anchors,
+        }
+        .append(&name, &state, entries, scope, remaining);
+        if entries.len() - start >= MAX_ENTRIES_PER_SCOPE {
+            scope.status = "limited".into();
+            break;
+        }
         let Some(value) = state.value else { continue };
         let mut entry = make_entry(
             source,
@@ -138,6 +157,7 @@ pub(super) fn scan_leftovers(
                                 application_values: state.other,
                                 path_list: entry.raw_value.contains(';').then_some(value.clone()),
                                 supported_type: None,
+                                url_metadata: None,
                             };
                             entry.name = evidence.application_name.clone();
                             entry.publisher = snapshot.text("Publisher").ok();
@@ -258,6 +278,7 @@ fn scan_supported_types(
                                     application_values: state.application_values.clone(),
                                     path_list: None,
                                     supported_type: Some(Box::new(state.guard.clone())),
+                                    url_metadata: None,
                                 };
                                 match state.guard.evidence(&app, probe) {
                                     Ok(evidence) => {

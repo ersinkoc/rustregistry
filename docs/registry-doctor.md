@@ -1,6 +1,14 @@
 # Registry Doctor: scope and next milestones
 
-RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.25; future milestones below are plans, not implemented features.
+RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.26; future milestones below are plans, not implemented features.
+
+## Application URL metadata in 0.1.26
+
+The current-user App Paths correlation pass now inventories SupportedProtocols and UseUrl alongside existing path evidence, using the same roots and 68 logical sections. A bounded colon-separated REG_SZ scheme list or zero/one REG_DWORD flag is eligible only when a single literal search directory and unique non-MSI uninstall owner corroborate missing installation, application and uninstaller targets. Remaining executable mappings, alternate activation, user Applications registrations, either machine view, ambiguous ownership, malformed sibling data and inaccessible evidence block changes.
+
+Schema 26 captures immutable raw originals, the exact preserved Path name/type/bytes, recognized URL sibling originals and bounded application/uninstall metadata. A verified backup precedes each conditional native transaction. Only the selected URL value is removed; paths, licenses, settings, keys, files, permissions, protocol-handler registrations and default selections are preserved. Recovery requires the original path and metadata to remain exact and the selected value to remain absent. An original sibling may be present unchanged or absent; new/changed values block recovery. Restore any later path-cleaning backup first, URL metadata next and an older executable mapping last. Native and packaged tests exercise this ordering, exact DWORD/string recovery and large batches. Existing formats 1–25 retain their layouts/checksums.
+
+All supported cleaning modes include the new values without bypassing review. Later-stage eligibility requires another scan and explicit review. Leftover-group pages now expose the full matching inventory instead of stopping at 50 groups. Microsoft's [App Paths reference](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) supplies the URL scheme/input field semantics; it does not prove installation state or justify removing unrelated vendor data. No URL, application or uninstaller is opened.
 
 ## Research and current behavior
 

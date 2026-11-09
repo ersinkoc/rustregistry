@@ -268,6 +268,29 @@ impl WindowsRegistryStore {
             }
         }
         let state = self.leftover_application(&app.executable_name, tx)?;
+        if let Some(url) = &app.url_metadata {
+            if state.name != url.path_name || state.value.as_ref() != Some(&url.search_path) {
+                return Err("The preserved application search path changed or is absent. Restore its newer search-path backup before URL metadata; nothing was overwritten.".into());
+            }
+            let mut other = vec![];
+            let mut selected = None;
+            for value in state.other {
+                if crate::leftover_urls::is_url_value(&value.name) {
+                    if url.original(&value.name) != Some(&value.value) {
+                        return Err("URL metadata changed or a new sibling value appeared. Nothing was overwritten.".into());
+                    }
+                    if value.name == app.value_name {
+                        selected = Some(value.value);
+                    }
+                } else {
+                    other.push(value);
+                }
+            }
+            if other != app.application_values {
+                return Err("The application metadata or executable mapping changed. Nothing was overwritten.".into());
+            }
+            return Ok(selected);
+        }
         if state.other != app.application_values
             || (state.value.is_some() && state.name != app.value_name)
         {
@@ -339,7 +362,7 @@ impl WindowsRegistryStore {
             Some(value) => key.set_raw_value(
                 &app.value_name,
                 &RegValue {
-                    vtype: REG_SZ,
+                    vtype: if value.kind == 4 { REG_DWORD } else { REG_SZ },
                     bytes: Cow::Borrowed(&value.bytes),
                 },
             ),

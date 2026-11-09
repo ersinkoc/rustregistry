@@ -185,7 +185,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     && entry
                         .leftover_state
                         .as_ref()
-                        .is_some_and(|app| app.supported_type.is_some()))
+                        .is_some_and(
+                            |app| app.supported_type.is_some() || app.url_metadata.is_some()
+                        ))
                     || matches!(
                         entry.category,
                         Category::SharedDlls

@@ -19,6 +19,8 @@ pub struct LeftoverBackup {
     pub path_list: Option<StoredValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supported_type: Option<Box<crate::leftover_types::SupportedTypeBackup>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url_metadata: Option<Box<crate::leftover_urls::UrlMetadataBackup>>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -233,7 +235,9 @@ pub fn correlate(
 }
 impl LeftoverBackup {
     pub fn schema(&self) -> u32 {
-        if self.supported_type.is_some() {
+        if self.url_metadata.is_some() {
+            26
+        } else if self.supported_type.is_some() {
             25
         } else if self.path_list.is_some() {
             24
@@ -258,11 +262,30 @@ impl LeftoverBackup {
     pub fn validate(&self) -> Result<(), String> {
         crate::changes::validate_app_path_name(&self.executable_name)?;
         crate::uninstall::validate_uninstall_name(&self.uninstall_key)?;
-        if (self.supported_type.is_none() && !self.value_name.eq_ignore_ascii_case("Path"))
+        if (self.supported_type.is_none()
+            && self.url_metadata.is_none()
+            && !self.value_name.eq_ignore_ascii_case("Path"))
             || !self.executable_name.is_ascii()
             || uuid::Uuid::parse_str(self.uninstall_key.trim_matches(['{', '}'])).is_ok()
         {
             return Err("Unsupported leftover backup namespace or identifier.".into());
+        }
+        if let Some(url) = &self.url_metadata {
+            if self.path_list.is_some() || self.supported_type.is_some() {
+                return Err(
+                    "URL metadata, search-path and file-type backup namespaces cannot be mixed."
+                        .into(),
+                );
+            }
+            url.validate()?;
+            if url.original(&self.value_name).is_none()
+                || !literal_directory(&url.search_path)?.eq_ignore_ascii_case(&self.directory)
+            {
+                return Err(
+                    "URL metadata original or installation-directory evidence does not match."
+                        .into(),
+                );
+            }
         }
         if let Some(hint) = &self.supported_type {
             crate::applications::validate_application_name(&self.executable_name)?;
@@ -309,6 +332,7 @@ impl LeftoverBackup {
                 || v.value.kind == 6
                 || !names.insert(v.name.to_lowercase())
                 || (self.supported_type.is_some() && v.name.eq_ignore_ascii_case("IsHostApp"))
+                || (self.url_metadata.is_some() && v.name.eq_ignore_ascii_case("DelegateExecute"))
                 || ["Path", "DropTarget", "UseUrl", "SupportedProtocols"]
                     .iter()
                     .any(|n| v.name.eq_ignore_ascii_case(n))
@@ -324,6 +348,18 @@ impl LeftoverBackup {
         probe: &impl PathProbe,
     ) -> Result<LeftoverEvidence, String> {
         self.validate()?;
+        if let Some(url) = &self.url_metadata {
+            if url.original(&self.value_name) != Some(original) {
+                return Err("The original URL metadata does not match its backup evidence.".into());
+            }
+            return correlate(
+                &self.executable_name,
+                &url.search_path,
+                &self.uninstall_key,
+                &self.anchor,
+                probe,
+            );
+        }
         if let Some(hint) = &self.supported_type {
             crate::leftover_types::validate_hint(original)?;
             return hint.evidence(self, probe);
@@ -377,9 +413,9 @@ pub fn link_related(entries: &mut [RegistryEntry]) {
     {
         match e.category {
             Category::ApplicationLeftovers
-                if e.leftover_state
-                    .as_ref()
-                    .is_some_and(|app| app.supported_type.is_some()) =>
+                if e.leftover_state.as_ref().is_some_and(|app| {
+                    app.supported_type.is_some() || app.url_metadata.is_some()
+                }) =>
             {
                 if let Some(evidence) = &e.leftover_evidence {
                     hints

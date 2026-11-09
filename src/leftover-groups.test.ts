@@ -33,6 +33,20 @@ function hint(id: string, extension: string, repairable = true): RegistryEntry {
   };
 }
 describe('application leftover grouping', () => {
+  it('groups both URL metadata actions with distinct names and retains their related actions', () => {
+    const a = {
+      ...hint('a', '.one'),
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\old.exe',
+      valueName: 'SupportedProtocols',
+      rawValue: 'https:ftp',
+    };
+    const b = { ...a, id: 'b', valueName: 'uSeUrL', valueType: 'REG_DWORD', rawValue: '1' };
+    expect(leftoverActionName(a)).toBe('Removed app (SupportedProtocols)');
+    expect(leftoverActionName(b)).toBe('Removed app (uSeUrL)');
+    const grouped = leftoverGroups([a, b]);
+    expect(grouped).toHaveLength(1);
+    expect(new Set(grouped[0].leftoverEvidence?.relatedIds)).toEqual(new Set(['a', 'b']));
+  });
   it('combines sibling hints into one evidence group and retains every independently reviewable action', () => {
     const entries = [hint('a', '.one', false), hint('b', '.two')];
     const before = structuredClone(entries);

@@ -17,7 +17,7 @@ import { MaintenanceConfirmation } from './Maintenance';
 import { FileReferenceConfirmation } from './FileReferences';
 import { SoundConfirmation } from './Sounds';
 import { LeftoverConfirmation } from './Leftovers';
-import { isSupportedType } from './leftover-groups';
+import { isSupportedType, isUrlMetadata } from './leftover-groups';
 import { backupScopeLabel, filterBackups, type BackupStateFilter } from './backups';
 
 export interface ChangePlan {
@@ -118,14 +118,21 @@ export function canQuarantine(entry: RegistryEntry) {
       entry.leftoverRepairable === true &&
       entry.hive === 'HKCU' &&
       entry.view === 'shared' &&
-      entry.valueType === 'REG_SZ' &&
-      ((entry.valueName.toLowerCase() === 'path' &&
+      ((entry.valueType === 'REG_SZ' &&
+        entry.valueName.toLowerCase() === 'path' &&
         /^Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\[^\\]+\.exe$/i.test(
           entry.keyPath,
         )) ||
-        (isSupportedType(entry) &&
+        (entry.valueType === 'REG_SZ' &&
+          isSupportedType(entry) &&
           /^\.[a-z0-9][a-z0-9_-]{0,30}$/i.test(entry.valueName) &&
-          entry.rawValue === '')) &&
+          entry.rawValue === '') ||
+        (isUrlMetadata(entry) &&
+          ((entry.valueName.toLowerCase() === 'useurl' &&
+            entry.valueType === 'REG_DWORD' &&
+            /^[01]$/.test(entry.rawValue)) ||
+            (entry.valueName.toLowerCase() === 'supportedprotocols' &&
+              entry.valueType === 'REG_SZ')))) &&
       entry.assessment.status === 'review' &&
       entry.assessment.code === 'application_leftover_candidate'
     );

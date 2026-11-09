@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.26 — 2026-11-09
+
+- Expand current-user App Paths inventory to SupportedProtocols and UseUrl application leftovers. Keep 68 logical sections using the existing roots; require a single literal missing installation path, missing application/uninstaller, unique non-MSI owner, no executable mapping, alternate activation or user/machine counterpart. Protect malformed/expanded data, existing installations, ambiguous owners and uncertain evidence.
+- Add individual, selected, Quick Clean and Full Clean removal of a bounded REG_SZ URL scheme list or conventional zero/one REG_DWORD URL-input flag. Each selected value receives an immutable schema 26 backup with exact original name/type/bytes and guarded path/ownership/sibling metadata. Preserve settings, licenses, search paths, protocol handlers, defaults, keys, files and permissions. Formats 1–25 keep their layouts/checksums.
+- Support independent sibling cleanup/recovery while blocking new or changed URL metadata. Preserve staged recovery: a later search-path backup must be restored before URL metadata, and an older executable mapping restores last. Every newly eligible stage requires a fresh scan and review.
+- Replace the first-50 application-leftover group cutoff with 50-group pages, searchable/filterable across the complete inventory. Label each URL value distinctly and show its actual registry type, original data and recovery order in individual and batch review.
+- Add native exact/restart recovery, 128-value Full Clean, 36 post-review conflict scenarios, malformed-type/scheme, storage-failure and corruption coverage. Add owned packaged controls, 52-group pagination, 104-value cleaning/recovery and staged schema-23/26 recovery flows with independent raw-value/permission comparisons. No URL, application or uninstaller is executed.
+
 ## 0.1.25 — 2026-11-09
 
 - Add current-user Applications SupportedTypes leftover inventory, bringing coverage to 68 logical sections using existing registry roots. Correlate a simple missing literal open-command executable with its exact missing installation directory and unique non-MSI uninstall owner. Protect existing files, MSI/product-code owners, ambiguous ownership, alternate activation, App Paths counterparts, both machine views, unsupported values and inaccessible evidence.

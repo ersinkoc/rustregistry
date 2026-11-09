@@ -26,26 +26,26 @@ The executable requires WebView2 on the target computer. This release does not c
 
 ## What it reads
 
-The scanner covers **67 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
+The scanner covers **68 logical registry sections**, including independent 32/64-bit COM checks. Logical checks can share physical registry roots.
 
-| Category                                           | Registry area                                                         | Sections |
-| -------------------------------------------------- | --------------------------------------------------------------------- | -------: |
-| Startup                                            | CurrentVersion Run / RunOnce                                          |        6 |
-| Application paths / uninstall listings             | CurrentVersion App Paths / Uninstall                                  |        6 |
-| Open with suggestions                              | Classes extension OpenWithProgids                                     |        2 |
-| COM DLL, handler and local-server mappings         | Classes CLSID server children                                         |        4 |
-| Application open commands / icons                  | Classes Applications                                                  |        4 |
-| Static context menus                               | File, folder, filesystem and directory-background verbs               |        8 |
-| Services and shared DLL references                 | SYSTEM Services / CurrentVersion SharedDLLs                           |        3 |
-| Registered applications / type libraries / ProgIDs | RegisteredApplications / Classes TypeLib / ProgID CLSID               |        6 |
-| COM interface TypeLib / proxy references           | Classes Interface                                                     |        8 |
-| COM TreatAs / AutoConvertTo references             | Classes CLSID redirection children                                    |        8 |
-| Application display cache                          | HKCU Classes Local Settings Software Microsoft Windows Shell MuiCache |        1 |
-| Optional personal registry history                 | HKCU CurrentVersion Explorer RunMRU / TypedPaths                      |        2 |
-| Persisted font registrations                       | Shared HKCU/HKLM Windows NT CurrentVersion Fonts                      |        2 |
-| Registered help files                              | HKLM Windows HTML Help / Help in separate 32/64-bit views             |        4 |
-| Sound-event file assignments                       | Shared HKCU/HKLM AppEvents Schemes Apps, including saved variants     |        2 |
-| Correlated application leftovers                   | Existing HKCU App Paths / Uninstall and exact-file display-cache data |        1 |
+| Category                                           | Registry area                                                                | Sections |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- | -------: |
+| Startup                                            | CurrentVersion Run / RunOnce                                                 |        6 |
+| Application paths / uninstall listings             | CurrentVersion App Paths / Uninstall                                         |        6 |
+| Open with suggestions                              | Classes extension OpenWithProgids                                            |        2 |
+| COM DLL, handler and local-server mappings         | Classes CLSID server children                                                |        4 |
+| Application open commands / icons                  | Classes Applications                                                         |        4 |
+| Static context menus                               | File, folder, filesystem and directory-background verbs                      |        8 |
+| Services and shared DLL references                 | SYSTEM Services / CurrentVersion SharedDLLs                                  |        3 |
+| Registered applications / type libraries / ProgIDs | RegisteredApplications / Classes TypeLib / ProgID CLSID                      |        6 |
+| COM interface TypeLib / proxy references           | Classes Interface                                                            |        8 |
+| COM TreatAs / AutoConvertTo references             | Classes CLSID redirection children                                           |        8 |
+| Application display cache                          | HKCU Classes Local Settings Software Microsoft Windows Shell MuiCache        |        1 |
+| Optional personal registry history                 | HKCU CurrentVersion Explorer RunMRU / TypedPaths                             |        2 |
+| Persisted font registrations                       | Shared HKCU/HKLM Windows NT CurrentVersion Fonts                             |        2 |
+| Registered help files                              | HKLM Windows HTML Help / Help in separate 32/64-bit views                    |        4 |
+| Sound-event file assignments                       | Shared HKCU/HKLM AppEvents Schemes Apps, including saved variants            |        2 |
+| Correlated application leftovers                   | HKCU App Paths paths/URL metadata, Applications SupportedTypes and Uninstall |        2 |
 
 HKCU shared locations are read once. Applicable machine locations and redirected COM registrations use the 32/64-bit views described in [Microsoft's registry architecture table](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys). Shared keys are not counted twice merely because both architecture flags can read them. File probing for redirected COM and SharedDLLs remains limited to native 64-bit mappings. Existing class or library keys prove registration presence, not working activation. Uninstall display metadata is shown when available.
 
@@ -54,6 +54,18 @@ HKCU shared locations are read once. Applicable machine locations and redirected
 - **Unverified:** the target is absent, ambiguous, inaccessible, unsupported, or could not be resolved reliably.
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
+
+## Application URL leftovers and Full Clean in 0.1.26
+
+Application leftovers now also inventories **SupportedProtocols** and **UseUrl** under current-user **App Paths** registrations. Individual review, selected cleaning, Quick Clean and Full Clean include eligible URL metadata. This expands the values inspected within existing roots; coverage remains **68 logical sections**. The leftovers workspace now pages all matching groups in sets of 50 instead of hiding groups after the first 50, with search/filter page reset and distinct names for each supported action.
+
+Cleanup requires one literal REG_SZ search directory, a matching unique non-MSI uninstall owner, missing installation/application/uninstaller targets, an absent executable mapping, no alternate activation and no current-user Applications or machine counterpart in either architecture view. SupportedProtocols must be a bounded colon-separated list of unique ASCII URL schemes; UseUrl must be a conventional REG_DWORD zero or one. Expanded/multi-directory paths, malformed sibling data, product-code/MSI registrations, existing files, ambiguous owners, child keys and inaccessible evidence remain protected.
+
+Only the selected URL metadata value is removed, after an immutable **schema 26** backup is saved, flushed and verified. The original search path and its exact value-name spelling, other URL metadata, custom settings/licenses, uninstall data, keys, files and permissions are retained. Protocol-handler registrations and default application selections are not edited; no URL or command is opened. Backups preserve exact original names, types and bytes, including DWORD data and string terminators. Formats **1–25** retain their layouts/checksums. New mappings/owners/files, a changed or missing preserved path, changed metadata and new/changed sibling values block cleanup and recovery. An original sibling's absence permits independent cleanup/restoration in either order without overwriting a new value.
+
+All supported cleaning modes use the same native guards and the existing 10,000-entry limit. Removing URL metadata can expose eligible search-path cleanup in a later completed scan; each new stage requires a new review. If a later search-path backup exists, restore that newer path backup before URL metadata, then restore an older executable-mapping backup last. A missing path blocks URL metadata recovery with this guidance. Every completed entry retains its own verified backup; progress, Stop and conflict handling remain available.
+
+[Microsoft's App Paths registration model](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) defines SupportedProtocols scheme lists and the UseUrl input flag. The documented field meanings do not establish that an application was uninstalled; the additional installation/ownership checks are RustRegistry's conservative cleanup policy.
 
 ## Application leftovers and Full Clean in 0.1.25
 

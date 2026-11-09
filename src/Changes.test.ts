@@ -22,6 +22,38 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers correlated URL metadata in individual and automatic cleaning, preserving namespace and type guards', () => {
+    const url: RegistryEntry = {
+      ...entry,
+      category: 'application_leftovers',
+      leftoverRepairable: true,
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\old.exe',
+      valueName: 'UseUrl',
+      valueType: 'REG_DWORD',
+      rawValue: '1',
+      assessment: { ...entry.assessment, code: 'application_leftover_candidate' },
+    };
+    expect(canQuarantine(url)).toBe(true);
+    expect(isQuickCleanCandidate(url)).toBe(true);
+    expect(
+      canQuarantine({
+        ...url,
+        valueName: 'SupportedProtocols',
+        valueType: 'REG_SZ',
+        rawValue: 'https:custom+scheme',
+      }),
+    ).toBe(true);
+    for (const changed of [
+      { ...url, valueType: 'REG_SZ' },
+      { ...url, rawValue: '2' },
+      { ...url, hive: 'HKLM' },
+      { ...url, valueName: 'DropTarget' },
+      { ...url, keyPath: url.keyPath + '\\Nested' },
+      { ...url, leftoverRepairable: false },
+      { ...url, valueName: 'SupportedProtocols', valueType: 'REG_EXPAND_SZ' },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers a corroborated empty file-type suggestion without granting other scopes or values eligibility', () => {
     const hint = {
       ...entry,

@@ -398,19 +398,23 @@ export function CleanConfirmation({
               <summary>
                 <strong>
                   {item.name}
-                  {item.supportingEvidence?.some(([label]) => label === 'File-type suggestion')
+                  {item.supportingEvidence?.some(([label]) =>
+                    ['File-type suggestion', 'URL metadata value'].includes(label),
+                  )
                     ? ` (${item.valueName})`
                     : ''}
                 </strong>
                 <span>
                   {item.scope === 'application_leftover'
-                    ? item.supportingEvidence?.some(([label]) => label === 'File-type suggestion')
-                      ? 'Remove corroborated leftover file-type suggestion'
-                      : item.supportingEvidence?.some(
-                            ([label]) => label === 'Search path after cleanup',
-                          )
-                        ? 'Prune confirmed missing application search directories'
-                        : 'Remove correlated unused application search path'
+                    ? item.supportingEvidence?.some(([label]) => label === 'URL metadata value')
+                      ? 'Remove corroborated leftover application URL metadata'
+                      : item.supportingEvidence?.some(([label]) => label === 'File-type suggestion')
+                        ? 'Remove corroborated leftover file-type suggestion'
+                        : item.supportingEvidence?.some(
+                              ([label]) => label === 'Search path after cleanup',
+                            )
+                          ? 'Prune confirmed missing application search directories'
+                          : 'Remove correlated unused application search path'
                     : item.scope === 'sound_event'
                       ? 'Clear missing current sound assignment'
                       : item.scope === 'font_reference'
@@ -645,12 +649,14 @@ export function CleanConfirmation({
           <p className="change-intro">
             Leftover search-path cleanup requires a unique matching non-MSI uninstall registration,
             missing installation/application/uninstaller targets, no executable mapping and no
-            machine counterpart. Only the reviewed Path or SupportedTypes value changes. Supported
-            lists retain unrelated segments; file-type cleanup preserves sibling suggestions and the
-            open command. Keys, application settings, licenses, uninstall metadata, files and
-            permissions remain intact. Restore a search-path backup before an older
-            executable-mapping backup; file-type hints are independently restorable. New mappings or
-            evidence block restoration.
+            machine counterpart. Only the reviewed Path, SupportedTypes, SupportedProtocols or
+            UseUrl value changes. URL metadata cleanup preserves the search path; after a later
+            search-path cleanup, restore that newer path backup before URL metadata. Supported lists
+            retain unrelated segments; file-type cleanup preserves sibling suggestions and the open
+            command. Keys, application settings, licenses, uninstall metadata, files and permissions
+            remain intact. Restore a search-path backup before an older executable-mapping backup;
+            file-type hints are independently restorable. New mappings or evidence block
+            restoration.
           </p>
         )}
         {plan.items.some((item) => item.scope === 'sound_event') && (

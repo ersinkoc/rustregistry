@@ -6,7 +6,16 @@ export function isSupportedType(entry: RegistryEntry) {
   );
 }
 export function leftoverActionName(entry: RegistryEntry) {
-  return isSupportedType(entry) ? `${entry.name} (${entry.valueName})` : entry.name;
+  return isSupportedType(entry) || isUrlMetadata(entry)
+    ? `${entry.name} (${entry.valueName})`
+    : entry.name;
+}
+export function isUrlMetadata(entry: RegistryEntry) {
+  return (
+    entry.category === 'application_leftovers' &&
+    /^Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\[^\\]+\.exe$/i.test(entry.keyPath) &&
+    /^(SupportedProtocols|UseUrl)$/i.test(entry.valueName)
+  );
 }
 export function leftoverGroups(entries: RegistryEntry[]): RegistryEntry[] {
   const groups = new Map<string, RegistryEntry>();

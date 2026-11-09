@@ -10,6 +10,7 @@ mod conversions;
 mod file_references;
 #[path = "windows_leftovers.rs"]
 mod leftovers;
+pub(crate) use leftovers::{AnchorIndex, LeftoverAppState};
 #[path = "windows_maintenance.rs"]
 mod maintenance;
 #[path = "windows_sound_events.rs"]

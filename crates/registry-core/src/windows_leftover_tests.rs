@@ -1,6 +1,8 @@
 use super::*;
 #[path = "windows_leftover_type_tests.rs"]
 mod supported;
+#[path = "windows_leftover_url_tests.rs"]
+mod urls;
 use crate::{
     changes::ChangeManager, LocalPathProbe, PathProbe, ProbeResult, RegistryEntry, TargetKind,
 };
@@ -81,7 +83,9 @@ impl Fixture {
             .set_raw_value(
                 name,
                 &RegValue {
-                    vtype: if value.kind == 2 {
+                    vtype: if value.kind == 4 {
+                        REG_DWORD
+                    } else if value.kind == 2 {
                         REG_EXPAND_SZ
                     } else {
                         REG_SZ
@@ -111,6 +115,7 @@ impl Fixture {
             application_values: state.other,
             path_list: None,
             supported_type: None,
+            url_metadata: None,
         }
     }
     fn entry(&self, i: usize) -> RegistryEntry {
