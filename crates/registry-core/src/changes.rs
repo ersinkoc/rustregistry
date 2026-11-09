@@ -29,6 +29,8 @@ use crate::type_libraries::{
 };
 #[path = "batch.rs"]
 mod batch;
+#[path = "operation_changes.rs"]
+mod operations;
 use crate::associations::{
     validate_extension, validate_suggestion, AssociationBackup, AssociationState, CLASSES_KEY,
     OPEN_WITH,
@@ -48,6 +50,7 @@ pub use batch::{
     is_quick_clean_candidate, is_repair_candidate, select_clean_entries, CleanPlan, CleanProgress,
     CleanResult, MAX_CLEAN_ENTRIES,
 };
+pub use operations::{UndoItem, UndoPlan, UndoResult};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -604,6 +607,7 @@ pub struct BackupInventory {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChangeResult {
+    pub operation_id: Option<String>,
     pub backup_id: String,
     pub action: String,
     pub message: String,
@@ -625,6 +629,8 @@ pub struct ChangeManager<S: RegistryStore, P: PathProbe> {
     pending: Option<Pending>,
     batch_pending: Option<batch::PendingBatch>,
     batch_applying: bool,
+    journal_directory: Option<PathBuf>,
+    undo_pending: Option<operations::PendingUndo>,
 }
 
 fn now() -> Result<u64, String> {
@@ -655,6 +661,8 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             pending: None,
             batch_pending: None,
             batch_applying: false,
+            journal_directory: None,
+            undo_pending: None,
         }
     }
 
@@ -1440,6 +1448,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     pub fn prepare_quarantine(&mut self, entry: &RegistryEntry) -> Result<ChangePlan, String> {
+        self.cancel();
         if entry.category == Category::ApplicationLeftovers {
             self.cancel();
             return self.prepare_leftover(entry);
@@ -2873,8 +2882,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     pub fn prepare_restore(&mut self, id: &str) -> Result<ChangePlan, String> {
-        self.pending = None;
-        self.batch_pending = None;
+        self.cancel();
         let record = self.load(id)?;
         if self.read_record(&record)?.is_some() {
             return Err("A value with this name already exists. Restore never overwrites an existing value.".into());
@@ -3195,6 +3203,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     pub fn cancel(&mut self) {
         self.pending = None;
         self.batch_pending = None;
+        self.undo_pending = None;
     }
 
     fn registry_path(record: &BackupRecord) -> String {
@@ -3636,6 +3645,36 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     pub fn apply(&mut self, token: &str) -> Result<ChangeResult, String> {
         let pending = self
             .pending
+            .as_ref()
+            .ok_or("No pending change. Review the entry again.")?;
+        if pending.plan.token != token || now()? > pending.plan.expires_at {
+            self.cancel();
+            return Err("This review expired or does not match. Review the change again.".into());
+        }
+        let (record, kind) = match &pending.action {
+            PendingAction::Quarantine(record) => (record, crate::journal::OperationKind::Clean),
+            PendingAction::Restore(record) => (record, crate::journal::OperationKind::Restore),
+        };
+        let mut run = self.start_operation(
+            kind,
+            "individual",
+            None,
+            vec![Self::journal_entry(record, &pending.plan)],
+        )?;
+        let result = self.apply_recorded(token, &mut run, 0);
+        if let Some(run) = &mut run {
+            run.finish(if result.is_ok() {
+                "completed"
+            } else {
+                "attention"
+            })?;
+        }
+        result
+    }
+
+    fn apply_inner(&mut self, token: &str) -> Result<ChangeResult, String> {
+        let pending = self
+            .pending
             .take()
             .ok_or("No pending change. Review the entry again.")?;
         if pending.plan.token != token || now()? > pending.plan.expires_at {
@@ -3712,6 +3751,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             return Err(format!("The change committed, but the current value has changed again. Backup {} is preserved; refresh and inspect the result.", record.id));
         }
         Ok(ChangeResult {
+            operation_id: None,
             backup_id: record.id.to_string(),
             action: pending.plan.action,
             message: if record.leftover.as_ref().is_some_and(|app| app.url_metadata.is_some()){if restore{"Original application URL metadata restored with exact name, type and bytes. No URL or command was opened."}else{"Selected leftover application URL metadata removed after a verified backup. Search paths, sibling data, settings, licenses, keys, files and permissions were preserved."}}else if record.leftover.as_ref().is_some_and(|app| app.supported_type.is_some()){if restore{"Original file-type suggestion restored with exact bytes. The application open command and default selections were preserved."}else{"Selected leftover file-type suggestion removed after a verified backup. Other suggestions, open commands, settings, licenses, keys, files and permissions were preserved."}}else if record.leftover.as_ref().is_some_and(|app| app.path_list.is_some()){if restore{"Complete original application search-path list restored and verified."}else{"Confirmed missing installation-directory segments removed after a verified backup. All retained search segments, settings, licenses, keys, files and permissions were preserved."}}else if record.leftover.is_some(){if restore{"Original correlated application search path restored and verified. No application or uninstaller was executed."}else{"Unused application search-path value removed after a verified backup. Uninstall metadata, keys, settings, licenses, files and permissions were preserved."}}else if record.sound.is_some(){if restore {"Original sound assignment restored and verified. No audio was played."}else{"Missing current sound assignment cleared after a verified backup. Saved schemes, keys, metadata, audio files and permissions were preserved. No audio was played."}}else if let Some(app)=&record.file_reference{if restore {"Original font/help registration restored and verified. No font or document was loaded."}else if app.location.font(){"Missing font mapping removed after a verified backup. Font files, runtime resources, other registrations and permissions were preserved."}else{"Missing help-file mapping removed after a verified backup. Documents, search settings, other registrations and permissions were preserved."}}else if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
@@ -4316,6 +4356,107 @@ mod tests {
             state.clone(),
             ChangeManager::new(store, path.into(), Probe(state)),
         )
+    }
+
+    #[test]
+    fn durable_operation_records_individual_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_, _, mut manager) = setup(&dir.path().join("backups"));
+        manager.journal_directory = Some(dir.path().join("operations"));
+        let plan = manager.prepare_quarantine(&entry()).unwrap();
+        manager.apply(&plan.token).unwrap();
+        let inventory = crate::journal::JournalStore::new(dir.path().join("operations"))
+            .inventory()
+            .unwrap();
+        assert_eq!(
+            inventory.operations.len(),
+            1,
+            "Every committed change needs a durable journal"
+        );
+        assert_eq!(inventory.operations[0].applied, 1);
+    }
+
+    #[test]
+    fn legacy_bulk_undo_is_reviewed_cancellable_and_conflict_safe() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, state, mut old) = setup(&dir.path().join("backups"));
+        let mut ids = vec![];
+        for i in 0..8 {
+            let mut e = entry();
+            e.id = format!("e{i}");
+            e.value_name = format!("Owned{i}");
+            store
+                .0
+                .borrow_mut()
+                .insert(e.value_name.clone(), original());
+            let plan = old.prepare_quarantine(&e).unwrap();
+            ids.push(old.apply(&plan.token).unwrap().backup_id);
+        }
+        // These are legacy v1 immutable backups, created without an operation journal.
+        let mut reopened =
+            ChangeManager::new(store.clone(), dir.path().join("backups"), Probe(state))
+                .with_journal(dir.path().join("operations"));
+        let plan = reopened.prepare_undo_backups(&ids).unwrap();
+        assert_eq!(plan.items.len(), 8);
+        let conflict = StoredValue {
+            kind: 1,
+            bytes: "C:\\New\\app.exe\0"
+                .encode_utf16()
+                .flat_map(u16::to_le_bytes)
+                .collect(),
+        };
+        store
+            .0
+            .borrow_mut()
+            .insert("Owned7".into(), conflict.clone());
+        let stop = Cell::new(false);
+        let result = reopened
+            .apply_undo_with_progress(
+                &plan.token,
+                || stop.get(),
+                |p| {
+                    if p.completed == 4 {
+                        stop.set(true)
+                    }
+                },
+            )
+            .unwrap();
+        assert!(result.cancelled);
+        assert_eq!(result.restored, 3);
+        assert_eq!(result.blocked.len(), 1);
+        assert_eq!(result.not_attempted, 4);
+        assert_eq!(store.read("Owned7").unwrap(), Some(conflict.clone()));
+        let plan = reopened.prepare_undo_backups(&ids).unwrap();
+        assert_eq!(
+            plan.items
+                .iter()
+                .filter(|i| i.state == "original_present")
+                .count(),
+            3
+        );
+        let result = reopened
+            .apply_undo_with_progress(&plan.token, || false, |_| {})
+            .unwrap();
+        assert_eq!(result.restored, 4);
+        assert_eq!(result.already_original, 3);
+        assert_eq!(result.blocked.len(), 1);
+        assert_eq!(store.read("Owned7").unwrap(), Some(conflict));
+        assert!(reopened
+            .apply_undo_with_progress(&plan.token, || false, |_| {})
+            .is_err());
+    }
+
+    #[test]
+    fn invalid_journal_location_blocks_mutation_and_backup_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _, mut manager) = setup(&dir.path().join("backups"));
+        let path = dir.path().join("blocked");
+        fs::write(&path, b"owned control").unwrap();
+        manager.journal_directory = Some(path);
+        let plan = manager.prepare_quarantine(&entry()).unwrap();
+        assert!(manager.apply(&plan.token).is_err());
+        assert_eq!(store.read("Example").unwrap(), Some(original()));
+        assert!(!dir.path().join("backups").exists());
     }
 
     #[test]

@@ -4,6 +4,14 @@ A Windows Registry Doctor for diagnosing broken references, reviewing supported 
 
 Open source under the [MIT license](LICENSE). See the [changelog](CHANGELOG.md) and [GitHub releases](https://github.com/ersinkoc/rustregistry/releases) for version history and Windows downloads.
 
+## Recovery Center and saved scans
+
+Version 0.2.0 records confirmed changes in a durable local operation journal. Recovery Center shows completed, stopped and interrupted operations. Nothing resumes automatically after reopening. **Review Undo** compares each attempted change with its immutable backup and the live registry, restores eligible originals, skips already restored values and reports conflicts without overwriting them. Progress and Stop work between entries. An intent can exist without a result checkpoint when the process closes during a change, so recovery checks live state rather than trusting a completed counter.
+
+**Backups & restore** also supports bulk selection and reviewed restoration of up to 10,000 backups, including formats 1–27 from previous releases. Individual restoration remains available. Keep `backups-v1` together with `operations-v1` in the application local-data directory. Journals reference backups; they do not replace them. A missing or corrupt backup blocks recovery. Windows reboot, hardware/power-loss and full-disk recovery are not certified by the process-termination tests.
+
+The latest 20 scans are saved locally in `history-v1` as compressed reports with checksums. **Saved scans** reopens them read-only across restarts; run a fresh scan before cleaning or repairing. Scan archives, journals and backups can contain private local paths, registry data and commands. No history is uploaded. Scan-history retention applies only to validated scan archive pairs; operation journals and immutable backups are not automatically deleted.
+
 ## Run the desktop app
 
 Requirements: Windows x64, Rust 1.93 or newer with the MSVC toolchain, Visual Studio C++ Build Tools with a Windows SDK, Node.js 26 or newer, and Microsoft Edge WebView2 Runtime.

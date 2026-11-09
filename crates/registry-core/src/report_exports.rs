@@ -165,6 +165,7 @@ mod tests {
     fn report() -> ScanReport {
         let entries=(0..60).map(|i|serde_json::from_value(serde_json::json!({"id":format!("id-{i}"),"name":format!("Entry {i}"),"category":"application_icons","hive":"HKCU","view":"shared","keyPath":format!(r"Software\Classes\Applications\App{i}.exe\DefaultIcon"),"valueName":"","valueType":"REG_SZ","rawValue":r"C:\Missing\icon.ico","publisher":null,"version":null,"assessment":{"status":"review","code":"target_missing","explanation":"Missing icon only","target":r"C:\Missing\icon.ico"},"appPathRepairable":false,"uninstallRepairable":false,"uninstallHidden":false,"associationRepairable":false,"comRepairable":false,"serviceRepairable":false,"applicationRepairable":false,"applicationHidden":false,"sharedDllRepairable":false,"registeredAppRepairable":false,"iconRepairable":true})).unwrap()).collect();
         ScanReport {
+            history_warning: None,
             id: "current-scan".into(),
             started_at: 1,
             duration_ms: 2,

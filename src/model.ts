@@ -25,6 +25,7 @@ export type Category =
 export type EntryStatus = 'found' | 'review' | 'unknown';
 
 export interface RegistryEntry {
+  historical?: boolean;
   id: string;
   name: string;
   category: Category;
@@ -89,6 +90,8 @@ export interface ScanScope {
 }
 
 export interface ScanReport {
+  historical?: boolean;
+  historyWarning?: string;
   id: string;
   startedAt: number;
   durationMs: number;

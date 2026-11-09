@@ -1,4 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  RecoveryCenter,
+  SavedHistory,
+  UndoConfirmation,
+  type UndoPlan,
+  type UndoResult,
+} from './Recovery';
 import { LeftoversPage } from './Leftovers';
 import { Channel, invoke, isTauri } from '@tauri-apps/api/core';
 import {
@@ -9,7 +16,6 @@ import {
   ArrowUpRight,
   Boxes,
   Check,
-  CheckCheck,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
@@ -67,14 +73,23 @@ import {
 } from './model';
 
 type Page =
-  'leftovers' | 'clean' | 'overview' | 'results' | 'coverage' | 'history' | 'backups' | 'about';
+  | 'recovery'
+  | 'leftovers'
+  | 'clean'
+  | 'overview'
+  | 'results'
+  | 'coverage'
+  | 'history'
+  | 'backups'
+  | 'about';
 const pageNames: Record<Page, string> = {
   overview: 'Overview',
   clean: 'Clean registry',
   leftovers: 'Application leftovers',
   results: 'Scan results',
   coverage: 'Scan coverage',
-  history: 'Session history',
+  history: 'Saved scans',
+  recovery: 'Recovery Center',
   backups: 'Backups & restore',
   about: 'About RustRegistry',
 };
@@ -445,7 +460,7 @@ export default function App() {
     localStorage.getItem('rustregistry-theme') === 'light' ? 'light' : 'dark',
   );
   const [report, setReport] = useState<ScanReport | null>(null);
-  const [history, setHistory] = useState<ScanReport[]>([]);
+  const [undoPlan, setUndoPlan] = useState<UndoPlan | null>(null);
   const [scanning, setScanning] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
@@ -522,7 +537,7 @@ export default function App() {
     try {
       const result = await invoke<ScanReport>('scan_registry', { onProgress: channel });
       setReport(result);
-      setHistory((previous) => [result, ...previous].slice(0, 8));
+      setBackupRevision((v) => v + 1);
       setTablePage(0);
     } catch (cause) {
       setError(`The scan could not be completed: ${String(cause)}`);
@@ -544,14 +559,14 @@ export default function App() {
   };
 
   const reviewChange = async (entry?: RegistryEntry, backupId?: string) => {
-    if (scanning || changing) return;
+    if (scanning || changing || (entry && report?.historical)) return;
     setChanging(true);
     setError('');
     setSuccess('');
     setSelected(null);
     try {
       const prepared = entry
-        ? await invoke<ChangePlan>('prepare_quarantine', { entryId: entry.id })
+        ? await invoke<ChangePlan>('prepare_quarantine', { entryId: entry.id, scanId: report?.id })
         : await invoke<ChangePlan>('prepare_restore', { backupId });
       setPlan(prepared);
     } catch (cause) {
@@ -568,6 +583,7 @@ export default function App() {
     }
     setPlan(null);
     setCleanPlan(null);
+    setUndoPlan(null);
   };
   const confirmChange = async () => {
     if (!plan || changing) return;
@@ -598,7 +614,7 @@ export default function App() {
     entryIds: string[],
     cleanCategory?: Category,
   ) => {
-    if (scanning || changing || plan || cleanPlan) return;
+    if (scanning || changing || plan || cleanPlan || undoPlan || report?.historical) return;
     setChanging(true);
     setError('');
     setSuccess('');
@@ -608,6 +624,7 @@ export default function App() {
           mode,
           entryIds,
           category: cleanCategory ?? null,
+          scanId: report?.id,
         }),
       );
     } catch (cause) {
@@ -650,6 +667,59 @@ export default function App() {
     }
   };
 
+  const reviewUndo = async (operationId?: string, backupIds: string[] = []) => {
+    if (scanning || changing || plan || cleanPlan || undoPlan) return;
+    setChanging(true);
+    setError('');
+    setSuccess('');
+    setCleanStopRequested(false);
+    try {
+      setUndoPlan(
+        await invoke<UndoPlan>('prepare_undo', { operationId: operationId ?? null, backupIds }),
+      );
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setChanging(false);
+    }
+  };
+  const confirmUndo = async () => {
+    if (!undoPlan || changing) return;
+    setChanging(true);
+    setError('');
+    setSuccess('');
+    setCleanStopRequested(false);
+    setCleanProgress({ completed: 0, total: undoPlan.items.length, current: '' });
+    const channel = new Channel<CleanProgress>();
+    channel.onmessage = setCleanProgress;
+    let failure = '';
+    try {
+      const result = await invoke<UndoResult>('apply_undo', {
+        token: undoPlan.token,
+        confirmed: true,
+        onProgress: channel,
+      });
+      setSuccess(
+        `Undo ${result.cancelled ? 'stopped' : 'finished'}: ${result.restored} restored, ${result.alreadyOriginal} already original, ${result.blocked.length} blocked, ${result.notAttempted} not attempted.`,
+      );
+      if (result.blocked.length)
+        failure = result.blocked
+          .slice(0, 5)
+          .map((item) => `${item.name}: ${item.reason}`)
+          .join(' | ');
+      setPage('recovery');
+    } catch (cause) {
+      failure = String(cause);
+    } finally {
+      setUndoPlan(null);
+      setCleanProgress(null);
+      setBackupRevision((v) => v + 1);
+      await startScan();
+      if (failure) setError(failure);
+      setChanging(false);
+    }
+  };
+
   const stopCleaning = async () => {
     setCleanStopRequested(true);
     try {
@@ -667,7 +737,8 @@ export default function App() {
   };
 
   const exportFiltered = async () => {
-    if (!report || !filtered.length || scanning || changing || exporting) return;
+    if (!report || report.historical || !filtered.length || scanning || changing || exporting)
+      return;
     setExporting(true);
     setError('');
     setExportReceipt(null);
@@ -721,6 +792,7 @@ export default function App() {
             className="secondary-button"
             disabled={
               !report ||
+              report.historical ||
               !filtered.length ||
               scanning ||
               changing ||
@@ -946,6 +1018,7 @@ export default function App() {
               ['results', FileSearch],
               ['coverage', SlidersHorizontal],
               ['history', History],
+              ['recovery', ShieldCheck],
               ['backups', ArchiveRestore],
             ] as [Page, LucideIcon][]
           ).map(([key, Icon]) => (
@@ -1045,7 +1118,7 @@ export default function App() {
                       : page === 'backups'
                         ? 'Review local backups and restore without overwriting existing values.'
                         : page === 'history'
-                          ? 'Your most recent scans from this session.'
+                          ? 'Your locally saved scans across app restarts.'
                           : 'Built to help you understand your Windows registry.'}
               </p>
             </div>
@@ -1081,6 +1154,17 @@ export default function App() {
             </div>
           )}
 
+          {report?.historical && (
+            <div className="notice info-notice" role="status">
+              <History size={18} />
+              <p>Saved report — read-only. Run a fresh scan before cleaning or repairing.</p>
+            </div>
+          )}
+          {report?.historyWarning && (
+            <div className="notice error-notice" role="alert">
+              {report.historyWarning}
+            </div>
+          )}
           {success && (
             <div className="notice success-notice" role="status">
               <ShieldCheck size={18} />
@@ -1141,7 +1225,7 @@ export default function App() {
           {page === 'clean' && (
             <CleanPanel
               entries={report?.entries || []}
-              complete={Boolean(report && !report.cancelled)}
+              complete={Boolean(report && !report.cancelled && !report.historical)}
               busy={scanning || changing || Boolean(plan) || Boolean(cleanPlan)}
               onReview={reviewClean}
               onScan={startScan}
@@ -1489,60 +1573,26 @@ export default function App() {
           )}
 
           {page === 'history' && (
-            <section className="panel">
-              <div className="panel-heading">
-                <div>
-                  <h2>Scans in this session</h2>
-                  <p>The last 8 scans are kept in memory and cleared when you close the app.</p>
-                </div>
-                <History size={19} className="muted" />
-              </div>
-              {history.length === 0 ? (
-                <div className="empty-state">
-                  <div className="empty-icon">
-                    <History size={30} />
-                  </div>
-                  <h3>No scans yet</h3>
-                  <p>Your first completed scan will appear here.</p>
-                </div>
-              ) : (
-                <div className="history-list">
-                  {history.map((item) => (
-                    <button
-                      key={item.id}
-                      className="history-item"
-                      onClick={() => {
-                        setReport(item);
-                        setCategory('all');
-                        setStatus('all');
-                        setQuery('');
-                        setTablePage(0);
-                        setPage('results');
-                      }}
-                    >
-                      <span className="history-icon">
-                        {item.cancelled ? <CirclePause size={20} /> : <CheckCheck size={20} />}
-                      </span>
-                      <span>
-                        <strong>
-                          {formatTime(item.startedAt)} ·{' '}
-                          {item.cancelled ? 'Stopped scan' : 'Registry scan'}
-                        </strong>
-                        <small>
-                          {formatNumber(item.entries.length)} entries ·{' '}
-                          {formatDuration(item.durationMs)} · {item.scopes.length}/64 scan sections
-                        </small>
-                      </span>
-                      <span className="readonly-pill">
-                        <LockKeyhole size={12} />
-                        Read-only
-                      </span>
-                      <ArrowUpRight size={18} />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
+            <SavedHistory
+              revision={backupRevision}
+              busy={scanning || changing}
+              onLoad={(saved) => {
+                setReport(saved);
+                setSelected(null);
+                setCategory('all');
+                setStatus('all');
+                setQuery('');
+                setTablePage(0);
+                setPage('results');
+              }}
+            />
+          )}
+          {page === 'recovery' && (
+            <RecoveryCenter
+              revision={backupRevision}
+              busy={scanning || changing}
+              onReview={(id) => reviewUndo(id)}
+            />
           )}
 
           {page === 'backups' && (
@@ -1550,6 +1600,7 @@ export default function App() {
               revision={backupRevision}
               busy={changing || scanning}
               onRestore={(id) => reviewChange(undefined, id)}
+              onBulkRestore={(ids) => reviewUndo(undefined, ids)}
             />
           )}
           {page === 'about' && (
@@ -1582,8 +1633,8 @@ export default function App() {
                   <Monitor size={19} />
                   <span>
                     <strong>Local by design</strong>Scan data is not sent anywhere. Results stay in
-                    memory; confirmed changes keep their original values in your local backup
-                    folder.
+                    local scan archives; confirmed changes keep their original values in your local
+                    backup folder.
                   </span>
                 </div>
                 <div className="about-fact">
@@ -1680,6 +1731,17 @@ export default function App() {
           onCancel={cancelChange}
           onConfirm={confirmClean}
           progress={cleanProgress}
+          onStop={stopCleaning}
+          stopRequested={cleanStopRequested}
+        />
+      )}
+      {undoPlan && (
+        <UndoConfirmation
+          plan={undoPlan}
+          busy={changing}
+          progress={cleanProgress}
+          onCancel={cancelChange}
+          onConfirm={confirmUndo}
           onStop={stopCleaning}
           stopRequested={cleanStopRequested}
         />

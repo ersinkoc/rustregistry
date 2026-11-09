@@ -113,6 +113,7 @@ export function isQuickCleanCandidate(entry: RegistryEntry) {
   return entry.category !== 'usage_history' && canQuarantine(entry);
 }
 export function canQuarantine(entry: RegistryEntry) {
+  if (entry.historical) return false;
   if (entry.category === 'application_leftovers')
     return (
       entry.leftoverRepairable === true &&
@@ -1023,10 +1024,12 @@ export function BackupsPanel({
   revision,
   busy,
   onRestore,
+  onBulkRestore,
 }: {
   revision: number;
   busy: boolean;
   onRestore: (id: string) => void;
+  onBulkRestore: (ids: string[]) => void;
 }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [error, setError] = useState('');
@@ -1035,6 +1038,7 @@ export function BackupsPanel({
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<BackupStateFilter>('all');
   const [backupPage, setBackupPage] = useState(0);
+  const [selectedBackups, setSelectedBackups] = useState<string[]>([]);
   useEffect(() => setBackupPage(0), [query, stateFilter, revision]);
   useEffect(() => {
     let active = true;
@@ -1147,6 +1151,29 @@ export function BackupsPanel({
             <p className="backup-filter-count" aria-live="polite">
               Showing {shownBackups.length} of {inventory.backups.length} backups
             </p>
+            <div className="change-buttons">
+              <button
+                className="secondary-button"
+                disabled={busy || shownBackups.length > 10000}
+                onClick={() => setSelectedBackups(shownBackups.slice(0, 10000).map((b) => b.id))}
+              >
+                Select matching backups
+              </button>
+              <button
+                className="secondary-button"
+                disabled={busy || !selectedBackups.length}
+                onClick={() => setSelectedBackups([])}
+              >
+                Clear selection
+              </button>
+              <button
+                className="primary-button"
+                disabled={busy || !selectedBackups.length}
+                onClick={() => onBulkRestore(selectedBackups)}
+              >
+                Review restore selected ({selectedBackups.length})
+              </button>
+            </div>
           </>
         )}
         {!inventory?.backups.length ? (
@@ -1175,6 +1202,19 @@ export function BackupsPanel({
           <div className="backup-list">
             {backupRows.rows.map((backup) => (
               <article className="backup-item" key={backup.id}>
+                <input
+                  type="checkbox"
+                  aria-label={`Select backup ${backup.id}`}
+                  disabled={busy}
+                  checked={selectedBackups.includes(backup.id)}
+                  onChange={(event) =>
+                    setSelectedBackups((old) =>
+                      event.target.checked
+                        ? [...old, backup.id].slice(0, 10000)
+                        : old.filter((id) => id !== backup.id),
+                    )
+                  }
+                />
                 <span className={`history-icon ${backup.state === 'conflict' ? 'amber' : ''}`}>
                   <ArchiveRestore size={20} />
                 </span>

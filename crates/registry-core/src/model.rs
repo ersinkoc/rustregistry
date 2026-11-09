@@ -163,6 +163,8 @@ pub struct ScanProgress {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanReport {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_warning: Option<String>,
     pub id: String,
     pub started_at: u64,
     pub duration_ms: u64,

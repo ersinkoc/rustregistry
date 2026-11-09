@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-11-09
+
+- Add a durable append-only operation journal for individual repair/restore, selected cleaning, Quick Clean, Full Clean and bulk Undo. Flush an intent before every registry mutation and a verified result afterward; validate ordered checksum chains on read. Interrupted operations are visible in Recovery Center and never replay automatically.
+- Add reviewed bulk Undo for a stopped cleaning operation or 1–10,000 selected immutable backups, including legacy formats 1–27. Reload backup evidence and live guards per entry, skip exact originals, preserve conflicting values and support progress/Stop between entries. Restore dependent application metadata before older executable mappings. Existing backup layouts and checksums are unchanged.
+- Persist the latest 20 complete or cancelled scan reports in local compressed archives with checksum validation. Reopen saved results across restarts in read-only mode; historical reports never become the native repair cache. Show storage errors instead of claiming a scan was saved.
+- Add native 1,000-entry clean/Undo and force-terminated process tests at the 500th committed Windows transaction, before its result checkpoint, for both cleaning and Undo. Add legacy bulk restore/conflict/cancellation, journal corruption/torn-tail/storage failure, archive retention/corruption and frontend historical-isolation coverage. Packaged GUI verification exercises 1,000 changes, selected backup recovery, forced termination/reopening and persistent history using owned fixtures.
+- This release delivers recovery infrastructure. It retains the existing 68 logical scan sections and per-entry transactions; a batch is not one atomic registry transaction. Archives and operation logs contain local paths and commands, remain local, and should be retained with their associated backups.
+
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
 ## 0.1.27 — 2026-11-09

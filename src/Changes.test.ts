@@ -22,6 +22,10 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('never offers repair from an archived report even if the original scan was eligible', () => {
+    expect(canQuarantine({ ...entry, historical: true })).toBe(false);
+    expect(isQuickCleanCandidate({ ...entry, historical: true })).toBe(false);
+  });
   it('offers correlated URL metadata in individual and automatic cleaning, preserving namespace and type guards', () => {
     const url: RegistryEntry = {
       ...entry,

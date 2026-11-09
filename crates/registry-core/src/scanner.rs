@@ -1025,6 +1025,7 @@ pub fn scan(cancel: &AtomicBool, progress: impl Fn(ScanProgress)) -> Result<Scan
         crate::app_leftovers::link_related(&mut entries);
     }
     Ok(ScanReport {
+        history_warning: None,
         id: format!("scan-{started_at}"),
         started_at,
         duration_ms: timer.elapsed().as_millis() as u64,

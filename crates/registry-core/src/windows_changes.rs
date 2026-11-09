@@ -1327,3 +1327,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "operation_tests.rs"]
+mod operation_tests;

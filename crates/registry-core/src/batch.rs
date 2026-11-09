@@ -26,6 +26,7 @@ pub struct CleanPlan {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanResult {
+    pub operation_id: Option<String>,
     pub completed: Vec<ChangeResult>,
     pub failed: Option<CleanSkipped>,
     pub not_attempted: usize,
@@ -277,6 +278,17 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         }
         let total = batch.records.len();
         self.ensure_backup_capacity(total)?;
+        let mut run = self.start_operation(
+            crate::journal::OperationKind::Clean,
+            &batch.plan.mode,
+            None,
+            batch
+                .records
+                .iter()
+                .map(|(plan, record)| Self::journal_entry(record, plan))
+                .collect(),
+        )?;
+        let operation_id = run.as_ref().map(|r| r.id().to_string());
         self.batch_applying = true;
         let result = (|| {
             let mut completed = Vec::new();
@@ -285,10 +297,11 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 total,
                 current: String::new(),
             });
-            for (mut plan, record) in batch.records {
+            for (index, (mut plan, record)) in batch.records.into_iter().enumerate() {
                 if cancelled() {
                     self.pending = None;
                     return Ok(CleanResult {
+                        operation_id: operation_id.clone(),
                         not_attempted: total - completed.len(),
                         completed,
                         failed: None,
@@ -304,7 +317,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     plan,
                     action: PendingAction::Quarantine(record),
                 });
-                match self.apply(&item_token) {
+                match self.apply_recorded(&item_token, &mut run, index) {
                     Ok(result) => {
                         completed.push(result);
                         progress(CleanProgress {
@@ -316,6 +329,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                     Err(reason) => {
                         let not_attempted = total - completed.len() - 1;
                         return Ok(CleanResult {
+                            operation_id: operation_id.clone(),
                             completed,
                             failed: Some(CleanSkipped { name, reason }),
                             not_attempted,
@@ -325,6 +339,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 }
             }
             Ok(CleanResult {
+                operation_id,
                 completed,
                 failed: None,
                 not_attempted: 0,
@@ -332,6 +347,14 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             })
         })();
         self.batch_applying = false;
+        if let Some(run) = &mut run {
+            let outcome = match &result {
+                Ok(result) if result.cancelled => "cancelled",
+                Ok(result) if result.failed.is_none() => "completed",
+                _ => "attention",
+            };
+            run.finish(outcome)?;
+        }
         result
     }
 }

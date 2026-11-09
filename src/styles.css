@@ -1592,6 +1592,32 @@ tr:hover td {
   font-weight: 550;
   letter-spacing: -0.6px;
 }
+.undo-dialog {
+  width: min(880px, 90vw);
+}
+.undo-dialog .dialog-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 20px;
+}
+.undo-review-list {
+  max-height: 48vh;
+  overflow-y: auto;
+  margin: 20px 0;
+}
+.undo-review-list article {
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.undo-review-list p {
+  margin: 8px 0;
+  color: var(--muted);
+}
+.undo-review-list code {
+  font-size: 12px;
+}
 .change-intro {
   margin: 15px 0 24px;
   font-size: 12px;

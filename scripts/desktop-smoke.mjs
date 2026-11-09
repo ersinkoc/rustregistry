@@ -472,11 +472,16 @@ try {
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
     checked('Coverage lists all 68 registry scan sections with expandable read results');
 
-    await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
-    await expect(page.locator('.history-item')).toHaveCount(1);
+    await page.locator('nav').getByRole('button', { name: 'Saved scans', exact: true }).click();
+    await expect(page.locator('.history-item').first()).toBeVisible();
     await page.locator('.history-item').first().click();
     await expect(page.getByRole('heading', { name: 'Scan results', exact: true })).toBeVisible();
-    checked('Session history reopens the completed scan');
+    await expect(
+      page.getByText('Saved report — read-only. Run a fresh scan before cleaning or repairing.', {
+        exact: true,
+      }),
+    ).toBeVisible();
+    checked('Persistent history reopens the completed scan as a read-only archive');
     for (const category of ['shared_dlls']) {
       await page.getByRole('combobox', { name: 'Filter by category' }).selectOption(category);
       await page.getByRole('combobox', { name: 'Filter by status' }).selectOption('unknown');

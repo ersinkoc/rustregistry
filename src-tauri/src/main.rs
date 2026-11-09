@@ -3,7 +3,7 @@
 use registry_core::{
     changes::{
         BackupInventory, ChangeManager, ChangePlan, ChangeResult, CleanPlan, CleanProgress,
-        CleanResult,
+        CleanResult, UndoPlan, UndoResult,
     },
     windows_changes::WindowsRegistryStore,
     Category, LocalPathProbe, ScanProgress, ScanReport,
@@ -23,6 +23,7 @@ struct ScanControl {
 }
 
 struct Changes(Arc<Mutex<ChangeManager<WindowsRegistryStore, LocalPathProbe>>>);
+struct History(std::path::PathBuf);
 
 struct RunningGuard(Arc<AtomicBool>);
 impl Drop for RunningGuard {
@@ -42,17 +43,24 @@ fn acquire(control: &ScanControl) -> Result<RunningGuard, String> {
 #[tauri::command]
 async fn scan_registry(
     control: State<'_, ScanControl>,
+    history: State<'_, History>,
     on_progress: Channel<ScanProgress>,
 ) -> Result<ScanReport, String> {
     let guard = acquire(&control)?;
     control.cancelled.store(false, Ordering::Release);
     let cancelled = control.cancelled.clone();
     let last_report = control.last_report.clone();
+    let history_path = history.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let _guard = guard;
-        let result = registry_core::scan(&cancelled, |progress| {
+        let mut result = registry_core::scan(&cancelled, |progress| {
             let _ = on_progress.send(progress);
         })?;
+        if let Err(error) = registry_core::history::HistoryStore::new(history_path).save(&result) {
+            result.history_warning = Some(format!(
+                "This scan could not be saved to local history: {error}"
+            ));
+        }
         *last_report
             .lock()
             .map_err(|_| "Scan state is unavailable.".to_string())? = Some(result.clone());
@@ -97,6 +105,7 @@ async fn prepare_quarantine(
     control: State<'_, ScanControl>,
     changes: State<'_, Changes>,
     entry_id: String,
+    scan_id: Option<String>,
 ) -> Result<ChangePlan, String> {
     let guard = acquire(&control)?;
     let entry = {
@@ -108,6 +117,9 @@ async fn prepare_quarantine(
             .as_ref()
             .filter(|report| !report.cancelled)
             .ok_or("Complete a fresh scan before reviewing a change.")?;
+        if scan_id.as_ref().is_some_and(|id| id != &report.id) {
+            return Err("Historical reports cannot authorize changes. Run a fresh scan.".into());
+        }
         report
             .entries
             .iter()
@@ -176,6 +188,7 @@ async fn prepare_clean(
     mode: String,
     entry_ids: Vec<String>,
     category: Option<Category>,
+    scan_id: Option<String>,
 ) -> Result<CleanPlan, String> {
     let guard = acquire(&control)?;
     control.clean_cancelled.store(false, Ordering::Release);
@@ -188,6 +201,9 @@ async fn prepare_clean(
             .as_ref()
             .filter(|r| !r.cancelled)
             .ok_or("Complete a fresh scan before cleaning.")?;
+        if scan_id.as_ref().is_some_and(|id| id != &report.id) {
+            return Err("Historical reports cannot authorize cleaning. Run a fresh scan.".into());
+        }
         registry_core::changes::select_clean_entries(&report.entries, &mode, &entry_ids, category)?
     };
     let manager = changes.0.clone();
@@ -291,16 +307,127 @@ fn set_display_scale(window: tauri::WebviewWindow, percent: u32) -> Result<(), S
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+async fn list_operations(
+    changes: State<'_, Changes>,
+) -> Result<registry_core::journal::OperationInventory, String> {
+    let manager = changes.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        manager
+            .lock()
+            .map_err(|_| "Change state is unavailable.")?
+            .operation_inventory()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn list_scan_history(
+    history: State<'_, History>,
+) -> Result<registry_core::history::HistoryInventory, String> {
+    let path = history.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        registry_core::history::HistoryStore::new(path).inventory()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn get_saved_scan(history: State<'_, History>, id: String) -> Result<ScanReport, String> {
+    let path = history.0.clone();
+    // Loading an archive deliberately never changes ScanControl.last_report.
+    tauri::async_runtime::spawn_blocking(move || {
+        registry_core::history::HistoryStore::new(path).load(&id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn prepare_undo(
+    control: State<'_, ScanControl>,
+    changes: State<'_, Changes>,
+    operation_id: Option<String>,
+    backup_ids: Vec<String>,
+) -> Result<UndoPlan, String> {
+    let guard = acquire(&control)?;
+    control.clean_cancelled.store(false, Ordering::Release);
+    if operation_id.is_some() && !backup_ids.is_empty() {
+        return Err("Choose an operation or selected backups.".into());
+    }
+    let manager = changes.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        let mut manager = manager.lock().map_err(|_| "Change state is unavailable.")?;
+        match operation_id {
+            Some(id) => manager.prepare_undo_operation(&id),
+            None => manager.prepare_undo_backups(&backup_ids),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+async fn apply_undo(
+    control: State<'_, ScanControl>,
+    changes: State<'_, Changes>,
+    token: String,
+    confirmed: bool,
+    on_progress: Channel<CleanProgress>,
+) -> Result<UndoResult, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required.".into());
+    }
+    let guard = acquire(&control)?;
+    let cancellation = control.clean_cancelled.clone();
+    let manager = changes.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        manager
+            .lock()
+            .map_err(|_| "Change state is unavailable.")?
+            .apply_undo_with_progress(
+                &token,
+                || cancellation.load(Ordering::Acquire),
+                |progress| {
+                    let _ = on_progress.send(progress);
+                },
+            )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn recovery_directory(normal: std::path::PathBuf) -> std::path::PathBuf {
+    // An owned, uniquely named E2E alias gets isolated journal/history storage across restarts.
+    // This cannot redirect registry access or backup storage.
+    if let (Ok(token), Ok(exe)) = (
+        std::env::var("RUSTREGISTRY_ELEVATED_WEBVIEW_TOKEN"),
+        std::env::current_exe(),
+    ) {
+        if uuid::Uuid::parse_str(&token).is_ok_and(|id| id.to_string() == token)
+            && exe.file_name().and_then(|name| name.to_str())
+                == Some(format!("RustRegistry-E2E-WebView-{token}.exe").as_str())
+        {
+            if let Some(parent) = exe.parent() {
+                return parent.join("state-v0200");
+            }
+        }
+    }
+    normal
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(ScanControl::default())
         .setup(|app| {
-            let directory = app.path().app_local_data_dir()?.join("backups-v1");
-            app.manage(Changes(Arc::new(Mutex::new(ChangeManager::new(
-                WindowsRegistryStore::default(),
-                directory,
-                LocalPathProbe,
-            )))));
+            let local = app.path().app_local_data_dir()?;
+            let directory = local.join("backups-v1");
+            let recovery = recovery_directory(local);
+            app.manage(History(recovery.join("history-v1")));
+            app.manage(Changes(Arc::new(Mutex::new(
+                ChangeManager::new(WindowsRegistryStore::default(), directory, LocalPathProbe)
+                    .with_journal(recovery.join("operations-v1")),
+            ))));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -316,7 +443,12 @@ fn main() {
             apply_clean,
             apply_clean_progress,
             cancel_change,
-            list_backups
+            list_backups,
+            list_operations,
+            list_scan_history,
+            get_saved_scan,
+            prepare_undo,
+            apply_undo
         ])
         .run(tauri::generate_context!())
         .expect("RustRegistry could not be started");

@@ -7,6 +7,8 @@ pub mod com;
 pub mod com_conversions;
 pub mod com_redirects;
 pub mod file_references;
+pub mod history;
+pub mod journal;
 pub mod leftover_companions;
 pub mod leftover_types;
 pub mod leftover_urls;
@@ -21,6 +23,7 @@ mod scanner;
 pub mod services;
 pub mod shared_dlls;
 pub mod sound_events;
+mod storage;
 pub mod type_libraries;
 pub mod uninstall;
 #[cfg(windows)]
