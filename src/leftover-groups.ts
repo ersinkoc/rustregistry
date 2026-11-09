@@ -27,7 +27,11 @@ export function leftoverGroups(entries: RegistryEntry[]): RegistryEntry[] {
       entry.assessment.status !== 'review'
     )
       continue;
-    const key = `${evidence.applicationPath.toLowerCase()}|${evidence.uninstallPath.toLowerCase()}`;
+    const key = JSON.stringify(
+      [evidence.executable, evidence.directory, evidence.uninstallPath].map((part) =>
+        part.toLowerCase(),
+      ),
+    );
     const previous = groups.get(key);
     const chosen = previous?.leftoverRepairable ? previous : entry;
     groups.set(key, {

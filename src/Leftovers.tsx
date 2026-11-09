@@ -170,6 +170,12 @@ export function LeftoversPage({
                       <dt>Correlated uninstall registration</dt>
                       <dd className="code-field">{e.uninstallPath}</dd>
                     </div>
+                    {e.appPathsCompanion && (
+                      <div className="full-field">
+                        <dt>Corroborating App Paths registration</dt>
+                        <dd className="code-field">{e.appPathsCompanion}</dd>
+                      </div>
+                    )}
                   </dl>
                   <details>
                     <summary>Why this group?</summary>
@@ -353,6 +359,15 @@ export function LeftoverConfirmation({
                 ? 'Remove only the confirmed missing installation-directory segments from this Path list after a verified backup. Retained segments keep their exact text and order. The complete original value is backed up.'
                 : 'Remove only the unused Path value from this current-user application registration after a verified backup. The uninstall registration remains intact.'}
       </p>
+      {plan.supportingEvidence?.some(
+        ([label]) => label === 'Corroborating App Paths registration',
+      ) && (
+        <p className="change-intro">
+          The matching App Paths registration is retained by this suggestion action. Its captured
+          executable mapping may be unchanged or absent after a separate reviewed mapping cleanup. A
+          new or changed mapping, search path, metadata or missing key blocks recovery.
+        </p>
+      )}
       <dl className="detail-fields">
         <div>
           <dt>Application</dt>

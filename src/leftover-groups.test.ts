@@ -33,6 +33,42 @@ function hint(id: string, extension: string, repairable = true): RegistryEntry {
   };
 }
 describe('application leftover grouping', () => {
+  it('unifies exact cross-registration evidence while retaining every source action and refusing different executable or directory identities', () => {
+    const hintEntry = hint('hint', '.one');
+    const path = {
+      ...hintEntry,
+      id: 'path',
+      keyPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\old.exe',
+      valueName: 'Path',
+      leftoverRepairable: false,
+      leftoverEvidence: {
+        ...hintEntry.leftoverEvidence!,
+        applicationPath: 'Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\old.exe',
+        relatedIds: ['mapping'],
+      },
+    };
+    const groups = leftoverGroups([path, hintEntry]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].id).toBe('hint');
+    expect(new Set(groups[0].leftoverEvidence?.relatedIds)).toEqual(
+      new Set(['mapping', 'path', 'hint']),
+    );
+    expect(
+      leftoverGroups([
+        hintEntry,
+        {
+          ...path,
+          leftoverEvidence: { ...path.leftoverEvidence, executable: 'C:\\Other\\old.exe' },
+        },
+      ]),
+    ).toHaveLength(2);
+    expect(
+      leftoverGroups([
+        hintEntry,
+        { ...path, leftoverEvidence: { ...path.leftoverEvidence, directory: 'C:\\Other' } },
+      ]),
+    ).toHaveLength(2);
+  });
   it('groups both URL metadata actions with distinct names and retains their related actions', () => {
     const a = {
       ...hint('a', '.one'),

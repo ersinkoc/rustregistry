@@ -32,6 +32,8 @@ pub struct LeftoverEvidence {
     pub uninstall_path: String,
     pub application_path: String,
     pub related_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_paths_companion: Option<String>,
 }
 
 pub fn literal_directory(value: &StoredValue) -> Result<String, String> {
@@ -231,11 +233,18 @@ pub fn correlate(
         uninstall_path: format!(r"HKCU\{}\{uninstall_key}", crate::uninstall::UNINSTALL_KEY),
         application_path: format!(r"{}\{executable_name}", crate::changes::APP_PATHS_KEY),
         related_ids: vec![],
+        app_paths_companion: None,
     })
 }
 impl LeftoverBackup {
     pub fn schema(&self) -> u32 {
-        if self.url_metadata.is_some() {
+        if self
+            .supported_type
+            .as_ref()
+            .is_some_and(|hint| hint.app_paths.is_some())
+        {
+            27
+        } else if self.url_metadata.is_some() {
             26
         } else if self.supported_type.is_some() {
             25
@@ -448,6 +457,10 @@ pub fn link_related(entries: &mut [RegistryEntry]) {
             let mut ids = vec![];
             for values in [
                 paths.get(&e.application_path.to_ascii_lowercase()),
+                e.app_paths_companion
+                    .as_ref()
+                    .and_then(|path| path.strip_prefix("HKCU\\"))
+                    .and_then(|path| paths.get(&path.to_ascii_lowercase())),
                 hints.get(&e.application_path.to_ascii_lowercase()),
                 uninstall.get(&e.uninstall_path.to_ascii_lowercase()),
                 cache.get(&e.executable.to_ascii_lowercase()),

@@ -2,6 +2,13 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.27 — 2026-11-09
+
+- Expand SupportedTypes leftover diagnosis/cleanup to corroborated current-user App Paths counterparts identifying the same missing executable or exact single missing installation directory. Require matching command/uninstaller and unique non-MSI owner; protect mismatched/expanded/multi-directory paths, alternate activation, child keys, present installations, ambiguous owners and both machine views. Keep 68 logical sections using existing roots.
+- Add immutable schema 27 hint backups with exact original name/type/bytes and bounded counterpart metadata. Preserve App Paths keys, paths, settings/licenses, sibling hints, commands, files and permissions. Require exact non-default counterpart data; allow a captured executable mapping to remain original or absent, but reject a new or changed mapping. Never recreate missing keys. Formats 1–26 retain layouts/checksums; legacy hint backups do not gain unrecorded counterpart permissions.
+- Include corroborated hints in individual, selected, Quick Clean and Full Clean reviews. Merge cross-registration evidence by exact executable, installation directory and uninstall owner, retaining every separately selectable action and showing the corroborating location and recovery guards.
+- Add native mapping-only/path-only/combined recovery, 128-hint Full Clean with restart restoration, 38 post-review conflict scenarios, independent sibling recovery around mapping removal, protected metadata/legacy guards, storage-failure and corruption tests. Add an owned packaged cross-registration flow covering individual and mixed schema-2/3/20/27/27 cleanup/recovery with independent raw-value/permission comparisons. No application, uninstaller or URL is opened.
+
 ## 0.1.26 — 2026-11-09
 
 - Expand current-user App Paths inventory to SupportedProtocols and UseUrl application leftovers. Keep 68 logical sections using the existing roots; require a single literal missing installation path, missing application/uninstaller, unique non-MSI owner, no executable mapping, alternate activation or user/machine counterpart. Protect malformed/expanded data, existing installations, ambiguous owners and uncertain evidence.

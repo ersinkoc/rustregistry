@@ -1304,7 +1304,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.original,
         ))
         .map_err(|e| e.to_string())?;
-        let bytes = if matches!(record.schema_version, 23..=26) {
+        let bytes = if matches!(record.schema_version, 23..=27) {
             serde_json::to_vec(&(bytes, &record.leftover)).map_err(|e| e.to_string())?
         } else if record.schema_version == 22 {
             serde_json::to_vec(&(bytes, &record.sound)).map_err(|e| e.to_string())?
@@ -2981,6 +2981,25 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                         "Preserved application open command".into(),
                         hint.command()?.text()?,
                     ));
+                    if let Some(companion) = &hint.app_paths {
+                        evidence.push((
+                            "Corroborating App Paths registration".into(),
+                            format!(r"HKCU\{}\{}", APP_PATHS_KEY, app.executable_name),
+                        ));
+                        evidence.push((
+                            "Corroborating executable mapping".into(),
+                            companion
+                                .get("")
+                                .map_or(Ok("(mapping absent)".into()), |v| v.text())?,
+                        ));
+                        evidence.push((
+                            "Preserved counterpart search path".into(),
+                            companion
+                                .get("Path")
+                                .map_or(Ok("(not registered)".into()), |v| v.text())?,
+                        ));
+                        evidence.push(("Counterpart recovery guard".into(), "The corroborating key and non-default metadata must remain exact. Its captured executable mapping may be unchanged or absent; new or changed mappings block recovery. No counterpart key is recreated.".into()));
+                    }
                 }
                 if let Some(url) = &app.url_metadata {
                     evidence.push(("URL metadata value".into(), app.value_name.clone()));
@@ -3095,6 +3114,11 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 app.application_values.len()
                     + app.anchor.values.len()
                     + app.url_metadata.as_ref().map_or(0, |url| url.values.len())
+                    + app
+                        .supported_type
+                        .as_ref()
+                        .and_then(|hint| hint.app_paths.as_ref())
+                        .map_or(0, |companion| companion.values.len())
             } else if let Some(app) = &record.maintenance {
                 app.snapshot.preserved.len()
             } else if let Some(app) = &record.conversion {

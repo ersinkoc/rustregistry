@@ -64,6 +64,7 @@ export interface RegistryEntry {
     uninstaller: string;
     uninstallPath: string;
     applicationPath: string;
+    appPathsCompanion?: string | null;
     relatedIds: string[];
   } | null;
   publisher: string | null;

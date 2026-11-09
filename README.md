@@ -55,6 +55,18 @@ HKCU shared locations are read once. Applicable machine locations and redirected
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
 
+## Corroborated application registrations in 0.1.27
+
+File-type suggestion cleanup now also handles a missing application recorded under both **HKCU Applications** and **HKCU App Paths**. A counterpart must identify the same exact missing executable or a single literal search directory matching the missing installation directory, with the existing missing-command/uninstaller and unique non-MSI ownership evidence. If both default mapping and Path exist, both must agree. Expanded/multi-directory paths, mismatched targets, alternate activation, child keys, present installations, MSI/ambiguous owners and either machine view remain protected. Coverage stays at **68 logical sections using existing roots**.
+
+Each selected empty SupportedTypes hint receives an immutable **schema 27** backup containing the exact original hint and bounded raw App Paths metadata alongside the existing application/uninstall evidence. This action removes only that hint; the counterpart key, paths, settings/licenses, commands, sibling hints, files and permissions are retained. Existing formats **1–26** keep their layouts/checksums. Older schema-25 backups still block newly introduced counterparts because they contain no corroborating snapshot.
+
+Cleanup and recovery require the existing counterpart key and exact non-default metadata. A captured executable mapping may remain byte-for-byte original or be absent, permitting a separately reviewed mapping cleanup; a new or changed mapping blocks recovery. Sibling hints and supported executable-mapping, uninstall-visibility and cache backups remain individually recoverable while their own guards match. No missing counterpart key is recreated, no command is executed and default application selections are preserved. Fresh scans require current mapping/path evidence; if a mapping-only counterpart has been cleared, its mapping backup can be restored before reviewing remaining hints.
+
+Individual, selected, Quick Clean and **Full Clean** include eligible corroborated hints with the same native guards. The leftovers workspace merges records only by exact executable, installation directory and uninstall owner, showing both registration locations and every separately reviewable action in one group. Product names alone never merge groups. The 10,000-entry review limit, paged groups, verified per-entry backups, progress and Stop remain available.
+
+[Microsoft's application-registration model](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) documents App Paths executable/search-path mappings and Applications Open with information. Those field meanings supply corroborating data, not proof of complete uninstallation or permission to remove unrelated application settings.
+
 ## Application URL leftovers and Full Clean in 0.1.26
 
 Application leftovers now also inventories **SupportedProtocols** and **UseUrl** under current-user **App Paths** registrations. Individual review, selected cleaning, Quick Clean and Full Clean include eligible URL metadata. This expands the values inspected within existing roots; coverage remains **68 logical sections**. The leftovers workspace now pages all matching groups in sets of 50 instead of hiding groups after the first 50, with search/filter page reset and distinct names for each supported action.

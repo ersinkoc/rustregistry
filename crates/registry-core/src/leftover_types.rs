@@ -13,6 +13,8 @@ pub struct SupportedTypeBackup {
     pub verb_values: Vec<NamedValue>,
     pub command_values: Vec<NamedValue>,
     pub icon_values: Option<Vec<NamedValue>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_paths: Option<Box<crate::leftover_companions::AppPathsCompanion>>,
 }
 
 pub fn validate_extension(name: &str) -> Result<(), String> {
@@ -55,6 +57,9 @@ impl SupportedTypeBackup {
     }
     pub fn validate(&self) -> Result<(), String> {
         self.command()?.text()?;
+        if let Some(companion) = &self.app_paths {
+            companion.validate()?;
+        }
         for values in [&self.shell_values, &self.verb_values, &self.command_values]
             .into_iter()
             .chain(self.icon_values.iter())
@@ -90,6 +95,9 @@ impl SupportedTypeBackup {
         {
             return Err("The registered open command must identify this exact missing application inside its installation directory.".into());
         }
+        if let Some(companion) = &self.app_paths {
+            companion.verify(&app.directory, &app.executable_name)?;
+        }
         let value = StoredValue {
             kind: 1,
             bytes: app
@@ -111,6 +119,13 @@ impl SupportedTypeBackup {
             applications::APPLICATIONS_KEY,
             app.executable_name
         );
+        if self.app_paths.is_some() {
+            evidence.app_paths_companion = Some(format!(
+                r"HKCU\{}\{}",
+                crate::changes::APP_PATHS_KEY,
+                app.executable_name
+            ));
+        }
         Ok(evidence)
     }
 }

@@ -229,10 +229,13 @@ fn scan_supported_types(
             scope.status = "limited".into();
             break;
         }
-        let state = match store.leftover_type_state(&name, None) {
+        let mut state = match store.leftover_type_state(&name, None) {
             Ok(v) => v,
             Err(_) => continue,
         };
+        if let Ok(companion) = store.leftover_type_companion(&name, None) {
+            state.guard.app_paths = companion.map(Box::new);
+        }
         let command = match state.guard.command().and_then(|v| v.text()) {
             Ok(v) => v,
             Err(_) => continue,

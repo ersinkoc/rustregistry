@@ -1,6 +1,14 @@
 # Registry Doctor: scope and next milestones
 
-RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.26; future milestones below are plans, not implemented features.
+RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.27; future milestones below are plans, not implemented features.
+
+## Corroborated registrations in 0.1.27
+
+SupportedTypes cleanup now accepts a current-user App Paths counterpart only when its literal executable mapping or single search directory identifies the same exact missing application/installation, with the existing simple missing open command, direct missing uninstaller and unique non-MSI uninstall evidence. Both fields must agree when present. Unsupported/expanded/multi-directory evidence, alternate activation, child keys, present files, ambiguous owners and either machine view remain protected. This expands field correlation within the existing 68 logical sections, without adding duplicate physical roots.
+
+Schema 27 captures exact hint bytes and bounded raw counterpart values. The hint alone is removed after a saved, flushed and verified immutable backup. Recovery requires the counterpart key and its non-default metadata to remain exact; its captured executable mapping may be unchanged or absent. New/changed mappings or metadata and missing keys block apply/restore. This permits separately reviewed mapping removal without silently recreating it during hint recovery. Older schema-25 records continue to reject any new counterpart because they lack the snapshot; formats 1–26 retain their layouts and checksums.
+
+The workspace groups matching Applications/App Paths evidence only by exact executable, directory and uninstall owner, preserving distinct action choices. Individual, selected, Quick Clean and Full Clean share native checks and independent backups. Native tests cover both sibling recovery orders, mapping-only/path-only/combined counterparts, missing keys, corruption and 128-hint Full Clean. The packaged flow independently compares original raw values and permissions through mixed schema-2/3/20/27/27 recovery. [Microsoft's registration reference](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) supplies the field semantics, not installation or deletion authority. Settings, licenses, commands, keys, files and permissions remain preserved by hint cleanup.
 
 ## Application URL metadata in 0.1.26
 

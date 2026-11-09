@@ -19,6 +19,30 @@ fn required_child(
         .ok_or_else(|| "An application suggestion key is missing. Keys are never recreated.".into())
 }
 impl WindowsRegistryStore {
+    pub(crate) fn leftover_type_companion(
+        &self,
+        name: &str,
+        tx: Option<&Transaction>,
+    ) -> Result<Option<crate::leftover_companions::AppPathsCompanion>, String> {
+        if self
+            .leftover_key("AppPaths", Some(name), None, tx, false)?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let state = self.leftover_application(name, tx)?;
+        let mut values = state.other;
+        if let Some(value) = state.value {
+            values.push(NamedValue {
+                name: state.name,
+                value,
+            });
+        }
+        values.sort_by_key(|v| v.name.to_lowercase());
+        Ok(Some(crate::leftover_companions::AppPathsCompanion {
+            values,
+        }))
+    }
     pub(crate) fn leftover_type_names(&self) -> Result<Vec<String>, String> {
         let Some(root) = self.leftover_key("Applications", None, None, None, false)? else {
             return Ok(vec![]);
@@ -85,6 +109,7 @@ impl WindowsRegistryStore {
             verb_values: values(&verb)?,
             command_values: values(&command)?,
             icon_values: icon,
+            app_paths: None,
         };
         guard.validate()?;
         Ok(SupportedTypeState {
@@ -113,11 +138,12 @@ impl WindowsRegistryStore {
                 }
             }
         }
-        if self
-            .leftover_key("AppPaths", Some(&app.executable_name), None, tx, false)?
-            .is_some()
-        {
-            return Err("A current-user App Paths counterpart exists. Investigate its ownership before suggestion cleanup.".into());
+        let companion = self.leftover_type_companion(&app.executable_name, tx)?;
+        match (app.supported_type.as_ref().and_then(|h| h.app_paths.as_deref()), companion) {
+            (None, None) => {},
+            (None, Some(_)) => return Err("A current-user App Paths counterpart exists. Investigate its ownership before suggestion cleanup.".into()),
+            (Some(_), None) => return Err("The corroborating App Paths key is missing. Cleanup and recovery never recreate it.".into()),
+            (Some(saved), Some(current)) => saved.matches_current(&current)?,
         }
         let anchors = self.leftover_anchors(tx)?;
         let owners = anchors
@@ -133,9 +159,13 @@ impl WindowsRegistryStore {
             return Err("The correlated uninstall metadata changed. Suggestion cleanup and restore are blocked.".into());
         }
         let state = self.leftover_type_state(&app.executable_name, tx)?;
-        if state.application_values != app.application_values
-            || Some(&state.guard) != app.supported_type.as_deref()
-        {
+        let mut expected_guard = app
+            .supported_type
+            .as_deref()
+            .ok_or("Suggestion backup evidence is missing.")?
+            .clone();
+        expected_guard.app_paths = None;
+        if state.application_values != app.application_values || state.guard != expected_guard {
             return Err(
                 "The application command or metadata changed. Nothing was overwritten.".into(),
             );

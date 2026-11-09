@@ -1,4 +1,6 @@
 use super::*;
+#[path = "windows_leftover_companion_tests.rs"]
+mod companions;
 #[path = "windows_leftover_type_tests.rs"]
 mod supported;
 #[path = "windows_leftover_url_tests.rs"]
