@@ -66,6 +66,8 @@ fn ownership_directory(value: &StoredValue) -> Option<String> {
 #[cfg(test)]
 #[path = "windows_leftover_tests.rs"]
 mod tests;
+#[path = "windows_leftover_types.rs"]
+mod types;
 impl WindowsRegistryStore {
     fn leftover_path(&self, part: &str, machine: Option<u32>) -> (HKEY, String) {
         #[cfg(test)]
@@ -219,6 +221,9 @@ impl WindowsRegistryStore {
         tx: Option<&Transaction>,
     ) -> Result<Option<StoredValue>, String> {
         app.validate()?;
+        if app.supported_type.is_some() {
+            return self.guarded_supported_type(app, tx);
+        }
         for view in [64, 32] {
             for (part, name) in [
                 ("AppPaths", app.executable_name.as_str()),
@@ -288,6 +293,9 @@ impl WindowsRegistryStore {
         }
     }
     pub(crate) fn leftover_access(&self, app: &LeftoverBackup) -> Result<(), String> {
+        if app.supported_type.is_some() {
+            return self.supported_type_access(app);
+        }
         self.guarded_leftover(app, None)?;
         self.leftover_key("AppPaths", Some(&app.executable_name), None, None, true)?
             .ok_or("The existing application key is missing.")?;
@@ -299,6 +307,9 @@ impl WindowsRegistryStore {
         expected: Option<&StoredValue>,
         replacement: Option<&StoredValue>,
     ) -> Result<(), String> {
+        if app.supported_type.is_some() {
+            return self.exchange_supported_type(app, expected, replacement);
+        }
         if expected.is_some() == replacement.is_some() {
             return Err("Only exact removal or restoration of the correlated search-path value is supported.".into());
         }

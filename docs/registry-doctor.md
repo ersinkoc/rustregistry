@@ -1,6 +1,6 @@
 # Registry Doctor: scope and next milestones
 
-RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.24; future milestones below are plans, not implemented features.
+RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.25; future milestones below are plans, not implemented features.
 
 ## Research and current behavior
 
@@ -38,6 +38,14 @@ Sound-event inventory adds two shared user/machine logical sections, bringing co
 Microsoft's [theme format](https://learn.microsoft.com/en-us/windows/win32/controls/themesfileformat-overview) describes event sound files and empty entries. [PlaySound](<https://learn.microsoft.com/en-us/previous-versions/dd743680(v=vs.85)>) documents alias/search/default behavior. The implementation keeps the current value/key, preserves saved/default/No Sounds schemes and protects default fallback events and machine counterparts. This is a configuration change with explicit review; cached sounds and each application's fallback are not inferred. No audio is played, decoded or deleted, and no device, volume or notification policy changes.
 
 Native tests use isolated roots for selected-scheme, saved metadata, machine-counterpart, current-value and real-file conflicts during apply/restore. The packaged fixture uses only a GUID-owned current-user sound application and inert controls, preserves the real selected scheme and unrelated applications, and checks original bytes and permissions independently. Owned registry-tree cleanup compares the snapshot inside a transaction before deletion.
+
+## Delivered in 0.1.25
+
+The new current-user Applications SupportedTypes correlation uses a literal missing open-command executable, exact missing installation directory and one non-MSI uninstall owner. Only selected empty REG_SZ extension hints can be removed. Root/command/icon metadata and sibling suggestions are preserved; machine and App Paths counterparts, alternate activation, existing files, ambiguous owners and unsupported values block changes. Schema 25 captures immutable raw originals and bounded metadata, supports exact restart restoration and preserves formats 1–24. Sibling hints are shown in one group with separately identified actions. Coverage is 68 logical sections using existing roots.
+
+Quick/selected cleaning now permits 10,000 candidates and Full Clean spans supported categories without automatically clearing personal history. Oversized reviews fail explicitly, lists are paged, and native progress/cancellation stops between verified transactions. Every completed entry retains an independent backup; earlier successful entries remain recoverable after a stop/conflict. Storage supports 50,000 directory entries with preflight, and backup pages/search avoid rendering the whole history at once. Native tests cover 128-entry quick/selected batches, 1,105-entry Full Clean recovery and deterministic cancellation/conflict behavior. Packaged tests use owned registry values; real-user Full Clean is reviewed and cancelled, never applied by the test.
+
+The [Microsoft registration model](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) defines SupportedTypes as Open with information. It does not establish installation state or justify deleting vendor settings. Application settings/licenses, files, permissions, installer data and default selections remain preserved by the new action.
 
 ## Delivered in 0.1.24
 

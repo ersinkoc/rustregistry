@@ -168,7 +168,7 @@ impl WindowsRegistryStore {
         }
         match self
             .maintenance_root(MaintenanceKind::MuiCache, None, false)
-            .and_then(|root| read_cache_batch(&root, apps, 100))
+            .and_then(|root| read_cache_batch(&root, apps, crate::changes::MAX_CLEAN_ENTRIES))
         {
             Ok(states) => states,
             Err(reason) => apps.iter().map(|_| Err(reason.clone())).collect(),
@@ -191,7 +191,7 @@ impl WindowsRegistryStore {
         }
         match self
             .maintenance_root(MaintenanceKind::MuiCache, None, false)
-            .and_then(|root| read_cache_batch(&root, apps, 1000))
+            .and_then(|root| read_cache_batch(&root, apps, crate::changes::MAX_BACKUP_ENTRIES))
         {
             Ok(states) => states,
             Err(reason) => apps.iter().map(|_| Err(reason.clone())).collect(),
@@ -483,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn readonly_cache_inventory_accepts_615_backups_without_relaxing_mutation_batch_limits() {
+    fn large_cache_reviews_and_backup_inventory_keep_separate_upper_bounds() {
         let f = Fixture::new();
         let one = f.cache(r"C:\RustRegistryMissing\inventory.exe");
         let apps = vec![one.clone(); 615];
@@ -496,15 +496,23 @@ mod tests {
             f.store()
                 .read_maintenance_batch(&apps)
                 .into_iter()
-                .all(|state| state.is_err()),
-            "Cleaning review remains limited to 100 entries"
+                .all(|state| state.is_ok()),
+            "Cleaning review must accept more than 100 entries"
         );
+        assert!(f
+            .store()
+            .read_maintenance_batch(&vec![one.clone(); crate::changes::MAX_CLEAN_ENTRIES + 1])
+            .into_iter()
+            .all(|state| state.is_err()));
         assert!(
             f.store()
-                .read_maintenance_inventory(&vec![one; 1001])
+                .read_maintenance_inventory(&vec![
+                    one.clone();
+                    crate::changes::MAX_BACKUP_ENTRIES + 1
+                ])
                 .into_iter()
                 .all(|state| state.is_err()),
-            "Backup inventory remains bounded to 1000 entries"
+            "Backup inventory remains bounded to its documented storage capacity"
         );
     }
     #[test]

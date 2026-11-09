@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { pageRows } from './clean-selection';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
   ArchiveRestore,
@@ -16,6 +17,7 @@ import { MaintenanceConfirmation } from './Maintenance';
 import { FileReferenceConfirmation } from './FileReferences';
 import { SoundConfirmation } from './Sounds';
 import { LeftoverConfirmation } from './Leftovers';
+import { isSupportedType } from './leftover-groups';
 import { backupScopeLabel, filterBackups, type BackupStateFilter } from './backups';
 
 export interface ChangePlan {
@@ -117,10 +119,13 @@ export function canQuarantine(entry: RegistryEntry) {
       entry.hive === 'HKCU' &&
       entry.view === 'shared' &&
       entry.valueType === 'REG_SZ' &&
-      entry.valueName.toLowerCase() === 'path' &&
-      /^Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\[^\\]+\.exe$/i.test(
-        entry.keyPath,
-      ) &&
+      ((entry.valueName.toLowerCase() === 'path' &&
+        /^Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\[^\\]+\.exe$/i.test(
+          entry.keyPath,
+        )) ||
+        (isSupportedType(entry) &&
+          /^\.[a-z0-9][a-z0-9_-]{0,30}$/i.test(entry.valueName) &&
+          entry.rawValue === '')) &&
       entry.assessment.status === 'review' &&
       entry.assessment.code === 'application_leftover_candidate'
     );
@@ -1022,6 +1027,8 @@ export function BackupsPanel({
   const [refresh, setRefresh] = useState(0);
   const [query, setQuery] = useState('');
   const [stateFilter, setStateFilter] = useState<BackupStateFilter>('all');
+  const [backupPage, setBackupPage] = useState(0);
+  useEffect(() => setBackupPage(0), [query, stateFilter, revision]);
   useEffect(() => {
     let active = true;
     if (!isTauri()) return;
@@ -1043,7 +1050,11 @@ export function BackupsPanel({
       active = false;
     };
   }, [revision, refresh]);
-  const shownBackups = filterBackups(inventory?.backups ?? [], query, stateFilter);
+  const shownBackups = useMemo(
+    () => filterBackups(inventory?.backups ?? [], query, stateFilter),
+    [inventory, query, stateFilter],
+  );
+  const backupRows = pageRows(shownBackups, backupPage);
   return (
     <>
       <div className="coverage-intro">
@@ -1155,7 +1166,7 @@ export function BackupsPanel({
           </div>
         ) : (
           <div className="backup-list">
-            {shownBackups.map((backup) => (
+            {backupRows.rows.map((backup) => (
               <article className="backup-item" key={backup.id}>
                 <span className={`history-icon ${backup.state === 'conflict' ? 'amber' : ''}`}>
                   <ArchiveRestore size={20} />
@@ -1192,6 +1203,28 @@ export function BackupsPanel({
           </div>
         )}
       </section>
+      {backupRows.pages > 1 && (
+        <div className="change-buttons" aria-label="Backup pages">
+          <button
+            className="secondary-button"
+            disabled={busy || backupRows.page === 0}
+            onClick={() => setBackupPage(backupRows.page - 1)}
+          >
+            Previous backups
+          </button>
+          <span>
+            Page {backupRows.page + 1} of {backupRows.pages} · {shownBackups.length} matching
+            backups
+          </span>
+          <button
+            className="secondary-button"
+            disabled={busy || backupRows.page + 1 >= backupRows.pages}
+            onClick={() => setBackupPage(backupRows.page + 1)}
+          >
+            Next backups
+          </button>
+        </div>
+      )}
       <div className="notice info-notice backup-location">
         <Info size={17} />
         <p>

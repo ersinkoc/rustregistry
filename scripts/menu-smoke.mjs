@@ -405,7 +405,9 @@ export async function verifyMenuRecovery(page, output, checked, summary) {
         await page.getByRole('button', { name: 'Clear backup filters', exact: true }).click();
         await expect(search).toHaveValue('');
         await expect(state).toHaveValue('all');
-        await expect(page.locator('.backup-item')).toHaveCount(inventory.backups.length);
+        await expect(page.locator('.backup-item')).toHaveCount(
+          Math.min(inventory.backups.length, 50),
+        );
         await page.screenshot({
           path: resolve(output, 'desktop-backup-discovery.png'),
           fullPage: true,

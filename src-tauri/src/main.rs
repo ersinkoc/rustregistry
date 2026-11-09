@@ -2,8 +2,8 @@
 
 use registry_core::{
     changes::{
-        is_quick_clean_candidate, BackupInventory, ChangeManager, ChangePlan, ChangeResult,
-        CleanPlan, CleanResult, MAX_CLEAN_ENTRIES,
+        BackupInventory, ChangeManager, ChangePlan, ChangeResult, CleanPlan, CleanProgress,
+        CleanResult,
     },
     windows_changes::WindowsRegistryStore,
     Category, LocalPathProbe, ScanProgress, ScanReport,
@@ -18,6 +18,7 @@ use tauri::{ipc::Channel, Manager, State};
 struct ScanControl {
     running: Arc<AtomicBool>,
     cancelled: Arc<AtomicBool>,
+    clean_cancelled: Arc<AtomicBool>,
     last_report: Arc<Mutex<Option<ScanReport>>>,
 }
 
@@ -177,6 +178,7 @@ async fn prepare_clean(
     category: Option<Category>,
 ) -> Result<CleanPlan, String> {
     let guard = acquire(&control)?;
+    control.clean_cancelled.store(false, Ordering::Release);
     let entries = {
         let cache = control
             .last_report
@@ -186,37 +188,7 @@ async fn prepare_clean(
             .as_ref()
             .filter(|r| !r.cancelled)
             .ok_or("Complete a fresh scan before cleaning.")?;
-        if mode == "quick" {
-            if !entry_ids.is_empty() {
-                return Err("Quick Clean uses the latest protected scan candidates.".into());
-            }
-            report
-                .entries
-                .iter()
-                .filter(|entry| {
-                    is_quick_clean_candidate(entry) && category.is_none_or(|c| entry.category == c)
-                })
-                .take(MAX_CLEAN_ENTRIES)
-                .cloned()
-                .collect::<Vec<_>>()
-        } else if mode == "selected"
-            && !entry_ids.is_empty()
-            && entry_ids.len() <= MAX_CLEAN_ENTRIES
-        {
-            entry_ids
-                .iter()
-                .map(|id| {
-                    report
-                        .entries
-                        .iter()
-                        .find(|entry| &entry.id == id)
-                        .cloned()
-                        .ok_or("An entry is not in the latest scan.".to_string())
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        } else {
-            return Err("Unsupported cleaning mode or selection size.".into());
-        }
+        registry_core::changes::select_clean_entries(&report.entries, &mode, &entry_ids, category)?
     };
     let manager = changes.0.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -229,6 +201,38 @@ async fn prepare_clean(
     .await
     .map_err(|e| e.to_string())?
 }
+async fn run_clean(
+    control: State<'_, ScanControl>,
+    changes: State<'_, Changes>,
+    token: String,
+    confirmed: bool,
+    on_progress: Option<Channel<CleanProgress>>,
+) -> Result<CleanResult, String> {
+    if !confirmed {
+        return Err("Explicit confirmation is required.".into());
+    }
+    let guard = acquire(&control)?;
+    let cancellation = control.clean_cancelled.clone();
+    let manager = changes.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = guard;
+        manager
+            .lock()
+            .map_err(|_| "Change state is unavailable.".to_string())?
+            .apply_clean_with_progress(
+                &token,
+                || cancellation.load(Ordering::Acquire),
+                |progress| {
+                    if let Some(channel) = &on_progress {
+                        let _ = channel.send(progress);
+                    }
+                },
+            )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn apply_clean(
     control: State<'_, ScanControl>,
@@ -236,20 +240,22 @@ async fn apply_clean(
     token: String,
     confirmed: bool,
 ) -> Result<CleanResult, String> {
-    if !confirmed {
-        return Err("Explicit confirmation is required.".into());
-    }
-    let guard = acquire(&control)?;
-    let manager = changes.0.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let _guard = guard;
-        manager
-            .lock()
-            .map_err(|_| "Change state is unavailable.".to_string())?
-            .apply_clean(&token)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    run_clean(control, changes, token, confirmed, None).await
+}
+#[tauri::command]
+async fn apply_clean_progress(
+    control: State<'_, ScanControl>,
+    changes: State<'_, Changes>,
+    token: String,
+    confirmed: bool,
+    on_progress: Channel<CleanProgress>,
+) -> Result<CleanResult, String> {
+    run_clean(control, changes, token, confirmed, Some(on_progress)).await
+}
+
+#[tauri::command]
+fn cancel_clean(control: State<'_, ScanControl>) {
+    control.clean_cancelled.store(true, Ordering::Release);
 }
 
 #[tauri::command]
@@ -302,11 +308,13 @@ fn main() {
             export_findings,
             scan_registry,
             cancel_scan,
+            cancel_clean,
             prepare_quarantine,
             prepare_restore,
             apply_change,
             prepare_clean,
             apply_clean,
+            apply_clean_progress,
             cancel_change,
             list_backups
         ])

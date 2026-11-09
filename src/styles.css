@@ -2170,3 +2170,15 @@ tr:hover td {
   gap: 12px;
   margin-top: 16px;
 }
+
+.clean-modes {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.clean-progress progress {
+  width: 100%;
+  height: 12px;
+  accent-color: var(--accent);
+}
+.clean-progress p {
+  overflow-wrap: anywhere;
+}

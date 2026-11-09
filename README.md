@@ -55,7 +55,21 @@ HKCU shared locations are read once. Applicable machine locations and redirected
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
 
-## Application leftovers in 0.1.24
+## Application leftovers and Full Clean in 0.1.25
+
+The leftovers workspace now also inventories **HKCU Applications SupportedTypes** suggestions. A simple literal open command must point to the exact missing executable at a missing installation directory with one corroborated non-MSI uninstall owner and missing direct uninstaller. Names alone are insufficient. Existing files, ambiguous owners, MSI/product-code entries, delegated/alternate activation, a current-user App Paths counterpart, either machine view, unsupported metadata and uncertain ownership remain protected. The additional logical correlation check reuses existing roots; coverage is now **68 sections**.
+
+**Review file-type cleanup** removes only a selected empty REG_SZ extension value, after a verified **schema 25** backup. Other suggestions, open commands, DefaultIcon metadata, settings/licenses, keys, files, permissions and default application selections are preserved. This may affect Open with suggestions; it does not completely unregister an application. Each extension is identified separately within one application group. Restore exact original name/type/bytes after restart only if the existing key, absent selected value, missing-target evidence, unique owner and application metadata still match. Sibling hint backups can be restored independently. Formats **1–24** keep their serialization/checksums.
+
+**Quick Clean** and **Clean selected** now support up to **10,000 candidates per review**. **Full Clean** reviews supported repair/cache candidates across all categories in the latest completed scan, independent of the current search/category filter. Automatic modes exclude optional personal history; manual history still requires explicit selection. Candidate lists and review details use pages, and selections span pages. Oversized automatic reviews fail explicitly instead of silently truncating. A later scan may reveal additional supported staged actions.
+
+Cleaning shows live completed/total progress and supports **Stop after current entry**. Every completed native transaction has its own verified immutable backup; a stop preserves unattempted entries and a conflict stops the batch. These operations are not one all-or-nothing transaction. Authorization is checked at batch start; long-running batches retain that authorization while each operation still freshly verifies files, values and metadata.
+
+Backup discovery now supports **50,000 directory entries**, with capacity checked before large cleaning, independent immutable backups and 50-row search/filter pages. Existing backup formats and conflicting records are not overwritten. Large batches remain recoverable from Backups & restore; the original record is restored only when its current guarded state permits it. No application files are deleted and no performance gain is promised.
+
+Microsoft's [application registration model](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) describes SupportedTypes as optional Open with information. This supplies the field semantics, not proof that an application was uninstalled or that all its settings may be deleted.
+
+### Path-list cleanup delivered in 0.1.24
 
 Application diagnosis now also correlates **semicolon-separated REG_SZ App Paths lists**, using the same exact missing installation/application/uninstaller evidence and unique non-MSI uninstall owner as the single-directory flow. The list must contain 2–32 nonempty unquoted segments within 4,096 UTF-8 bytes. Exactly one distinct literal directory in the list may have uninstall ownership evidence. Multiple directory owners, ambiguous duplicates, active executable mappings, alternate activation, machine counterparts and inaccessible evidence block cleanup. This reuses the existing correlation section; coverage remains 67 logical sections.
 
@@ -79,7 +93,7 @@ An immutable **schema 23** backup stores the exact original value name/type/byte
 
 The groups use existing registry inventory; the new logical section is not an additional physical registry root. Microsoft's [application-registration model](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) describes executable and optional search-path values, including custom application metadata. The [Uninstall registry model](https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key) and [Windows Installer ARP rules](https://learn.microsoft.com/en-us/windows/win32/msi/configuring-add-remove-programs-with-windows-installer) explain why installer/product-code records and visibility must not be mistaken for disposable application settings.
 
-Backup discovery now reads shared display-cache state once for its bounded read-only list, avoiding repeated full-cache reads when hundreds of backups exist. The inventory remains limited to 1,000 directory entries; cleaning remains limited to 100 entries per review. Every actual review/apply/restore still checks fresh live data. Windows-managed root aliases are supported while per-application links remain protected.
+Backup discovery now reads shared display-cache state once for its bounded read-only list, avoiding repeated full-cache reads when hundreds of backups exist. At that release the inventory was limited to 1,000 directory entries and cleaning to 100 entries; 0.1.25 raises these limits as described above. Every actual review/apply/restore still checks fresh live data. Windows-managed root aliases are supported while per-application links remain protected.
 
 `cargo test -p registry-core leftover` covers exact correlation, protected types/owners, individual/selected/Quick Clean, restart/exact restore, reinstall/anchor/mapping/ownership/machine conflicts, backup failure/corruption and missing keys on isolated owned roots. `scripts/elevated-desktop-smoke.ps1 -Mode leftover-only -Token <new-guid>` exercises the packaged groups with GUID-owned application/uninstall controls and cache fields, independent raw/permission readers, mixed legacy/new backups and staged cleanup. Its conditional cleanup preserves all pre-existing registrations and unrelated cache values. The complete Windows suite includes the same flow.
 
@@ -131,7 +145,7 @@ For a confirmed missing local `.exe` outside Windows, **Review cache cleanup** p
 
 Restore exact original REG_SZ bytes through **Backups & restore** after an app restart. The existing cache key and covered fields must still match the cleared snapshot, and the executable must remain confirmed missing. New display fields, replacement values, changed structure, reappearing targets or missing keys block restoration. Other cache groups can continue to grow independently.
 
-Batch review preparation reads the cache once for up to 100 requested groups. This snapshot is used only to prepare the review: applying and restoring every entry still use fresh file/value checks and a conditional registry transaction. A native regression covers 8,500 cache values and 100 candidates without relying on timing thresholds.
+Batch review preparation reads the cache once for the requested groups (now up to 10,000 in 0.1.25). This snapshot is used only to prepare the review: applying and restoring every entry still use fresh file/value checks and a conditional registry transaction. A native regression covers 8,500 cache values and 100 candidates without relying on timing thresholds.
 
 ### Optional registry history
 
@@ -217,7 +231,7 @@ COM backups use a new integrity-protected format alongside all four earlier form
 
 ## Quick Clean and selected cleaning in 0.1.5
 
-Use **Clean registry** to review supported registry/service repair candidates after a completed scan. **Quick Clean** proposes up to 100 candidates from the latest backend-cached report. **Clean selected** lets you search and choose exact entries, up to the same limit. A review shows every entry, action, original value, registry path, architecture, and any skipped entry before an explicit confirmation. Scanning and preparing/cancelling a cleaning review never modify registry values or create backups.
+Use **Clean registry** to review supported registry/service repair candidates after a completed scan. **Quick Clean** proposes up to 10,000 candidates in the selected category from the latest backend-cached report. **Full Clean** spans all supported categories and excludes optional history. **Clean selected** lets you choose up to 10,000 exact entries across pages. Oversized automatic reviews fail explicitly instead of truncating candidates. Progress and Stop preserve an independent backup for every completed operation. A review shows every entry, action, original value, registry path, architecture, and any skipped entry before an explicit confirmation. Scanning and preparing/cancelling a cleaning review never modify registry values or create backups.
 
 Each change uses the same scope-specific rechecks, verified backup, and conditional registry transaction as an individual repair. Cleaning is sequential and stops at the first failed entry; it is not atomic across the batch. Earlier successes remain individually restorable from **Backups & restore**, and unattempted entries are reported. Sibling values in one guarded registration are deferred to a later scan to avoid invalidating one another’s metadata guards. Expired reviews, duplicate IDs, unknown IDs, stale scans, and unsupported scopes are rejected or explicitly skipped. Quick Clean never treats every review finding as eligible.
 

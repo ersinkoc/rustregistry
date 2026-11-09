@@ -46,7 +46,13 @@ import packageInfo from '../package.json';
 import { displayScales, initialDisplayScale } from './display';
 import { BackupsPanel, canQuarantine, isQuickCleanCandidate, ChangeConfirmation } from './Changes';
 import type { ChangePlan, ChangeResult } from './Changes';
-import { CleanPanel, CleanConfirmation, type CleanPlan, type CleanResult } from './Clean';
+import {
+  CleanPanel,
+  CleanConfirmation,
+  type CleanPlan,
+  type CleanResult,
+  type CleanProgress,
+} from './Clean';
 import type { Category, EntryStatus, RegistryEntry, ScanProgress, ScanReport } from './model';
 import {
   categories,
@@ -339,7 +345,7 @@ function DetailDialog({
           </h3>
           <p>
             {entry.category === 'application_leftovers'
-              ? 'Review the matching installation directory, application and uninstaller before removing only this unused search-path value. Application settings, licenses, uninstall metadata, other values, keys and files are preserved.'
+              ? 'Review the matching installation directory, application and uninstaller before cleaning this supported leftover value. The review shows the original value and planned change. Application settings, licenses, uninstall metadata, other values, keys and files are preserved.'
               : entry.category === 'sound_events'
                 ? 'Review the exact missing .wav file before replacing only this current event assignment with an explicit empty assignment. Saved schemes, metadata, keys, files and permissions are preserved. No audio is played.'
                 : entry.category === 'fonts'
@@ -444,7 +450,7 @@ export default function App() {
   const [stopping, setStopping] = useState(false);
   const [progress, setProgress] = useState<ScanProgress>({
     completed: 0,
-    total: 67,
+    total: 68,
     entries: 0,
     current: '',
   });
@@ -456,6 +462,8 @@ export default function App() {
   const [selected, setSelected] = useState<RegistryEntry | null>(null);
   const [plan, setPlan] = useState<ChangePlan | null>(null);
   const [cleanPlan, setCleanPlan] = useState<CleanPlan | null>(null);
+  const [cleanProgress, setCleanProgress] = useState<CleanProgress | null>(null);
+  const [cleanStopRequested, setCleanStopRequested] = useState(false);
   const [changing, setChanging] = useState(false);
   const [success, setSuccess] = useState('');
   const [exporting, setExporting] = useState(false);
@@ -508,7 +516,7 @@ export default function App() {
     setExportReceipt(null);
     setStopping(false);
     setError('');
-    setProgress({ completed: 0, total: 67, entries: 0, current: 'Connecting to the registry…' });
+    setProgress({ completed: 0, total: 68, entries: 0, current: 'Connecting to the registry…' });
     const channel = new Channel<ScanProgress>();
     channel.onmessage = (value) => setProgress(value);
     try {
@@ -586,7 +594,7 @@ export default function App() {
   };
 
   const reviewClean = async (
-    mode: 'quick' | 'selected',
+    mode: 'quick' | 'selected' | 'full',
     entryIds: string[],
     cleanCategory?: Category,
   ) => {
@@ -614,13 +622,18 @@ export default function App() {
     setError('');
     setSuccess('');
     let failure = '';
+    setCleanStopRequested(false);
+    setCleanProgress({ completed: 0, total: cleanPlan.items.length, current: '' });
+    const channel = new Channel<CleanProgress>();
+    channel.onmessage = setCleanProgress;
     try {
-      const result = await invoke<CleanResult>('apply_clean', {
+      const result = await invoke<CleanResult>('apply_clean_progress', {
         token: cleanPlan.token,
         confirmed: true,
+        onProgress: channel,
       });
       setSuccess(
-        `${result.completed.length} registry entries cleaned. Each completed change has its own backup.`,
+        `${result.cancelled ? 'Cleaning stopped. ' : ''}${result.completed.length} registry entries cleaned. Each completed change has its own backup.${result.cancelled ? ` ${result.notAttempted} entries were not attempted.` : ''}`,
       );
       if (result.failed)
         failure = `Cleaning stopped at ${result.failed.name}: ${result.failed.reason} ${result.notAttempted} remaining entries were not attempted.`;
@@ -629,10 +642,21 @@ export default function App() {
       failure = String(cause);
     } finally {
       setCleanPlan(null);
+      setCleanProgress(null);
       setBackupRevision((value) => value + 1);
       await startScan();
       if (failure) setError(failure);
       setChanging(false);
+    }
+  };
+
+  const stopCleaning = async () => {
+    setCleanStopRequested(true);
+    try {
+      await invoke('cancel_clean');
+    } catch (cause) {
+      setCleanStopRequested(false);
+      setError(String(cause));
     }
   };
 
@@ -1655,6 +1679,9 @@ export default function App() {
           busy={changing}
           onCancel={cancelChange}
           onConfirm={confirmClean}
+          progress={cleanProgress}
+          onStop={stopCleaning}
+          stopRequested={cleanStopRequested}
         />
       )}
       {plan && (

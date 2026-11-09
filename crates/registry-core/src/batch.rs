@@ -1,6 +1,13 @@
 use super::*;
 
-pub const MAX_CLEAN_ENTRIES: usize = 100;
+pub const MAX_CLEAN_ENTRIES: usize = 10_000;
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanProgress {
+    pub completed: usize,
+    pub total: usize,
+    pub current: String,
+}
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CleanSkipped {
@@ -22,10 +29,11 @@ pub struct CleanResult {
     pub completed: Vec<ChangeResult>,
     pub failed: Option<CleanSkipped>,
     pub not_attempted: usize,
+    pub cancelled: bool,
 }
 pub(super) struct PendingBatch {
     pub(super) plan: CleanPlan,
-    records: Vec<(ChangePlan, BackupRecord)>,
+    pub(super) records: Vec<(ChangePlan, BackupRecord)>,
 }
 
 pub fn is_repair_candidate(entry: &RegistryEntry) -> bool {
@@ -116,12 +124,12 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         mode: &str,
     ) -> Result<CleanPlan, String> {
         self.cancel();
-        if !["quick", "selected"].contains(&mode)
+        if !["quick", "selected", "full"].contains(&mode)
             || entries.is_empty()
             || entries.len() > MAX_CLEAN_ENTRIES
         {
             return Err(
-                "Select between 1 and 100 eligible entries for one cleaning review.".into(),
+                format!("Select between 1 and {MAX_CLEAN_ENTRIES} eligible entries for one cleaning review."),
             );
         }
         let mut ids = std::collections::HashSet::new();
@@ -152,7 +160,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             .map(|(app, state)| (app.item.to_ascii_lowercase(), state))
             .collect();
         for entry in entries {
-            if mode == "quick" && entry.category == Category::UsageHistory {
+            if mode != "selected" && entry.category == Category::UsageHistory {
                 skipped.push(CleanSkipped{name:entry.name.clone(),reason:"Optional history requires an explicit selected or individual review; Quick Clean excludes it.".into()});
                 continue;
             }
@@ -173,14 +181,20 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 } else {
                     entry.key_path.to_ascii_lowercase()
                 },
-                if matches!(
-                    entry.category,
-                    Category::SharedDlls
-                        | Category::RegisteredApplications
-                        | Category::MuiCache
-                        | Category::Fonts
-                        | Category::HelpFiles
-                ) {
+                if (entry.category == Category::ApplicationLeftovers
+                    && entry
+                        .leftover_state
+                        .as_ref()
+                        .is_some_and(|app| app.supported_type.is_some()))
+                    || matches!(
+                        entry.category,
+                        Category::SharedDlls
+                            | Category::RegisteredApplications
+                            | Category::MuiCache
+                            | Category::Fonts
+                            | Category::HelpFiles
+                    )
+                {
                     entry.value_name.to_ascii_lowercase()
                 } else {
                     String::new()
@@ -221,6 +235,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 }),
             }
         }
+        self.ensure_backup_capacity(records.len())?;
         let expires_at = records
             .iter()
             .map(|(plan, _)| plan.expires_at)
@@ -242,6 +257,14 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     pub fn apply_clean(&mut self, token: &str) -> Result<CleanResult, String> {
+        self.apply_clean_with_progress(token, || false, |_| {})
+    }
+    pub fn apply_clean_with_progress(
+        &mut self,
+        token: &str,
+        cancelled: impl Fn() -> bool,
+        progress: impl Fn(CleanProgress),
+    ) -> Result<CleanResult, String> {
         let batch = self
             .batch_pending
             .take()
@@ -251,30 +274,100 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             return Err("The cleaning review expired or does not match. Review again.".into());
         }
         let total = batch.records.len();
-        let mut completed = Vec::new();
-        for (plan, record) in batch.records {
-            let name = plan.name.clone();
-            let item_token = plan.token.clone();
-            self.pending = Some(Pending {
-                plan,
-                action: PendingAction::Quarantine(record),
+        self.ensure_backup_capacity(total)?;
+        self.batch_applying = true;
+        let result = (|| {
+            let mut completed = Vec::new();
+            progress(CleanProgress {
+                completed: 0,
+                total,
+                current: String::new(),
             });
-            match self.apply(&item_token) {
-                Ok(result) => completed.push(result),
-                Err(reason) => {
-                    let not_attempted = total - completed.len() - 1;
+            for (mut plan, record) in batch.records {
+                if cancelled() {
+                    self.pending = None;
                     return Ok(CleanResult {
+                        not_attempted: total - completed.len(),
                         completed,
-                        failed: Some(CleanSkipped { name, reason }),
-                        not_attempted,
+                        failed: None,
+                        cancelled: true,
                     });
                 }
+                let name = plan.name.clone();
+                // The batch review was authorized above. Long-running batches must
+                // retain that authorization while every item still checks live data.
+                plan.expires_at = u64::MAX;
+                let item_token = plan.token.clone();
+                self.pending = Some(Pending {
+                    plan,
+                    action: PendingAction::Quarantine(record),
+                });
+                match self.apply(&item_token) {
+                    Ok(result) => {
+                        completed.push(result);
+                        progress(CleanProgress {
+                            completed: completed.len(),
+                            total,
+                            current: name,
+                        });
+                    }
+                    Err(reason) => {
+                        let not_attempted = total - completed.len() - 1;
+                        return Ok(CleanResult {
+                            completed,
+                            failed: Some(CleanSkipped { name, reason }),
+                            not_attempted,
+                            cancelled: false,
+                        });
+                    }
+                }
             }
-        }
-        Ok(CleanResult {
-            completed,
-            failed: None,
-            not_attempted: 0,
-        })
+            Ok(CleanResult {
+                completed,
+                failed: None,
+                not_attempted: 0,
+                cancelled: false,
+            })
+        })();
+        self.batch_applying = false;
+        result
     }
+}
+
+pub fn select_clean_entries(
+    entries: &[RegistryEntry],
+    mode: &str,
+    ids: &[String],
+    category: Option<Category>,
+) -> Result<Vec<RegistryEntry>, String> {
+    let selected = if mode == "quick" || mode == "full" {
+        if !ids.is_empty() || (mode == "full" && category.is_some()) {
+            return Err(
+                "Automatic cleaning uses current scan candidates; Full Clean spans all categories."
+                    .into(),
+            );
+        }
+        entries
+            .iter()
+            .filter(|e| is_quick_clean_candidate(e) && category.is_none_or(|c| e.category == c))
+            .take(MAX_CLEAN_ENTRIES + 1)
+            .cloned()
+            .collect::<Vec<_>>()
+    } else if mode == "selected" && !ids.is_empty() && ids.len() <= MAX_CLEAN_ENTRIES {
+        let by_id: std::collections::HashMap<_, _> = entries.iter().map(|e| (&e.id, e)).collect();
+        ids.iter()
+            .map(|id| {
+                by_id
+                    .get(id)
+                    .map(|e| (*e).clone())
+                    .ok_or_else(|| "An entry is not in the latest scan.".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        return Err("Unsupported cleaning mode or selection size.".into());
+    };
+    if selected.is_empty() || selected.len() > MAX_CLEAN_ENTRIES {
+        return Err(format!("One review supports 1–{MAX_CLEAN_ENTRIES} candidates. Narrow the category or select a smaller set; no candidates were silently truncated."));
+    }
+    Ok(selected)
 }

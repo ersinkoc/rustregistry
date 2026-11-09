@@ -1,6 +1,6 @@
 param(
     [ValidateSet('prepare','run')][string]$Action='prepare',
-    [ValidateSet('shared-dll-only','file-reference-only','sound-only','leftover-only','full')][string]$Mode='shared-dll-only',
+    [ValidateSet('shared-dll-only','file-reference-only','sound-only','leftover-only','leftover-types-only','large-clean-only','full')][string]$Mode='shared-dll-only',
     [Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9-]{36}$')][string]$Token,
     [string]$Executable,
     [string]$OwnerSid,
@@ -29,11 +29,11 @@ if ($Action -eq 'prepare') {
     if ($ServiceToken) { $arguments+=@('-ServiceToken',$ServiceToken) }
     # This explicit developer test setup elevates the test process, never the production app or normal smoke command.
     $helper=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
-    # The full suite re-scans all 67 sections after each repair/restore, including
+    # The full suite re-scans all 68 sections after each repair/restore, including
     # thousands of real MUI cache paths, plus both single-path and path-list flows.
     # A large live cache can exceed 45 minutes.
     # This is only the outer process-wait budget; individual test deadlines stay unchanged.
-    $sessionTimeout=if($Mode -eq 'full'){3600000}elseif($Mode -eq 'leftover-only'){1200000}else{600000}
+    $sessionTimeout=if($Mode -eq 'full'){5400000}elseif($Mode -eq 'leftover-only'){1200000}else{600000}
     if (-not $helper.WaitForExit($sessionTimeout)) { throw 'The elevated test session is still running. Inspect its private log before continuing.' }
     if ($helper.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultPath)) { throw "Elevated desktop verification failed. Inspect .temp_files/elevated-$Mode-$Token.stdout.log and stderr.log." }
     Get-Content -LiteralPath $resultPath -Raw
@@ -55,14 +55,14 @@ $env:RUSTREGISTRY_ELEVATED_WEBVIEW_TOKEN=$Token
 $env:RUSTREGISTRY_SHARED_DLL_FIXTURE_TOKEN=$Token
 if ($ServiceToken) { $env:RUSTREGISTRY_SERVICE_FIXTURE_TOKEN=$ServiceToken } else { Remove-Item Env:\RUSTREGISTRY_SERVICE_FIXTURE_TOKEN -ErrorAction SilentlyContinue }
 $arguments=@(('"'+(Join-Path $workspace 'scripts\desktop-smoke.mjs')+'"'))
-if ($Mode -eq 'leftover-only') { $arguments+='--leftover-only' } elseif ($Mode -eq 'sound-only') { $arguments+='--sound-only' } elseif ($Mode -eq 'shared-dll-only') { $arguments+='--shared-dll-only' } elseif ($Mode -eq 'file-reference-only') { $arguments+='--file-reference-only' }
+if ($Mode -eq 'leftover-types-only') { $arguments+='--leftover-types-only' } elseif ($Mode -eq 'large-clean-only') { $arguments+='--large-clean-only' } elseif ($Mode -eq 'leftover-only') { $arguments+='--leftover-only' } elseif ($Mode -eq 'sound-only') { $arguments+='--sound-only' } elseif ($Mode -eq 'shared-dll-only') { $arguments+='--shared-dll-only' } elseif ($Mode -eq 'file-reference-only') { $arguments+='--file-reference-only' }
 $stdout=Join-Path $output "elevated-$Mode-$Token.stdout.log"
 $stderr=Join-Path $output "elevated-$Mode-$Token.stderr.log"
 $process=Start-Process -FilePath $NodePath -ArgumentList $arguments -WorkingDirectory $workspace -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
-$reportName=if ($Mode -eq 'full') { 'desktop-verification.json' } elseif ($Mode -eq 'leftover-only') { 'desktop-leftover-verification.json' } elseif ($Mode -eq 'sound-only') { 'desktop-sound-verification.json' } elseif ($Mode -eq 'file-reference-only') { 'desktop-file-reference-verification.json' } else { 'desktop-shared-dll-verification.json' }
+$reportName=if ($Mode -eq 'leftover-types-only'){'desktop-leftover-types-verification.json'}elseif($Mode -eq 'large-clean-only'){'desktop-large-clean-verification.json'}elseif ($Mode -eq 'full') { 'desktop-verification.json' } elseif ($Mode -eq 'leftover-only') { 'desktop-leftover-verification.json' } elseif ($Mode -eq 'sound-only') { 'desktop-sound-verification.json' } elseif ($Mode -eq 'file-reference-only') { 'desktop-file-reference-verification.json' } else { 'desktop-shared-dll-verification.json' }
 $reportPath=Join-Path $output $reportName
-$requiredCleanup=if($Mode -eq 'leftover-only'){'leftoverFixtureCleanup'}elseif($Mode -eq 'sound-only'){'soundFixtureCleanup'}elseif($Mode -eq 'file-reference-only'){'fileReferenceFixtureCleanup'}else{'sharedDllFixtureCleanup'}
+$requiredCleanup=if($Mode -eq 'leftover-types-only'){'leftoverTypesFixtureCleanup'}elseif($Mode -eq 'large-clean-only'){'largeCleanFixtureCleanup'}elseif($Mode -eq 'leftover-only'){'leftoverFixtureCleanup'}elseif($Mode -eq 'sound-only'){'soundFixtureCleanup'}elseif($Mode -eq 'file-reference-only'){'fileReferenceFixtureCleanup'}else{'sharedDllFixtureCleanup'}
 $passed=$false
-if (Test-Path -LiteralPath $reportPath) { $report=Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json; $passed=$process.ExitCode -eq 0 -and $report.passed -and $report.version -ceq $version -and $report.$requiredCleanup -eq $true -and $report.errors.Count -eq 0; if($Mode -in @('full','leftover-only')){$passed=$passed -and $report.leftoverPathListFixtureCleanup -eq $true} }
+if (Test-Path -LiteralPath $reportPath) { $report=Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json; $passed=$process.ExitCode -eq 0 -and $report.passed -and $report.version -ceq $version -and $report.$requiredCleanup -eq $true -and $report.errors.Count -eq 0; if($Mode -in @('full','leftover-only')){$passed=$passed -and $report.leftoverPathListFixtureCleanup -eq $true};if($Mode -eq 'full'){$passed=$passed -and $report.leftoverTypesFixtureCleanup -eq $true -and $report.largeCleanFixtureCleanup -eq $true} }
 [ordered]@{ mode=$Mode; token=$Token; exitCode=$process.ExitCode; passed=$passed; reportPath=$reportPath; executableSHA256=$ExpectedSHA256; sameWindowsAccount=$true } | ConvertTo-Json -Compress | Set-Content -LiteralPath $resultPath -Encoding UTF8
 if (-not $passed) { exit 1 }

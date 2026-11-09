@@ -45,7 +45,8 @@ use crate::{
     analyze_target, Category, EntryStatus, Environment, PathProbe, RegistryEntry, TargetKind,
 };
 pub use batch::{
-    is_quick_clean_candidate, is_repair_candidate, CleanPlan, CleanResult, MAX_CLEAN_ENTRIES,
+    is_quick_clean_candidate, is_repair_candidate, select_clean_entries, CleanPlan, CleanProgress,
+    CleanResult, MAX_CLEAN_ENTRIES,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -61,6 +62,7 @@ pub const STARTUP_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 pub const APP_PATHS_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\App Paths";
 const MAX_BYTES: usize = 32_768;
 const MAX_BACKUP_BYTES: u64 = 262_144;
+pub const MAX_BACKUP_ENTRIES: usize = 50_000;
 const PLAN_LIFETIME: u64 = 300_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -622,6 +624,7 @@ pub struct ChangeManager<S: RegistryStore, P: PathProbe> {
     probe: P,
     pending: Option<Pending>,
     batch_pending: Option<batch::PendingBatch>,
+    batch_applying: bool,
 }
 
 fn now() -> Result<u64, String> {
@@ -651,6 +654,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             probe,
             pending: None,
             batch_pending: None,
+            batch_applying: false,
         }
     }
 
@@ -667,12 +671,32 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         }
     }
 
+    fn ensure_backup_capacity(&self, additional: usize) -> Result<(), String> {
+        self.ensure_directory(false)?;
+        let count = match fs::read_dir(&self.directory) {
+            Ok(files) => {
+                let mut count = 0;
+                for file in files.take(MAX_BACKUP_ENTRIES + 1) {
+                    file.map_err(|_| "The backup directory could not be completely verified.")?;
+                    count += 1;
+                }
+                count
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(e) => return Err(format!("Cannot inspect backup storage: {e}")),
+        };
+        if additional > MAX_BACKUP_ENTRIES.saturating_sub(count) || count > MAX_BACKUP_ENTRIES {
+            return Err(format!("Backup storage supports {MAX_BACKUP_ENTRIES} directory entries. Archive existing backups before this operation; nothing has been changed."));
+        }
+        Ok(())
+    }
+
     fn validate_record(record: &BackupRecord) -> Result<(), String> {
         if record.name.len() > 65_536 {
             return Err("Unsupported backup format.".into());
         }
         if let Some(app) = &record.leftover {
-            if record.schema_version != if app.path_list.is_some() { 24 } else { 23 }
+            if record.schema_version != app.schema()
                 || [
                     record.app_path.is_some(),
                     record.uninstall.is_some(),
@@ -701,7 +725,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             app.validate()?;
             if record.value_name != app.value_name
-                || if let Some(list) = &app.path_list {
+                || if app.supported_type.is_some() {
+                    crate::leftover_types::validate_hint(&record.original).is_err()
+                } else if let Some(list) = &app.path_list {
                     list != &record.original
                 } else {
                     !crate::app_leftovers::literal_directory(&record.original)?
@@ -1276,7 +1302,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.original,
         ))
         .map_err(|e| e.to_string())?;
-        let bytes = if matches!(record.schema_version, 23 | 24) {
+        let bytes = if matches!(record.schema_version, 23..=25) {
             serde_json::to_vec(&(bytes, &record.leftover)).map_err(|e| e.to_string())?
         } else if record.schema_version == 22 {
             serde_json::to_vec(&(bytes, &record.sound)).map_err(|e| e.to_string())?
@@ -1357,6 +1383,9 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
     }
 
     fn save(&self, record: &BackupRecord) -> Result<(), String> {
+        if !self.batch_applying {
+            self.ensure_backup_capacity(1)?;
+        }
         self.ensure_directory(true)?;
         Self::validate_record(record)?;
         let path = self.directory.join(format!("{}.json", record.id));
@@ -1590,7 +1619,12 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             || !entry.leftover_repairable
             || entry.assessment.status != EntryStatus::Review
             || entry.assessment.code != "application_leftover_candidate"
-            || entry.raw_value != original.text()?
+            || entry.raw_value
+                != if app.supported_type.is_some() {
+                    String::new()
+                } else {
+                    original.text()?
+                }
             || self.store.read_leftover(&app)?.as_ref() != Some(&original)
         {
             return Err(
@@ -1599,7 +1633,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             );
         }
         let mut record = BackupRecord {
-            schema_version: if app.path_list.is_some() { 24 } else { 23 },
+            schema_version: app.schema(),
             id: Uuid::new_v4(),
             name: entry.name.clone(),
             value_name: app.value_name.clone(),
@@ -2937,6 +2971,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                             .map_or(Ok("(Path value removed)".into()), |v| v.text())?,
                     ));
                 }
+                if let Some(hint) = &app.supported_type {
+                    evidence.push(("File-type suggestion".into(), app.value_name.clone()));
+                    evidence.push((
+                        "Preserved application open command".into(),
+                        hint.command()?.text()?,
+                    ));
+                }
                 evidence
             } else {
                 vec![]
@@ -2947,7 +2988,13 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                 .map(|app| app.directory.clone())
                 .or_else(|| record.sound.as_ref().map(|app| app.target.clone()))
                 .or_else(|| record.file_reference.as_ref().map(|app| app.target.clone())),
-            original_value: if let Some(app) = &record.maintenance {
+            original_value: if record
+                .leftover
+                .as_ref()
+                .is_some_and(|app| app.supported_type.is_some())
+            {
+                "(empty REG_SZ suggestion)".into()
+            } else if let Some(app) = &record.maintenance {
                 app.summary()?
             } else if record.shared_dll.is_some() {
                 "0".into()
@@ -3616,7 +3663,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.leftover.as_ref().is_some_and(|app| app.path_list.is_some()){if restore{"Complete original application search-path list restored and verified."}else{"Confirmed missing installation-directory segments removed after a verified backup. All retained search segments, settings, licenses, keys, files and permissions were preserved."}}else if record.leftover.is_some(){if restore{"Original correlated application search path restored and verified. No application or uninstaller was executed."}else{"Unused application search-path value removed after a verified backup. Uninstall metadata, keys, settings, licenses, files and permissions were preserved."}}else if record.sound.is_some(){if restore {"Original sound assignment restored and verified. No audio was played."}else{"Missing current sound assignment cleared after a verified backup. Saved schemes, keys, metadata, audio files and permissions were preserved. No audio was played."}}else if let Some(app)=&record.file_reference{if restore {"Original font/help registration restored and verified. No font or document was loaded."}else if app.location.font(){"Missing font mapping removed after a verified backup. Font files, runtime resources, other registrations and permissions were preserved."}else{"Missing help-file mapping removed after a verified backup. Documents, search settings, other registrations and permissions were preserved."}}else if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
+            message: if record.leftover.as_ref().is_some_and(|app| app.supported_type.is_some()){if restore{"Original file-type suggestion restored with exact bytes. The application open command and default selections were preserved."}else{"Selected leftover file-type suggestion removed after a verified backup. Other suggestions, open commands, settings, licenses, keys, files and permissions were preserved."}}else if record.leftover.as_ref().is_some_and(|app| app.path_list.is_some()){if restore{"Complete original application search-path list restored and verified."}else{"Confirmed missing installation-directory segments removed after a verified backup. All retained search segments, settings, licenses, keys, files and permissions were preserved."}}else if record.leftover.is_some(){if restore{"Original correlated application search path restored and verified. No application or uninstaller was executed."}else{"Unused application search-path value removed after a verified backup. Uninstall metadata, keys, settings, licenses, files and permissions were preserved."}}else if record.sound.is_some(){if restore {"Original sound assignment restored and verified. No audio was played."}else{"Missing current sound assignment cleared after a verified backup. Saved schemes, keys, metadata, audio files and permissions were preserved. No audio was played."}}else if let Some(app)=&record.file_reference{if restore {"Original font/help registration restored and verified. No font or document was loaded."}else if app.location.font(){"Missing font mapping removed after a verified backup. Font files, runtime resources, other registrations and permissions were preserved."}else{"Missing help-file mapping removed after a verified backup. Documents, search settings, other registrations and permissions were preserved."}}else if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
                 if restore {"Original 64-bit COM mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
@@ -3645,10 +3692,10 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         };
         let mut records = Vec::new();
         for (index, file) in files.enumerate() {
-            if index >= 1000 {
-                inventory
-                    .warnings
-                    .push("Only the first 1,000 backup directory entries were inspected.".into());
+            if index >= MAX_BACKUP_ENTRIES {
+                inventory.warnings.push(format!(
+                    "Only the first {MAX_BACKUP_ENTRIES} backup directory entries were inspected."
+                ));
                 break;
             }
             let file = match file {
@@ -4218,6 +4265,146 @@ mod tests {
             state.clone(),
             ChangeManager::new(store, path.into(), Probe(state)),
         )
+    }
+
+    #[test]
+    fn large_clean_all_modes_support_more_than_100_with_independent_restart_recovery() {
+        for mode in ["quick", "selected", "full"] {
+            let dir = tempfile::tempdir().unwrap();
+            let (store, state, mut manager) = setup(&dir.path().join("backups"));
+            store.0.borrow_mut().clear();
+            let count = if mode == "full" { 1105 } else { 128 };
+            let entries = (0..count)
+                .map(|i| {
+                    let mut e = entry();
+                    e.id = format!("entry-{i}");
+                    e.name = format!("Owned {i}");
+                    e.value_name = format!("Owned{i}");
+                    store
+                        .0
+                        .borrow_mut()
+                        .insert(e.value_name.clone(), original());
+                    e
+                })
+                .collect::<Vec<_>>();
+            let plan = manager.prepare_clean(&entries, mode).unwrap();
+            assert_eq!(plan.items.len(), count);
+            let result = manager.apply_clean(&plan.token).unwrap();
+            assert!(result.failed.is_none());
+            assert_eq!(result.completed.len(), count);
+            let mut reopened =
+                ChangeManager::new(store.clone(), dir.path().join("backups"), Probe(state));
+            assert_eq!(reopened.inventory().unwrap().backups.len(), count);
+            for record in result.completed {
+                let plan = reopened.prepare_restore(&record.backup_id).unwrap();
+                reopened.apply(&plan.token).unwrap();
+            }
+            for e in &entries {
+                assert_eq!(store.read(&e.value_name).unwrap(), Some(original()));
+            }
+        }
+    }
+
+    #[test]
+    fn large_clean_progress_cancel_and_conflict_keep_completed_backups_and_unattempted_values() {
+        for conflict in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let (store, state, mut m) = setup(&dir.path().join("backups"));
+            store.0.borrow_mut().clear();
+            let entries = (0..128)
+                .map(|i| {
+                    let mut e = entry();
+                    e.id = format!("e{i}");
+                    e.value_name = format!("Owned{i}");
+                    store
+                        .0
+                        .borrow_mut()
+                        .insert(e.value_name.clone(), original());
+                    e
+                })
+                .collect::<Vec<_>>();
+            let plan = m.prepare_clean(&entries, "full").unwrap();
+            // Once the complete review is authorized, the per-item preparation
+            // deadline cannot interrupt a long batch. Live-state guards still apply.
+            m.batch_pending.as_mut().unwrap().records[0].0.expires_at = 0;
+            let stop = Cell::new(false);
+            let events = RefCell::new(vec![]);
+            let result = m
+                .apply_clean_with_progress(
+                    &plan.token,
+                    || stop.get(),
+                    |p| {
+                        events.borrow_mut().push(p.completed);
+                        if p.completed == 3 {
+                            if conflict {
+                                state.set(ProbeResult::Found);
+                            } else {
+                                stop.set(true);
+                            }
+                        }
+                    },
+                )
+                .unwrap();
+            assert_eq!(result.completed.len(), 3);
+            assert_eq!(result.cancelled, !conflict);
+            assert_eq!(result.failed.is_some(), conflict);
+            assert_eq!(result.not_attempted, if conflict { 124 } else { 125 });
+            assert_eq!(*events.borrow(), vec![0, 1, 2, 3]);
+            for (i, e) in entries.iter().enumerate() {
+                assert_eq!(store.read(&e.value_name).unwrap().is_none(), i < 3);
+            }
+            assert!(m.apply_clean(&plan.token).is_err());
+            state.set(ProbeResult::Missing);
+            assert_eq!(m.inventory().unwrap().backups.len(), 3);
+            for done in result.completed {
+                let plan = m.prepare_restore(&done.backup_id).unwrap();
+                m.apply(&plan.token).unwrap();
+            }
+            for e in &entries {
+                assert_eq!(store.read(&e.value_name).unwrap(), Some(original()));
+            }
+        }
+    }
+
+    #[test]
+    fn full_clean_selection_spans_categories_excludes_history_and_never_silently_truncates() {
+        let mut entries = (0..128)
+            .map(|i| {
+                let mut e = entry();
+                e.id = format!("e{i}");
+                e
+            })
+            .collect::<Vec<_>>();
+        let mut history = entry();
+        history.id = "history".into();
+        history.category = Category::UsageHistory;
+        entries.push(history);
+        assert_eq!(
+            select_clean_entries(&entries, "full", &[], None)
+                .unwrap()
+                .len(),
+            128
+        );
+        assert!(select_clean_entries(&entries, "full", &[], Some(Category::Startup)).is_err());
+        assert!(select_clean_entries(&entries, "full", &["e1".into()], None).is_err());
+        let requested = vec!["e127".into(), "e0".into()];
+        assert_eq!(
+            select_clean_entries(&entries, "selected", &requested, None)
+                .unwrap()
+                .iter()
+                .map(|e| e.id.clone())
+                .collect::<Vec<_>>(),
+            requested
+        );
+        assert!(select_clean_entries(&entries, "selected", &["unknown".into()], None).is_err());
+        let huge = (0..=MAX_CLEAN_ENTRIES)
+            .map(|i| {
+                let mut e = entry();
+                e.id = i.to_string();
+                e
+            })
+            .collect::<Vec<_>>();
+        assert!(select_clean_entries(&huge, "full", &[], None).is_err());
     }
 
     #[test]

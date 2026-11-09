@@ -2,6 +2,15 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.25 — 2026-11-09
+
+- Add current-user Applications SupportedTypes leftover inventory, bringing coverage to 68 logical sections using existing registry roots. Correlate a simple missing literal open-command executable with its exact missing installation directory and unique non-MSI uninstall owner. Protect existing files, MSI/product-code owners, ambiguous ownership, alternate activation, App Paths counterparts, both machine views, unsupported values and inaccessible evidence.
+- Add per-value removal of an explicitly empty REG_SZ file-type suggestion with schema 25 verified backups and exact-name/type/byte recovery after restart. Preserve sibling hints, open commands, icon metadata, settings, licenses, keys, files, permissions and default application selections. Group sibling suggestions once, label each extension distinctly and offer individual/selected/Quick Clean review. Formats 1–24 retain their layouts and checksums.
+- Raise Quick Clean and selected cleaning from 100 to 10,000 reviewed candidates and add Full Clean across all supported categories. Automatic modes exclude optional history and never silently truncate candidates. Add paged candidate/review lists, persistent cross-page selection and explicit confirmation.
+- Add live per-entry cleaning progress and controlled Stop after the current entry. Every completed entry keeps its own verified backup; cancellation and conflicts preserve unattempted entries. An authorized long-running batch retains its review authorization while every native operation still checks fresh registry/file evidence.
+- Expand backup discovery to 50,000 directory entries with storage-capacity preflight and 50-row search/filter pages. Keep review and read-only cache-inventory bounds separate. Preserve immutable backups and independent recovery after large or interrupted batches.
+- Add native hint policy/transaction/restart/conflict/corruption tests, 128-entry Quick/Selected and 1,105-entry Full Clean recovery tests, deterministic progress/cancellation/conflict coverage, grouping/page tests, and owned packaged suggestion/large-clean flows with independent raw-value and permission checks. No application, installer or uninstaller is executed.
+
 ## 0.1.24 — 2026-11-09
 
 - Extend application-leftover correlation to bounded, semicolon-separated REG_SZ App Paths lists. Require exactly one corroborated missing installation directory and a unique non-MSI uninstall owner; multiple directory owners, empty/quoted/oversized lists, expanded values and uncertain ownership remain protected. Coverage remains 67 logical sections using existing roots.

@@ -1,4 +1,6 @@
 use super::*;
+#[path = "windows_leftover_type_tests.rs"]
+mod supported;
 use crate::{
     changes::ChangeManager, LocalPathProbe, PathProbe, ProbeResult, RegistryEntry, TargetKind,
 };
@@ -108,6 +110,7 @@ impl Fixture {
             anchor: normalized_anchor(&anchor).unwrap(),
             application_values: state.other,
             path_list: None,
+            supported_type: None,
         }
     }
     fn entry(&self, i: usize) -> RegistryEntry {
@@ -147,6 +150,121 @@ impl Drop for Fixture {
         RegKey::predef(HKEY_CURRENT_USER)
             .delete_subkey_all(&self.base)
             .unwrap();
+    }
+}
+
+impl Fixture {
+    fn type_entries(&self) -> Vec<RegistryEntry> {
+        let entry = self.entry(0);
+        self.key(r"User\AppPaths")
+            .delete_subkey("old0.exe")
+            .unwrap();
+        self.put(
+            r"User\Applications\old0.exe",
+            "FriendlyAppName",
+            &text("Owned file-type application"),
+        );
+        self.put(
+            r"User\Applications\old0.exe",
+            "LicenseMarker",
+            &text("PRESERVE"),
+        );
+        self.key(r"User\Applications\old0.exe")
+            .set_raw_value(
+                "CustomBinary",
+                &RegValue {
+                    vtype: REG_BINARY,
+                    bytes: Cow::Borrowed(&[0, 255, 1]),
+                },
+            )
+            .unwrap();
+        self.put(
+            r"User\Applications\old0.exe\shell\open\command",
+            "",
+            &text(&format!(r#""{}\old0.exe" "%1" %*"#, self.directory(0))),
+        );
+        self.put(
+            r"User\Applications\old0.exe\DefaultIcon",
+            "",
+            &text(r"C:\Preserve\icon.exe,0"),
+        );
+        for (name, bytes) in [
+            (".ONE", vec![0u8, 0]),
+            (".two", vec![0, 0, 0, 0]),
+            (".keep", text("preserve nonempty data").bytes),
+        ] {
+            self.put(
+                r"User\Applications\old0.exe\SupportedTypes",
+                name,
+                &StoredValue { kind: 1, bytes },
+            );
+        }
+        let state = self.store().leftover_type_state("old0.exe", None).unwrap();
+        state
+            .hints
+            .iter()
+            .filter(|v| v.name != ".keep")
+            .map(|hint| {
+                let mut e = entry.clone();
+                let mut app = e.leftover_state.take().unwrap();
+                app.value_name = hint.name.clone();
+                app.application_values = state.application_values.clone();
+                app.supported_type = Some(Box::new(state.guard.clone()));
+                e.id = format!("hint{}", hint.name);
+                e.key_path = app.key_path();
+                e.value_name = hint.name.clone();
+                e.raw_value = String::new();
+                e.snapshot = Some(hint.value.clone());
+                e.leftover_evidence =
+                    Some(app.verify_original(&hint.value, &LocalPathProbe).unwrap());
+                e.leftover_state = Some(app);
+                e
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn leftover_supported_types_individual_selected_quick_and_restart_restore_preserve_siblings_and_metadata(
+) {
+    for mode in ["single", "selected", "quick"] {
+        let f = Fixture::new();
+        let entries = f.type_entries();
+        let root = f.store().leftover_type_state("old0.exe", None).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let mut manager = ChangeManager::new(f.store(), directory.path().into(), LocalPathProbe);
+        let mut ids = vec![];
+        if mode == "single" {
+            for e in &entries {
+                let p = manager.prepare_quarantine(e).unwrap();
+                ids.push(manager.apply(&p.token).unwrap().backup_id);
+            }
+        } else {
+            let p = manager.prepare_clean(&entries, mode).unwrap();
+            assert_eq!(p.items.len(), 2);
+            let result = manager.apply_clean(&p.token).unwrap();
+            assert!(result.failed.is_none());
+            ids.extend(result.completed.into_iter().map(|v| v.backup_id));
+        }
+        let current = f.store().leftover_type_state("old0.exe", None).unwrap();
+        assert_eq!(current.hints.len(), 1);
+        assert_eq!(current.hints[0].name, ".keep");
+        assert_eq!(current.application_values, root.application_values);
+        assert_eq!(current.guard, root.guard);
+        let mut reopened = ChangeManager::new(f.store(), directory.path().into(), LocalPathProbe);
+        for id in ids.into_iter().rev() {
+            let json: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(directory.path().join(format!("{id}.json"))).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(json["schemaVersion"], 25);
+            let p = reopened.prepare_restore(&id).unwrap();
+            reopened.apply(&p.token).unwrap();
+        }
+        let current = f.store().leftover_type_state("old0.exe", None).unwrap();
+        assert_eq!(current.hints, root.hints);
+        assert_eq!(current.application_values, root.application_values);
+        assert_eq!(current.guard, root.guard);
     }
 }
 

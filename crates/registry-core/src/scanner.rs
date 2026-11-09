@@ -255,6 +255,13 @@ fn sources() -> Vec<Source> {
         flag: KEY_WOW64_64KEY,
         view: "shared",
     });
+    result.push(Source {
+        category: Category::ApplicationLeftovers,
+        hive: "HKCU",
+        path: crate::applications::APPLICATIONS_KEY,
+        flag: KEY_WOW64_64KEY,
+        view: "shared",
+    });
     result
 }
 
@@ -1033,6 +1040,36 @@ pub fn scan(cancel: &AtomicBool, progress: impl Fn(ScanProgress)) -> Result<Scan
 mod tests {
     use super::*;
     use std::borrow::Cow;
+
+    #[test]
+    fn leftover_correlations_have_distinct_scope_ids_and_reuse_application_roots() {
+        let all = sources();
+        let leftovers = all
+            .iter()
+            .filter(|s| s.category == Category::ApplicationLeftovers)
+            .collect::<Vec<_>>();
+        assert_eq!(leftovers.len(), 2);
+        for path in [
+            crate::changes::APP_PATHS_KEY,
+            crate::applications::APPLICATIONS_KEY,
+        ] {
+            assert_eq!(
+                leftovers
+                    .iter()
+                    .filter(|s| s.path == path && s.hive == "HKCU" && s.view == "shared")
+                    .count(),
+                1
+            );
+            assert!(all.iter().any(|s| s.path == path
+                && s.hive == "HKCU"
+                && s.category != Category::ApplicationLeftovers));
+        }
+        let ids = all
+            .iter()
+            .map(source_id)
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(ids.len(), all.len());
+    }
 
     #[test]
     fn decodes_registry_text_without_hiding_embedded_nulls() {

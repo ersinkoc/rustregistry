@@ -1,3 +1,5 @@
+import { verifyLeftoverTypes } from './leftover-types-smoke.mjs';
+import { verifyLargeCleaning } from './large-clean-smoke.mjs';
 import { verifyLeftoverRecovery } from './leftover-smoke.mjs';
 import { verifySoundRecovery } from './sound-smoke.mjs';
 import { verifyFileReferenceRecovery } from './file-reference-smoke.mjs';
@@ -38,6 +40,8 @@ const applicationOnly = process.argv.includes('--application-only');
 const sharedDllOnly = process.argv.includes('--shared-dll-only');
 const registeredAppOnly = process.argv.includes('--registered-app-only');
 const typeLibraryOnly = process.argv.includes('--type-library-only');
+const leftoverTypesOnly = process.argv.includes('--leftover-types-only');
+const largeCleanOnly = process.argv.includes('--large-clean-only');
 const leftoverOnly = process.argv.includes('--leftover-only');
 const soundOnly = process.argv.includes('--sound-only');
 const fileReferenceOnly = process.argv.includes('--file-reference-only');
@@ -72,6 +76,8 @@ if (
     fileReferenceOnly,
     soundOnly,
     leftoverOnly,
+    leftoverTypesOnly,
+    largeCleanOnly,
   ].filter(Boolean).length > 1
 )
   throw new Error('Choose only one focused verification mode.');
@@ -147,43 +153,47 @@ const summary = {
   executable,
   sourceExecutable: process.env.RUSTREGISTRY_SOURCE_EXE || executable,
   version: appVersion,
-  mode: leftoverOnly
-    ? 'leftover-only'
-    : soundOnly
-      ? 'sound-only'
-      : fileReferenceOnly
-        ? 'file-reference-only'
-        : maintenanceOnly
-          ? 'maintenance-only'
-          : appearanceOnly
-            ? 'appearance-only'
-            : conversionOnly
-              ? 'conversion-only'
-              : redirectionOnly
-                ? 'redirection-only'
-                : menuOnly
-                  ? 'menu-only'
-                  : iconOnly
-                    ? 'icon-only'
-                    : proxyOnly
-                      ? 'proxy-only'
-                      : interfaceOnly
-                        ? 'interface-only'
-                        : progIdOnly
-                          ? 'prog-id-only'
-                          : typeLibraryOnly
-                            ? 'type-library-only'
-                            : registeredAppOnly
-                              ? 'registered-app-only'
-                              : serviceOnly
-                                ? 'service-only'
-                                : expandedOnly
-                                  ? 'expanded-only'
-                                  : applicationOnly
-                                    ? 'application-only'
-                                    : sharedDllOnly
-                                      ? 'shared-dll-only'
-                                      : 'full',
+  mode: leftoverTypesOnly
+    ? 'leftover-types-only'
+    : largeCleanOnly
+      ? 'large-clean-only'
+      : leftoverOnly
+        ? 'leftover-only'
+        : soundOnly
+          ? 'sound-only'
+          : fileReferenceOnly
+            ? 'file-reference-only'
+            : maintenanceOnly
+              ? 'maintenance-only'
+              : appearanceOnly
+                ? 'appearance-only'
+                : conversionOnly
+                  ? 'conversion-only'
+                  : redirectionOnly
+                    ? 'redirection-only'
+                    : menuOnly
+                      ? 'menu-only'
+                      : iconOnly
+                        ? 'icon-only'
+                        : proxyOnly
+                          ? 'proxy-only'
+                          : interfaceOnly
+                            ? 'interface-only'
+                            : progIdOnly
+                              ? 'prog-id-only'
+                              : typeLibraryOnly
+                                ? 'type-library-only'
+                                : registeredAppOnly
+                                  ? 'registered-app-only'
+                                  : serviceOnly
+                                    ? 'service-only'
+                                    : expandedOnly
+                                      ? 'expanded-only'
+                                      : applicationOnly
+                                        ? 'application-only'
+                                        : sharedDllOnly
+                                          ? 'shared-dll-only'
+                                          : 'full',
   checks: [],
   errors: [],
   skipped: [],
@@ -267,6 +277,14 @@ try {
       summary.appearanceInitialTheme = initial;
       await verifyAppearance(page, cdp, output, checked, summary);
     }
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (leftoverTypesOnly) {
+    await verifyLeftoverTypes(page, output, checked, summary);
+    expect(summary.errors).toEqual([]);
+    summary.passed = true;
+  } else if (largeCleanOnly) {
+    await verifyLargeCleaning(page, output, checked, summary);
     expect(summary.errors).toEqual([]);
     summary.passed = true;
   } else if (leftoverOnly) {
@@ -431,10 +449,10 @@ try {
     checked('Search empty state is honest and clearing filters restores real entries');
 
     await page.locator('nav').getByRole('button', { name: 'Scan coverage', exact: true }).click();
-    await expect(page.locator('.scope-item')).toHaveCount(67);
+    await expect(page.locator('.scope-item')).toHaveCount(68);
     await page.locator('.scope-item summary').first().click();
     await expect(page.locator('.scope-item').first().locator('.scope-notes')).toBeVisible();
-    checked('Coverage lists all 67 registry scan sections with expandable read results');
+    checked('Coverage lists all 68 registry scan sections with expandable read results');
 
     await page.locator('nav').getByRole('button', { name: 'Session history', exact: true }).click();
     await expect(page.locator('.history-item')).toHaveCount(1);
@@ -542,6 +560,8 @@ try {
     await verifySoundRecovery(page, output, checked, summary);
     await verifyLeftoverRecovery(page, output, checked, summary);
     await verifyLeftoverRecovery(page, output, checked, summary, { pathList: true });
+    await verifyLeftoverTypes(page, output, checked, summary);
+    await verifyLargeCleaning(page, output, checked, summary);
     await verifyAppearance(page, cdp, output, checked, summary);
 
     await cdp.send('Emulation.setDeviceMetricsOverride', {
@@ -655,43 +675,47 @@ try {
   await writeFile(
     resolve(
       output,
-      leftoverOnly
-        ? 'desktop-leftover-verification.json'
-        : soundOnly
-          ? 'desktop-sound-verification.json'
-          : fileReferenceOnly
-            ? 'desktop-file-reference-verification.json'
-            : maintenanceOnly
-              ? 'desktop-maintenance-verification.json'
-              : appearanceOnly
-                ? 'desktop-appearance-verification.json'
-                : conversionOnly
-                  ? 'desktop-conversion-verification.json'
-                  : redirectionOnly
-                    ? 'desktop-redirection-verification.json'
-                    : menuOnly
-                      ? 'desktop-menu-verification.json'
-                      : iconOnly
-                        ? 'desktop-icon-verification.json'
-                        : proxyOnly
-                          ? 'desktop-proxy-verification.json'
-                          : interfaceOnly
-                            ? 'desktop-interface-verification.json'
-                            : progIdOnly
-                              ? 'desktop-prog-id-verification.json'
-                              : typeLibraryOnly
-                                ? 'desktop-type-library-verification.json'
-                                : registeredAppOnly
-                                  ? 'desktop-registered-app-verification.json'
-                                  : serviceOnly
-                                    ? 'desktop-service-verification.json'
-                                    : expandedOnly
-                                      ? 'desktop-expanded-verification.json'
-                                      : applicationOnly
-                                        ? 'desktop-application-verification.json'
-                                        : sharedDllOnly
-                                          ? 'desktop-shared-dll-verification.json'
-                                          : 'desktop-verification.json',
+      leftoverTypesOnly
+        ? 'desktop-leftover-types-verification.json'
+        : largeCleanOnly
+          ? 'desktop-large-clean-verification.json'
+          : leftoverOnly
+            ? 'desktop-leftover-verification.json'
+            : soundOnly
+              ? 'desktop-sound-verification.json'
+              : fileReferenceOnly
+                ? 'desktop-file-reference-verification.json'
+                : maintenanceOnly
+                  ? 'desktop-maintenance-verification.json'
+                  : appearanceOnly
+                    ? 'desktop-appearance-verification.json'
+                    : conversionOnly
+                      ? 'desktop-conversion-verification.json'
+                      : redirectionOnly
+                        ? 'desktop-redirection-verification.json'
+                        : menuOnly
+                          ? 'desktop-menu-verification.json'
+                          : iconOnly
+                            ? 'desktop-icon-verification.json'
+                            : proxyOnly
+                              ? 'desktop-proxy-verification.json'
+                              : interfaceOnly
+                                ? 'desktop-interface-verification.json'
+                                : progIdOnly
+                                  ? 'desktop-prog-id-verification.json'
+                                  : typeLibraryOnly
+                                    ? 'desktop-type-library-verification.json'
+                                    : registeredAppOnly
+                                      ? 'desktop-registered-app-verification.json'
+                                      : serviceOnly
+                                        ? 'desktop-service-verification.json'
+                                        : expandedOnly
+                                          ? 'desktop-expanded-verification.json'
+                                          : applicationOnly
+                                            ? 'desktop-application-verification.json'
+                                            : sharedDllOnly
+                                              ? 'desktop-shared-dll-verification.json'
+                                              : 'desktop-verification.json',
     ),
     JSON.stringify(summary, null, 2),
   );

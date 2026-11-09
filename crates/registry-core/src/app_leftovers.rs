@@ -17,6 +17,8 @@ pub struct LeftoverBackup {
     pub application_values: Vec<NamedValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_list: Option<StoredValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supported_type: Option<Box<crate::leftover_types::SupportedTypeBackup>>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -230,7 +232,23 @@ pub fn correlate(
     })
 }
 impl LeftoverBackup {
+    pub fn schema(&self) -> u32 {
+        if self.supported_type.is_some() {
+            25
+        } else if self.path_list.is_some() {
+            24
+        } else {
+            23
+        }
+    }
     pub fn key_path(&self) -> String {
+        if self.supported_type.is_some() {
+            return format!(
+                r"{}\{}\SupportedTypes",
+                crate::applications::APPLICATIONS_KEY,
+                self.executable_name
+            );
+        }
         format!(
             r"{}\{}",
             crate::changes::APP_PATHS_KEY,
@@ -240,11 +258,19 @@ impl LeftoverBackup {
     pub fn validate(&self) -> Result<(), String> {
         crate::changes::validate_app_path_name(&self.executable_name)?;
         crate::uninstall::validate_uninstall_name(&self.uninstall_key)?;
-        if !self.value_name.eq_ignore_ascii_case("Path")
+        if (self.supported_type.is_none() && !self.value_name.eq_ignore_ascii_case("Path"))
             || !self.executable_name.is_ascii()
             || uuid::Uuid::parse_str(self.uninstall_key.trim_matches(['{', '}'])).is_ok()
         {
             return Err("Unsupported leftover backup namespace or identifier.".into());
+        }
+        if let Some(hint) = &self.supported_type {
+            crate::applications::validate_application_name(&self.executable_name)?;
+            crate::leftover_types::validate_extension(&self.value_name)?;
+            hint.validate()?;
+            if self.path_list.is_some() {
+                return Err("Search-path and file-type backup namespaces cannot be mixed.".into());
+            }
         }
         let value = StoredValue {
             kind: 1,
@@ -276,12 +302,13 @@ impl LeftoverBackup {
         }
         let mut names = std::collections::HashSet::new();
         for v in &self.application_values {
-            if v.name.is_empty()
+            if (v.name.is_empty() && self.supported_type.is_none())
                 || v.name.len() > 256
                 || v.name.contains('\0')
                 || v.value.kind > 11
                 || v.value.kind == 6
                 || !names.insert(v.name.to_lowercase())
+                || (self.supported_type.is_some() && v.name.eq_ignore_ascii_case("IsHostApp"))
                 || ["Path", "DropTarget", "UseUrl", "SupportedProtocols"]
                     .iter()
                     .any(|n| v.name.eq_ignore_ascii_case(n))
@@ -297,6 +324,10 @@ impl LeftoverBackup {
         probe: &impl PathProbe,
     ) -> Result<LeftoverEvidence, String> {
         self.validate()?;
+        if let Some(hint) = &self.supported_type {
+            crate::leftover_types::validate_hint(original)?;
+            return hint.evidence(self, probe);
+        }
         let evidence_value = if let Some(list) = &self.path_list {
             if list != original {
                 return Err(
@@ -339,11 +370,24 @@ pub fn link_related(entries: &mut [RegistryEntry]) {
     let mut paths: HashMap<String, Vec<String>> = HashMap::new();
     let mut uninstall: HashMap<String, Vec<String>> = HashMap::new();
     let mut cache: HashMap<String, Vec<String>> = HashMap::new();
+    let mut hints: HashMap<String, Vec<String>> = HashMap::new();
     for e in entries
         .iter()
         .filter(|e| e.hive == "HKCU" && crate::changes::is_repair_candidate(e))
     {
         match e.category {
+            Category::ApplicationLeftovers
+                if e.leftover_state
+                    .as_ref()
+                    .is_some_and(|app| app.supported_type.is_some()) =>
+            {
+                if let Some(evidence) = &e.leftover_evidence {
+                    hints
+                        .entry(evidence.application_path.to_ascii_lowercase())
+                        .or_default()
+                        .push(e.id.clone());
+                }
+            }
             Category::AppPaths => paths
                 .entry(e.key_path.to_ascii_lowercase())
                 .or_default()
@@ -368,6 +412,7 @@ pub fn link_related(entries: &mut [RegistryEntry]) {
             let mut ids = vec![];
             for values in [
                 paths.get(&e.application_path.to_ascii_lowercase()),
+                hints.get(&e.application_path.to_ascii_lowercase()),
                 uninstall.get(&e.uninstall_path.to_ascii_lowercase()),
                 cache.get(&e.executable.to_ascii_lowercase()),
                 cache.get(&e.uninstaller.to_ascii_lowercase()),

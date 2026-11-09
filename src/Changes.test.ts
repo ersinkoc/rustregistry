@@ -22,6 +22,28 @@ const entry: RegistryEntry = {
   },
 };
 describe('protected change availability', () => {
+  it('offers a corroborated empty file-type suggestion without granting other scopes or values eligibility', () => {
+    const hint = {
+      ...entry,
+      category: 'application_leftovers',
+      keyPath: 'Software\\Classes\\Applications\\old.exe\\SupportedTypes',
+      valueName: '.ONE',
+      rawValue: '',
+      leftoverRepairable: true,
+      assessment: { ...entry.assessment, code: 'application_leftover_candidate' },
+    } as RegistryEntry;
+    expect(canQuarantine(hint)).toBe(true);
+    for (const changed of [
+      { ...hint, hive: 'HKLM' },
+      { ...hint, view: '32' },
+      { ...hint, valueName: 'Path' },
+      { ...hint, rawValue: 'preserve' },
+      { ...hint, valueType: 'REG_NONE' },
+      { ...hint, leftoverRepairable: false },
+      { ...hint, keyPath: hint.keyPath + '\\Child' },
+    ])
+      expect(canQuarantine(changed)).toBe(false);
+  });
   it('offers correlated leftover search-path cleanup only for exact native user evidence', () => {
     const leftover = {
       ...entry,

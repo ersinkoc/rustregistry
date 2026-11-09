@@ -7,6 +7,7 @@ pub mod com;
 pub mod com_conversions;
 pub mod com_redirects;
 pub mod file_references;
+pub mod leftover_types;
 pub mod maintenance;
 mod model;
 pub mod prog_ids;

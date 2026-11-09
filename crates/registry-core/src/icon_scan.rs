@@ -212,6 +212,6 @@ mod tests {
         RegKey::predef(HKEY_CURRENT_USER)
             .delete_subkey_all(path)
             .unwrap();
-        assert_eq!(super::super::sources().len(), 67);
+        assert_eq!(super::super::sources().len(), 68);
     }
 }

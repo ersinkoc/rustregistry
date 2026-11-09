@@ -12,6 +12,10 @@ pub(super) fn scan_leftovers(
     scope: &mut ScopeResult,
     probe: &impl PathProbe,
 ) {
+    if source.path == crate::applications::APPLICATIONS_KEY {
+        scan_supported_types(source, cancel, environment, entries, scope, probe);
+        return;
+    }
     let store = WindowsRegistryStore::default();
     let Some(root) = (match open_registration_path(
         HKEY_CURRENT_USER,
@@ -133,6 +137,7 @@ pub(super) fn scan_leftovers(
                                 anchor: normalized_anchor(snapshot).unwrap(),
                                 application_values: state.other,
                                 path_list: entry.raw_value.contains(';').then_some(value.clone()),
+                                supported_type: None,
                             };
                             entry.name = evidence.application_name.clone();
                             entry.publisher = snapshot.text("Publisher").ok();
@@ -172,4 +177,130 @@ pub(super) fn scan_leftovers(
     }
     scope.entries = entries.len() - start;
     scope.notes.push("This logical check correlates existing current-user App Paths and Uninstall inventory; it does not count a new physical root. Only supported per-value actions are offered. MSI/product-code registrations, machine counterparts, application settings, licenses, user data, installer databases and arbitrary vendor keys are not removed.".into());
+}
+
+fn scan_supported_types(
+    source: &Source,
+    cancel: &AtomicBool,
+    environment: &Environment,
+    entries: &mut Vec<RegistryEntry>,
+    scope: &mut ScopeResult,
+    probe: &impl PathProbe,
+) {
+    let store = WindowsRegistryStore::default();
+    let (names, anchors) = match store
+        .leftover_type_names()
+        .and_then(|names| store.leftover_anchors(None).map(|anchors| (names, anchors)))
+    {
+        Ok(v) => v,
+        Err(e) => {
+            scope.status = "error".into();
+            scope.notes.push(e);
+            return;
+        }
+    };
+    let start = entries.len();
+    for name in names {
+        if cancel.load(Ordering::Relaxed) {
+            scope.status = "cancelled".into();
+            break;
+        }
+        if entries.len() - start >= MAX_ENTRIES_PER_SCOPE {
+            scope.status = "limited".into();
+            break;
+        }
+        let state = match store.leftover_type_state(&name, None) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let command = match state.guard.command().and_then(|v| v.text()) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let target = crate::applications::assess_command(&command, environment, probe).target;
+        let directory = target
+            .as_deref()
+            .and_then(|s| s.rsplit_once('\\'))
+            .map(|(d, _)| d.to_string());
+        for hint in &state.hints {
+            if entries.len() - start >= MAX_ENTRIES_PER_SCOPE {
+                scope.status = "limited".into();
+                break;
+            }
+            let mut e = make_entry(
+                source,
+                &format!(r"{name}\SupportedTypes"),
+                name.clone(),
+                &hint.name,
+                Err("Suggestion ownership has not been verified.".into()),
+                environment,
+                probe,
+            );
+            e.value_type = if hint.value.kind == 1 {
+                "REG_SZ"
+            } else {
+                "Unsupported"
+            }
+            .into();
+            e.raw_value = hint.value.text().unwrap_or_default();
+            e.assessment=Assessment{status:EntryStatus::Unknown,code:"leftover_type_unverified".into(),explanation:"A file-type suggestion alone does not establish an uninstalled application. Exact missing application, installation and unique non-MSI uninstall evidence is required.".into(),target:target.clone()};
+            if let Some(directory) = &directory {
+                if let Some(owners) = anchors.get(&directory.to_ascii_lowercase()) {
+                    if owners.len() == 1 {
+                        if let Ok(snapshot) = &owners[0].1 {
+                            if let Ok(anchor) = normalized_anchor(snapshot) {
+                                let app = LeftoverBackup {
+                                    executable_name: name.clone(),
+                                    value_name: hint.name.clone(),
+                                    directory: directory.clone(),
+                                    uninstall_key: owners[0].0.clone(),
+                                    anchor,
+                                    application_values: state.application_values.clone(),
+                                    path_list: None,
+                                    supported_type: Some(Box::new(state.guard.clone())),
+                                };
+                                match state.guard.evidence(&app, probe) {
+                                    Ok(evidence) => {
+                                        e.name = evidence.application_name.clone();
+                                        e.publisher = snapshot.text("Publisher").ok();
+                                        e.version = snapshot.text("DisplayVersion").ok();
+                                        e.assessment=Assessment{status:EntryStatus::Review,code:"application_leftover_candidate".into(),explanation:"A missing literal open-command executable, exact missing installation directory and unique non-MSI uninstall owner suggest an application leftover. Only the selected empty SupportedTypes hint can be removed; this does not prove that all settings are disposable.".into(),target:target.clone()};
+                                        match app
+                                            .verify_original(&hint.value, probe)
+                                            .and_then(|_| store.read_leftover(&app))
+                                            .and_then(|v| {
+                                                if v.as_ref() == Some(&hint.value) {
+                                                    Ok(())
+                                                } else {
+                                                    Err("The suggestion changed during scanning."
+                                                        .into())
+                                                }
+                                            }) {
+                                            Ok(()) => {
+                                                e.leftover_repairable = true;
+                                                e.leftover_state = Some(app);
+                                                e.snapshot = Some(hint.value.clone());
+                                            }
+                                            Err(reason) => {
+                                                e.assessment.explanation.push_str(&format!(
+                                                    " Suggestion cleanup unavailable: {reason}"
+                                                ))
+                                            }
+                                        }
+                                        e.leftover_evidence = Some(evidence);
+                                    }
+                                    Err(reason) => e.assessment.explanation = reason,
+                                }
+                            }
+                        }
+                    } else {
+                        e.assessment.explanation="Multiple uninstall owners share this directory; suggestion cleanup is blocked.".into();
+                    }
+                }
+            }
+            entries.push(e);
+        }
+    }
+    scope.entries = entries.len() - start;
+    scope.notes.push("This logical check reuses the existing current-user Applications and Uninstall roots. Only bounded empty REG_SZ SupportedTypes values with exact corroborated missing-target evidence support cleanup. Commands, sibling hints, DefaultIcon metadata, application settings/licenses, keys, files, permissions and default selections are preserved.".into());
 }
