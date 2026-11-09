@@ -2150,4 +2150,23 @@ tr:hover td {
 }
 .leftover-group li {
   margin-block: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.leftover-group li label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.leftover-availability {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
 }

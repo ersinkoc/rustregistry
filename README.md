@@ -55,7 +55,19 @@ HKCU shared locations are read once. Applicable machine locations and redirected
 
 The app includes search, category/status filters, pagination, a record detail panel, location-level coverage notes, light/dark themes, cancellation, and an in-memory history of the last eight scans.
 
-## Application leftovers in 0.1.23
+## Application leftovers in 0.1.24
+
+Application diagnosis now also correlates **semicolon-separated REG_SZ App Paths lists**, using the same exact missing installation/application/uninstaller evidence and unique non-MSI uninstall owner as the single-directory flow. The list must contain 2–32 nonempty unquoted segments within 4,096 UTF-8 bytes. Exactly one distinct literal directory in the list may have uninstall ownership evidence. Multiple directory owners, ambiguous duplicates, active executable mappings, alternate activation, machine counterparts and inaccessible evidence block cleanup. This reuses the existing correlation section; coverage remains 67 logical sections.
+
+**Review search-path cleanup** previews the complete original list and the exact result. Only literal segments matching the corroborated missing installation directory are removed. Every other segment retains its original text and order, including existing directories and expressions that are not interpreted or removed. Matching duplicate segments are removed consistently. If every segment matches that one directory, the Path value is removed; otherwise only that value is rewritten. REG_EXPAND_SZ lists, quoted or empty-segment lists, Windows ownership targets and uncertain ownership remain read-only. The system/user PATH environment variables are never edited.
+
+An immutable **schema 24** backup retains the complete original name/type/bytes, including terminators, application metadata and uninstall evidence. Restore requires the live Path value to equal the exact cleaned result (or its intended absence); it never overwrites a new or deleted retained list. Apply and restore recheck missing targets, metadata, unique ownership, both machine views and owners newly associated with retained directories. Restore the newer path-list backup before an older executable-mapping backup. Old backup formats **1–23** retain their serialization and checksums.
+
+The workspace supports **per-action review and selection**, with individual review buttons for related supported actions, selected group cleanup and filters for available cleanup versus evidence-only groups. Every completed action has its own backup; groups are not all-or-nothing transactions. Individual and group dialogs show the original and planned search path. Settings, licenses, uninstall metadata, registry keys, files and permissions remain preserved. No application or uninstaller is run, and leftover evidence is not proof that all application settings are disposable.
+
+Microsoft documents App Paths Path as a [per-application semicolon-separated directory list](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration), distinct from the executable mapping. That documented structure supports segment-level review; it does not establish ownership or justify vendor-wide deletion.
+
+### Single-directory cleanup delivered in 0.1.23
 
 The **Application leftovers** workspace groups likely remnants using an exact installation directory shared by a current-user App Paths search-path value and a unique non-MSI Uninstall registration. The installation directory, named application executable and direct uninstaller must all be confirmed missing. Similar product/publisher names, a missing file alone or a shared directory are insufficient. The page shows the matching directory, application and uninstaller targets, registry owner and available actions. This is evidence suggesting a removed application, not proof that every setting is disposable.
 

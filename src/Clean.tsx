@@ -291,7 +291,11 @@ export function CleanConfirmation({
               <strong>{item.name}</strong>
               <span>
                 {item.scope === 'application_leftover'
-                  ? 'Remove correlated unused application search path'
+                  ? item.supportingEvidence?.some(
+                      ([label]) => label === 'Search path after cleanup',
+                    )
+                    ? 'Prune confirmed missing application search directories'
+                    : 'Remove correlated unused application search path'
                   : item.scope === 'sound_event'
                     ? 'Clear missing current sound assignment'
                     : item.scope === 'font_reference'
@@ -360,6 +364,12 @@ export function CleanConfirmation({
                 <dt>Original value</dt>
                 <dd className="code-field">{item.originalValue}</dd>
               </div>
+              {(item.supportingEvidence ?? []).map(([label, value]) => (
+                <div className="full-field" key={label}>
+                  <dt>{label}</dt>
+                  <dd className="code-field">{value}</dd>
+                </div>
+              ))}
               {item.applicationCommand && (
                 <div className="full-field">
                   <dt>Original open command · preserved, never executed</dt>
@@ -497,7 +507,8 @@ export function CleanConfirmation({
         <p className="change-intro">
           Leftover search-path cleanup requires a unique matching non-MSI uninstall registration,
           missing installation/application/uninstaller targets, no executable mapping and no machine
-          counterpart. Only the Path value is removed. Keys, application settings, licenses,
+          counterpart. Only the Path value changes: a supported list retains every unrelated
+          segment; a single unused directory is removed. Keys, application settings, licenses,
           uninstall metadata, files and permissions remain intact. Restore this search-path backup
           before an older executable-mapping backup; new mappings or evidence block restoration.
         </p>

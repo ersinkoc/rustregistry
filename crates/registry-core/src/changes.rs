@@ -672,7 +672,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             return Err("Unsupported backup format.".into());
         }
         if let Some(app) = &record.leftover {
-            if record.schema_version != 23
+            if record.schema_version != if app.path_list.is_some() { 24 } else { 23 }
                 || [
                     record.app_path.is_some(),
                     record.uninstall.is_some(),
@@ -701,8 +701,12 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             app.validate()?;
             if record.value_name != app.value_name
-                || !crate::app_leftovers::literal_directory(&record.original)?
-                    .eq_ignore_ascii_case(&app.directory)
+                || if let Some(list) = &app.path_list {
+                    list != &record.original
+                } else {
+                    !crate::app_leftovers::literal_directory(&record.original)?
+                        .eq_ignore_ascii_case(&app.directory)
+                }
             {
                 return Err("Leftover backup evidence does not match its original value.".into());
             }
@@ -1272,7 +1276,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             &record.original,
         ))
         .map_err(|e| e.to_string())?;
-        let bytes = if record.schema_version == 23 {
+        let bytes = if matches!(record.schema_version, 23 | 24) {
             serde_json::to_vec(&(bytes, &record.leftover)).map_err(|e| e.to_string())?
         } else if record.schema_version == 22 {
             serde_json::to_vec(&(bytes, &record.sound)).map_err(|e| e.to_string())?
@@ -1595,7 +1599,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             );
         }
         let mut record = BackupRecord {
-            schema_version: 23,
+            schema_version: if app.path_list.is_some() { 24 } else { 23 },
             id: Uuid::new_v4(),
             name: entry.name.clone(),
             value_name: app.value_name.clone(),
@@ -2904,7 +2908,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             }
             .into(),
             supporting_evidence: if let Some(app) = &record.leftover {
-                vec![
+                let mut evidence = vec![
                     (
                         "Missing installation directory".into(),
                         app.directory.clone(),
@@ -2925,7 +2929,15 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
                             app.uninstall_key
                         ),
                     ),
-                ]
+                ];
+                if app.path_list.is_some() {
+                    evidence.push((
+                        "Search path after cleanup".into(),
+                        app.cleared_value()?
+                            .map_or(Ok("(Path value removed)".into()), |v| v.text())?,
+                    ));
+                }
+                evidence
             } else {
                 vec![]
             },
@@ -3604,7 +3616,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
         Ok(ChangeResult {
             backup_id: record.id.to_string(),
             action: pending.plan.action,
-            message: if record.leftover.is_some(){if restore{"Original correlated application search path restored and verified. No application or uninstaller was executed."}else{"Unused application search-path value removed after a verified backup. Uninstall metadata, keys, settings, licenses, files and permissions were preserved."}}else if record.sound.is_some(){if restore {"Original sound assignment restored and verified. No audio was played."}else{"Missing current sound assignment cleared after a verified backup. Saved schemes, keys, metadata, audio files and permissions were preserved. No audio was played."}}else if let Some(app)=&record.file_reference{if restore {"Original font/help registration restored and verified. No font or document was loaded."}else if app.location.font(){"Missing font mapping removed after a verified backup. Font files, runtime resources, other registrations and permissions were preserved."}else{"Missing help-file mapping removed after a verified backup. Documents, search settings, other registrations and permissions were preserved."}}else if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
+            message: if record.leftover.as_ref().is_some_and(|app| app.path_list.is_some()){if restore{"Complete original application search-path list restored and verified."}else{"Confirmed missing installation-directory segments removed after a verified backup. All retained search segments, settings, licenses, keys, files and permissions were preserved."}}else if record.leftover.is_some(){if restore{"Original correlated application search path restored and verified. No application or uninstaller was executed."}else{"Unused application search-path value removed after a verified backup. Uninstall metadata, keys, settings, licenses, files and permissions were preserved."}}else if record.sound.is_some(){if restore {"Original sound assignment restored and verified. No audio was played."}else{"Missing current sound assignment cleared after a verified backup. Saved schemes, keys, metadata, audio files and permissions were preserved. No audio was played."}}else if let Some(app)=&record.file_reference{if restore {"Original font/help registration restored and verified. No font or document was loaded."}else if app.location.font(){"Missing font mapping removed after a verified backup. Font files, runtime resources, other registrations and permissions were preserved."}else{"Missing help-file mapping removed after a verified backup. Documents, search settings, other registrations and permissions were preserved."}}else if let Some(app)=&record.maintenance { if restore {"Original maintenance values restored and verified. No command was executed."}else if app.kind.history(){"Selected registry history cleared after a verified backup. Other history stores and files were preserved."}else{"Stale application cache values removed after a verified backup. Other cache values, files, and permissions were preserved."} }else if record.conversion.is_some(){if restore{"Original AutoConvertTo reference restored and verified. No document was opened or converted."}else{"Missing-local-target AutoConvertTo value removed after a verified backup. Class keys, descriptions, documents, files and permissions were preserved."}}else if record.redirection.is_some(){if restore{"Original TreatAs redirection restored and verified. No COM class was activated."}else{"Missing-local-target TreatAs value removed after a verified backup. Keys, descriptions, files, and permissions were preserved."}}else if record.menu.is_some(){if restore{"Original context-menu visibility restored and verified. No command was run."}else{"Missing-target menu marked programmatic-only after a verified backup. Its command, keys, files, and metadata were preserved."}}else if record.icon.is_some(){if restore{"Original application icon reference restored and verified."}else{"Missing icon reference removed after a verified backup. The open command, metadata, keys, and files were preserved."}}else if record.proxy.is_some(){if restore{"Original COM proxy reference restored and verified."}else{"Orphaned COM proxy reference disabled after a verified backup. TypeLib metadata, keys, files, and permissions were preserved."}}else if record.interface.is_some(){if restore{"Original interface TypeLib reference restored and verified."}else{"Orphaned interface TypeLib reference disabled after a verified backup. Version, proxy, keys, and files were preserved."}}else if record.prog_id.is_some(){if restore{"Original COM ProgID mapping restored and verified. No COM object was activated."}else{"Orphaned COM ProgID mapping disabled after a verified backup. Keys, metadata, class registrations, and files were preserved."}}else if record.type_library.is_some() { if restore { "Original win64 type library mapping restored and verified. No library was loaded or registered." } else { "Missing win64 type library mapping disabled after a verified backup. Metadata, win32 mappings, keys, files, and permissions were preserved." } } else if record.registered_app.is_some() { if restore { "Original application registration restored and verified. Default selections were preserved." } else { "Orphaned application registration removed after a verified backup. Capabilities, defaults, files, and permissions were preserved." } } else if record.shared_dll.is_some() { if restore { "Original zero-count shared DLL reference restored and verified. No file was loaded or changed." } else { "Missing zero-count shared DLL reference removed after a verified backup. All other counters and files were preserved." } } else if record.application.is_some() { if restore {"Original application suggestion visibility restored and verified. The open command was preserved."} else {"Broken application marked NoOpenWith after a verified backup. The open command and default application selections were preserved."} } else if record.service.is_some() {if restore {"Original Manual startup restored and verified through SCM. The service was not started."} else {"Missing-target service disabled after a verified backup. No service was started, stopped, or deleted."}} else if record.com.is_some() {
                 if restore {"Original 64-bit COM mapping restored and verified. No COM object was activated."} else {"Broken 64-bit COM mapping disabled after a verified backup. The class key and metadata were preserved."}
             } else if record.association.is_some() {
                 if restore { "Original Open with suggestion restored and verified. Default applications were preserved." } else { "Orphaned Open with suggestion removed after a verified backup. Default applications were preserved." }
@@ -3707,7 +3719,7 @@ impl<S: RegistryStore, P: PathProbe> ChangeManager<S, P> {
             let (state, note) = match current {
                 Ok(None) => (
                     "restore_available",
-                    if record.menu.is_some(){"The menu matches its backed-up programmatic-only state. Original visibility can be reviewed for restore."}else if record.application.is_some() { "The application matches its backed-up NoOpenWith state. Its original suggestion visibility can be restored." } else if record.service.is_some() { "The service matches its backed-up Disabled state. Its original Manual startup can be restored." } else if record.uninstall.is_some() { "The uninstall entry matches its backed-up hidden state. Its original visibility can be restored." } else { "The value is absent. Its original can be reviewed for restore." }.into(),
+                    if record.leftover.as_ref().is_some_and(|app| app.path_list.is_some()) {"The live search path matches the exact cleaned list (or its intended absence). The complete original list can be reviewed for restore."} else if record.menu.is_some(){"The menu matches its backed-up programmatic-only state. Original visibility can be reviewed for restore."}else if record.application.is_some() { "The application matches its backed-up NoOpenWith state. Its original suggestion visibility can be restored." } else if record.service.is_some() { "The service matches its backed-up Disabled state. Its original Manual startup can be restored." } else if record.uninstall.is_some() { "The uninstall entry matches its backed-up hidden state. Its original visibility can be restored." } else { "The value is absent. Its original can be reviewed for restore." }.into(),
                 ),
                 Ok(Some(value)) if value == record.original => (
                     "original_present",

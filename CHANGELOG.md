@@ -2,6 +2,14 @@
 
 Each published version has a matching Git tag and GitHub release. During `0.x`, development proceeds in small patch releases (`0.1.0`, `0.1.1`, `0.1.2`). Minor versions are reserved for larger planned milestones; major versions are reserved for an explicitly planned stable release.
 
+## 0.1.24 — 2026-11-09
+
+- Extend application-leftover correlation to bounded, semicolon-separated REG_SZ App Paths lists. Require exactly one corroborated missing installation directory and a unique non-MSI uninstall owner; multiple directory owners, empty/quoted/oversized lists, expanded values and uncertain ownership remain protected. Coverage remains 67 logical sections using existing roots.
+- Add per-value partial cleanup that removes only matching missing-directory segments, retaining all other segment text/order and the original string terminator convention. Keep duplicate matching segments consistent, and remove the value only when all segments refer to the same confirmed missing directory. Preserve keys, application settings, licenses, installer data, files and permissions.
+- Add disjoint schema 24 backups with complete original raw bytes and correlation evidence. Restore the exact original list after restart only when the live value equals the exact cleaned list or its intended absence. Recheck missing files, application metadata, unique ownership, alternate activation and both machine views; new owners of retained directories, changed/absent retained lists and changed evidence block changes. Formats 1–23 retain their layouts and checksums.
+- Add individual review buttons for every related supported action, per-group action selection, empty-selection protection, availability filtering and full original/cleaned-list previews in individual and group review. Selected Clean and category-scoped Quick Clean use the same native guards and independent backups.
+- Add native partial/full-list, restart, conflict, policy-boundary and backup-format tests plus a packaged path-list flow with independent raw-value, retained-file, license-marker and permission comparisons, selected group review, mixed-format recovery and conditional owned cleanup. Existing single-directory recovery remains covered.
+
 ## 0.1.23 — 2026-11-09
 
 - Add an Application leftovers workspace that groups exact missing-directory evidence across current-user application paths and a unique non-MSI uninstall registration, alongside missing application/uninstaller targets. Show related supported executable-mapping, uninstall-visibility and exact-file display-cache actions without treating product names as ownership proof.

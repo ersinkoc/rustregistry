@@ -107,6 +107,7 @@ impl Fixture {
             uninstall_key: format!("Owned{i}"),
             anchor: normalized_anchor(&anchor).unwrap(),
             application_values: state.other,
+            path_list: None,
         }
     }
     fn entry(&self, i: usize) -> RegistryEntry {
@@ -147,6 +148,233 @@ impl Drop for Fixture {
             .delete_subkey_all(&self.base)
             .unwrap();
     }
+}
+
+impl Fixture {
+    fn list_entry(&self, tail: &str) -> RegistryEntry {
+        let mut e = self.entry(0);
+        let value = text(&format!("{}\\;{}", self.directory(0), tail));
+        self.put(r"User\AppPaths\old0.exe", "pAth", &value);
+        e.raw_value = value.text().unwrap();
+        e.snapshot = Some(value.clone());
+        e.leftover_state.as_mut().unwrap().path_list = Some(value);
+        e
+    }
+}
+
+#[test]
+fn leftover_path_list_partial_cleanup_exact_restart_restore_and_legacy_format_stay_disjoint() {
+    for mode in ["single", "selected", "quick"] {
+        let f = Fixture::new();
+        let tail = format!(
+            r"{};relative;C:\Windows;%UNKNOWN%\保留;\\server\share",
+            f.files.path().display()
+        );
+        let e = f.list_entry(&tail);
+        let original = e.snapshot.clone().unwrap();
+        let storage = tempfile::tempdir().unwrap();
+        let mut manager = ChangeManager::new(f.store(), storage.path().into(), LocalPathProbe);
+        let plan = if mode == "single" {
+            manager.prepare_quarantine(&e).unwrap()
+        } else {
+            let plan = manager
+                .prepare_clean(std::slice::from_ref(&e), mode)
+                .unwrap();
+            assert_eq!(plan.items.len(), 1);
+            let result = manager.apply_clean(&plan.token).unwrap();
+            assert!(result.failed.is_none());
+            assert_eq!(result.completed.len(), 1);
+            manager.inventory().unwrap();
+            let id = result.completed[0].backup_id.clone();
+            let backup: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(storage.path().join(format!("{id}.json"))).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(backup["schemaVersion"], 24);
+            assert_eq!(
+                f.key(r"User\AppPaths\old0.exe")
+                    .get_raw_value("pAth")
+                    .unwrap()
+                    .bytes
+                    .as_ref(),
+                text(&tail).bytes
+            );
+            let mut reopened = ChangeManager::new(f.store(), storage.path().into(), LocalPathProbe);
+            let review = reopened.prepare_restore(&id).unwrap();
+            reopened.apply(&review.token).unwrap();
+            assert_eq!(
+                f.key(r"User\AppPaths\old0.exe")
+                    .get_raw_value("pAth")
+                    .unwrap()
+                    .bytes
+                    .as_ref(),
+                original.bytes
+            );
+            f.preserved(0);
+            continue;
+        };
+        let result = manager.apply(&plan.token).unwrap();
+        assert_eq!(
+            f.key(r"User\AppPaths\old0.exe")
+                .get_raw_value("pAth")
+                .unwrap()
+                .bytes
+                .as_ref(),
+            text(&tail).bytes
+        );
+        let file = storage.path().join(format!("{}.json", result.backup_id));
+        let backup: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+        assert_eq!(backup["schemaVersion"], 24);
+        let mut reopened = ChangeManager::new(f.store(), storage.path().into(), LocalPathProbe);
+        assert_eq!(
+            reopened.inventory().unwrap().backups[0].state,
+            "restore_available"
+        );
+        let plan = reopened.prepare_restore(&result.backup_id).unwrap();
+        reopened.apply(&plan.token).unwrap();
+        assert_eq!(
+            f.key(r"User\AppPaths\old0.exe")
+                .get_raw_value("pAth")
+                .unwrap()
+                .bytes
+                .as_ref(),
+            original.bytes
+        );
+        f.preserved(0);
+        // Re-labelling a new payload as schema 23 must never be accepted.
+        let mut corrupt = backup;
+        corrupt["schemaVersion"] = serde_json::json!(23);
+        std::fs::write(&file, serde_json::to_vec(&corrupt).unwrap()).unwrap();
+        assert!(reopened.prepare_restore(&result.backup_id).is_err());
+    }
+}
+
+#[test]
+fn leftover_path_list_conflicts_never_overwrite_retained_values_or_immutable_backups() {
+    for mutation in [
+        "directory",
+        "anchor",
+        "duplicate",
+        "retained_owner",
+        "default",
+        "metadata",
+        "value",
+        "missing_value",
+        "missing_key",
+        "machine32",
+        "machine64",
+    ] {
+        for restore in [false, true] {
+            let f = Fixture::new();
+            let e = f.list_entry(f.files.path().to_str().unwrap());
+            let dir = tempfile::tempdir().unwrap();
+            let mut m = ChangeManager::new(f.store(), dir.path().into(), LocalPathProbe);
+            let p = m.prepare_quarantine(&e).unwrap();
+            let (p, backup) = if restore {
+                let id = m.apply(&p.token).unwrap().backup_id;
+                let file = dir.path().join(format!("{id}.json"));
+                let bytes = std::fs::read(&file).unwrap();
+                (m.prepare_restore(&id).unwrap(), Some((file, bytes)))
+            } else {
+                (p, None)
+            };
+            match mutation {
+                "directory" => std::fs::create_dir(f.directory(0)).unwrap(),
+                "anchor" => f
+                    .key(r"User\Uninstall\Owned0")
+                    .set_value("Publisher", &"changed")
+                    .unwrap(),
+                "duplicate" => f.put(
+                    r"User\Uninstall\Duplicate",
+                    "InstallLocation",
+                    &text(&f.directory(0)),
+                ),
+                "retained_owner" => f.put(
+                    r"User\Uninstall\RetainedOwner",
+                    "InstallLocation",
+                    &text(f.files.path().to_str().unwrap()),
+                ),
+                "default" => f.put(r"User\AppPaths\old0.exe", "", &text(r"C:\Other\old0.exe")),
+                "metadata" => f
+                    .key(r"User\AppPaths\old0.exe")
+                    .set_value("Keep", &99u32)
+                    .unwrap(),
+                "value" => f.put(r"User\AppPaths\old0.exe", "pAth", &text(r"C:\Preserve\New")),
+                "missing_value" => f
+                    .key(r"User\AppPaths\old0.exe")
+                    .delete_value("pAth")
+                    .unwrap(),
+                "missing_key" => f
+                    .key(r"User\AppPaths")
+                    .delete_subkey_all("old0.exe")
+                    .unwrap(),
+                "machine32" => {
+                    f.key(r"Machine32\AppPaths\old0.exe");
+                }
+                "machine64" => {
+                    f.key(r"Machine64\Applications\old0.exe");
+                }
+                _ => unreachable!(),
+            }
+            let read = || {
+                f.store()
+                    .leftover_application("old0.exe", None)
+                    .ok()
+                    .and_then(|v| v.value)
+            };
+            let before = read();
+            assert!(m.apply(&p.token).is_err(), "{mutation}/{restore}");
+            assert_eq!(read(), before);
+            if let Some((file, bytes)) = backup {
+                assert_eq!(std::fs::read(file).unwrap(), bytes);
+            } else {
+                assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn leftover_path_list_duplicates_and_policy_boundaries_preserve_exact_bytes() {
+    let f = Fixture::new();
+    let e = f.list_entry(&f.directory(0).to_uppercase());
+    let original = e.snapshot.clone().unwrap();
+    let app = e.leftover_state.as_ref().unwrap();
+    assert_eq!(app.cleared_value().unwrap(), None);
+    let dir = tempfile::tempdir().unwrap();
+    let mut m = ChangeManager::new(f.store(), dir.path().into(), LocalPathProbe);
+    let p = m.prepare_quarantine(&e).unwrap();
+    let result = m.apply(&p.token).unwrap();
+    assert!(read_value(&f.key(r"User\AppPaths\old0.exe"), "pAth")
+        .unwrap()
+        .is_none());
+    let p = m.prepare_restore(&result.backup_id).unwrap();
+    m.apply(&p.token).unwrap();
+    assert_eq!(
+        read_value(&f.key(r"User\AppPaths\old0.exe"), "pAth").unwrap(),
+        Some(original)
+    );
+    for invalid in [
+        format!("{};", f.directory(0)),
+        format!("{};;C:\\Keep", f.directory(0)),
+        format!("{};\"C:\\Keep\"", f.directory(0)),
+        format!("{};\n", f.directory(0)),
+        std::iter::repeat_n(f.directory(0), 33)
+            .collect::<Vec<_>>()
+            .join(";"),
+    ] {
+        let mut app = app.clone();
+        let original = text(&invalid);
+        app.path_list = Some(original.clone());
+        assert!(app.verify_original(&original, &LocalPathProbe).is_err());
+    }
+    let mut expanded = text(&format!("{};C:\\Keep", f.directory(0)));
+    expanded.kind = 2;
+    let mut app = app.clone();
+    app.path_list = Some(expanded.clone());
+    assert!(app.verify_original(&expanded, &LocalPathProbe).is_err());
+    f.preserved(0);
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     app_leftovers::*,
-    changes::RegistryStore,
+    changes::{RegistryStore, StoredValue},
     windows_changes::{open_registration_path, WindowsRegistryStore},
 };
 pub(super) fn scan_leftovers(
@@ -77,7 +77,19 @@ pub(super) fn scan_leftovers(
         .into();
         entry.raw_value = value.text().unwrap_or_default();
         entry.assessment=Assessment{status:EntryStatus::Unknown,code:"leftover_unverified".into(),explanation:"No unique matching uninstall registration and independent missing-file evidence establish this application as a leftover. Names alone are not ownership evidence.".into(),target:None};
-        if let Ok(directory) = literal_directory(&value) {
+        let directories = search_directories(&value).unwrap_or_default();
+        let matched: Vec<_> = directories
+            .iter()
+            .filter(|d| anchors.contains_key(&d.to_ascii_lowercase()))
+            .collect();
+        let directory = if matched.len() == 1 {
+            Some(matched[0].clone())
+        } else if !entry.raw_value.contains(';') {
+            directories.first().cloned()
+        } else {
+            None
+        };
+        if let Some(directory) = directory {
             entry.assessment.target = Some(directory.clone());
             let a = analyze_target(&directory, TargetKind::Directory, environment, probe);
             if a.status == EntryStatus::Found {
@@ -88,7 +100,16 @@ pub(super) fn scan_leftovers(
                     let (anchor_key, snapshot) = &matches[0];
                     let evidence = (|| -> Result<LeftoverEvidence, String> {
                         let snapshot = snapshot.as_ref().map_err(Clone::clone)?;
-                        let evidence = correlate(&name, &value, anchor_key, snapshot, probe)?;
+                        let evidence_value = StoredValue {
+                            kind: 1,
+                            bytes: directory
+                                .encode_utf16()
+                                .chain([0])
+                                .flat_map(u16::to_le_bytes)
+                                .collect(),
+                        };
+                        let evidence =
+                            correlate(&name, &evidence_value, anchor_key, snapshot, probe)?;
                         if let Some(default) = state.other.iter().find(|v| v.name.is_empty()) {
                             if default.value.kind != 1
                                 || !default
@@ -111,6 +132,7 @@ pub(super) fn scan_leftovers(
                                 uninstall_key: anchor_key.clone(),
                                 anchor: normalized_anchor(snapshot).unwrap(),
                                 application_values: state.other,
+                                path_list: entry.raw_value.contains(';').then_some(value.clone()),
                             };
                             entry.name = evidence.application_name.clone();
                             entry.publisher = snapshot.text("Publisher").ok();

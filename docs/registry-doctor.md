@@ -1,6 +1,6 @@
 # Registry Doctor: scope and next milestones
 
-RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.23; future milestones below are plans, not implemented features.
+RustRegistry should help users understand a finding, choose a supported action, and return to the original state. Increasing the number of scanned roots alone does not achieve that. This document records the research and decisions through 0.1.24; future milestones below are plans, not implemented features.
 
 ## Research and current behavior
 
@@ -38,6 +38,14 @@ Sound-event inventory adds two shared user/machine logical sections, bringing co
 Microsoft's [theme format](https://learn.microsoft.com/en-us/windows/win32/controls/themesfileformat-overview) describes event sound files and empty entries. [PlaySound](<https://learn.microsoft.com/en-us/previous-versions/dd743680(v=vs.85)>) documents alias/search/default behavior. The implementation keeps the current value/key, preserves saved/default/No Sounds schemes and protects default fallback events and machine counterparts. This is a configuration change with explicit review; cached sounds and each application's fallback are not inferred. No audio is played, decoded or deleted, and no device, volume or notification policy changes.
 
 Native tests use isolated roots for selected-scheme, saved metadata, machine-counterpart, current-value and real-file conflicts during apply/restore. The packaged fixture uses only a GUID-owned current-user sound application and inert controls, preserves the real selected scheme and unrelated applications, and checks original bytes and permissions independently. Owned registry-tree cleanup compares the snapshot inside a transaction before deletion.
+
+## Delivered in 0.1.24
+
+Application leftover correlation now handles literal semicolon-separated App Paths lists. Exactly one directory may have a unique non-MSI uninstall owner, and installation/application/uninstaller targets must still be confirmed missing. Only matching directory segments are pruned. Other segments retain text, order and terminator representation; all-matching duplicate lists become an absent value. Expanded values, quoted/empty/oversized lists and multiple directory owners remain protected. Existing roots provide the evidence; coverage remains 67 logical sections.
+
+Schema 24 stores the entire original raw list and bounded ownership evidence. The native transaction checks the exact original before cleanup and the exact cleaned value before restore, plus fresh metadata, missing targets and ownership. A new owner associated with a retained directory, a missing/changed retained list, new mapping or missing key blocks the operation. Formats 1–23 remain compatible. Individual and selected review show original/cleaned values; per-action selection and availability filters make group cleanup optional and explicit. All actions retain independent backups, application settings, licenses, files and permissions.
+
+The [Microsoft App Paths model](https://learn.microsoft.com/en-us/windows/win32/shell/app-registration) documents semicolon-separated per-application search paths. It supplies the list semantics, not an ownership/deletion rule. Native tests cover individual/selected/Quick Clean recovery, exact-byte restoration, duplicate lists, protected formats and live apply/restore conflicts. Packaged tests preserve real retained directories/files and independently compare raw values, settings/license markers and permissions through single and mixed-format recovery.
 
 ## Delivered in 0.1.23
 

@@ -271,6 +271,7 @@ try {
     summary.passed = true;
   } else if (leftoverOnly) {
     await verifyLeftoverRecovery(page, output, checked, summary);
+    await verifyLeftoverRecovery(page, output, checked, summary, { pathList: true });
     expect(summary.errors).toEqual([]);
     summary.passed = true;
   } else if (soundOnly) {
@@ -540,6 +541,7 @@ try {
     await verifyFileReferenceRecovery(page, output, checked, summary);
     await verifySoundRecovery(page, output, checked, summary);
     await verifyLeftoverRecovery(page, output, checked, summary);
+    await verifyLeftoverRecovery(page, output, checked, summary, { pathList: true });
     await verifyAppearance(page, cdp, output, checked, summary);
 
     await cdp.send('Emulation.setDeviceMetricsOverride', {

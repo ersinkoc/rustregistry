@@ -30,9 +30,10 @@ if ($Action -eq 'prepare') {
     # This explicit developer test setup elevates the test process, never the production app or normal smoke command.
     $helper=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -ArgumentList $arguments -Verb RunAs -WindowStyle Hidden -PassThru
     # The full suite re-scans all 67 sections after each repair/restore, including
-    # thousands of real MUI cache paths. A large live cache can exceed 30 minutes.
+    # thousands of real MUI cache paths, plus both single-path and path-list flows.
+    # A large live cache can exceed 45 minutes.
     # This is only the outer process-wait budget; individual test deadlines stay unchanged.
-    $sessionTimeout=if($Mode -eq 'full'){2700000}else{600000}
+    $sessionTimeout=if($Mode -eq 'full'){3600000}elseif($Mode -eq 'leftover-only'){1200000}else{600000}
     if (-not $helper.WaitForExit($sessionTimeout)) { throw 'The elevated test session is still running. Inspect its private log before continuing.' }
     if ($helper.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultPath)) { throw "Elevated desktop verification failed. Inspect .temp_files/elevated-$Mode-$Token.stdout.log and stderr.log." }
     Get-Content -LiteralPath $resultPath -Raw
@@ -62,6 +63,6 @@ $reportName=if ($Mode -eq 'full') { 'desktop-verification.json' } elseif ($Mode 
 $reportPath=Join-Path $output $reportName
 $requiredCleanup=if($Mode -eq 'leftover-only'){'leftoverFixtureCleanup'}elseif($Mode -eq 'sound-only'){'soundFixtureCleanup'}elseif($Mode -eq 'file-reference-only'){'fileReferenceFixtureCleanup'}else{'sharedDllFixtureCleanup'}
 $passed=$false
-if (Test-Path -LiteralPath $reportPath) { $report=Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json; $passed=$process.ExitCode -eq 0 -and $report.passed -and $report.version -ceq $version -and $report.$requiredCleanup -eq $true -and $report.errors.Count -eq 0 }
+if (Test-Path -LiteralPath $reportPath) { $report=Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json; $passed=$process.ExitCode -eq 0 -and $report.passed -and $report.version -ceq $version -and $report.$requiredCleanup -eq $true -and $report.errors.Count -eq 0; if($Mode -in @('full','leftover-only')){$passed=$passed -and $report.leftoverPathListFixtureCleanup -eq $true} }
 [ordered]@{ mode=$Mode; token=$Token; exitCode=$process.ExitCode; passed=$passed; reportPath=$reportPath; executableSHA256=$ExpectedSHA256; sameWindowsAccount=$true } | ConvertTo-Json -Compress | Set-Content -LiteralPath $resultPath -Encoding UTF8
 if (-not $passed) { exit 1 }

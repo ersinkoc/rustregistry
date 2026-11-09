@@ -252,6 +252,16 @@ impl WindowsRegistryStore {
         if normalized_anchor(matches[0].1.as_ref().map_err(Clone::clone)?)? != app.anchor {
             return Err("The correlated uninstall metadata changed. Leftover cleanup or restore is blocked.".into());
         }
+        if let Some(original) = &app.path_list {
+            if search_directories(original)?
+                .iter()
+                .filter(|d| anchors.contains_key(&d.to_ascii_lowercase()))
+                .count()
+                != 1
+            {
+                return Err("More than one search directory now has uninstall ownership evidence. Path-list cleanup and restore are blocked.".into());
+            }
+        }
         let state = self.leftover_application(&app.executable_name, tx)?;
         if state.other != app.application_values
             || (state.value.is_some() && state.name != app.value_name)
@@ -267,7 +277,15 @@ impl WindowsRegistryStore {
         &self,
         app: &LeftoverBackup,
     ) -> Result<Option<StoredValue>, String> {
-        self.guarded_leftover(app, None)
+        let value = self.guarded_leftover(app, None)?;
+        if app.path_list.is_some() && app.cleared_value()?.is_some() && value.is_none() {
+            return Err("The retained search-path list is missing. Restore must not overwrite a different state.".into());
+        }
+        if app.path_list.is_some() && value == app.cleared_value()? {
+            Ok(None)
+        } else {
+            Ok(value)
+        }
     }
     pub(crate) fn leftover_access(&self, app: &LeftoverBackup) -> Result<(), String> {
         self.guarded_leftover(app, None)?;
@@ -288,9 +306,12 @@ impl WindowsRegistryStore {
             .or(replacement)
             .ok_or("Original leftover value is absent.")?;
         app.verify_original(original, &crate::LocalPathProbe)?;
+        let cleared = app.cleared_value()?;
+        let actual_expected = expected.or(cleared.as_ref());
+        let actual_replacement = replacement.or(cleared.as_ref());
         let tx = Transaction::new()
             .map_err(|_| "Registry transactions are unavailable. Nothing was changed.")?;
-        if self.guarded_leftover(app, Some(&tx))?.as_ref() != expected {
+        if self.guarded_leftover(app, Some(&tx))?.as_ref() != actual_expected {
             return Err("The leftover value changed. No current value was overwritten.".into());
         }
         app.verify_original(original, &crate::LocalPathProbe)?;
@@ -303,7 +324,7 @@ impl WindowsRegistryStore {
                 true,
             )?
             .ok_or("The existing application key is missing.")?;
-        match replacement {
+        match actual_replacement {
             Some(value) => key.set_raw_value(
                 &app.value_name,
                 &RegValue {

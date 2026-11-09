@@ -18,6 +18,8 @@ export function LeftoversPage({
   onReviewGroup: (ids: string[]) => void;
 }) {
   const [query, setQuery] = useState('');
+  const [availability, setAvailability] = useState('all');
+  const [excluded, setExcluded] = useState<Record<string, string[]>>({});
   const byId = useMemo(() => new Map((report?.entries ?? []).map((e) => [e.id, e])), [report]);
   const groups = (report?.entries ?? []).filter(
     (e) =>
@@ -26,10 +28,23 @@ export function LeftoversPage({
       e.assessment.status === 'review',
   );
   const q = query.trim().toLocaleLowerCase();
-  const visible = groups.filter((e) =>
-    [e.name, e.keyPath, e.leftoverEvidence?.directory, e.leftoverEvidence?.uninstallPath].some(
-      (s) => s?.toLocaleLowerCase().includes(q),
-    ),
+  const actionIds = (entry: RegistryEntry) =>
+    [...new Set([entry.id, ...(entry.leftoverEvidence?.relatedIds ?? [])])]
+      .filter((id) => {
+        const item = byId.get(id);
+        return !!item && canQuarantine(item);
+      })
+      .slice(0, 100);
+  const visible = groups.filter(
+    (e) =>
+      (availability === 'all' || actionIds(e).length > 0 === (availability === 'ready')) &&
+      [
+        e.name,
+        e.keyPath,
+        e.rawValue,
+        e.leftoverEvidence?.directory,
+        e.leftoverEvidence?.uninstallPath,
+      ].some((s) => s?.toLocaleLowerCase().includes(q)),
   );
   const complete = !!report && !report.cancelled;
   return (
@@ -76,6 +91,18 @@ export function LeftoversPage({
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
+          <label className="leftover-availability">
+            Available actions
+            <select
+              aria-label="Filter leftover action availability"
+              value={availability}
+              onChange={(event) => setAvailability(event.target.value)}
+            >
+              <option value="all">All evidence groups</option>
+              <option value="ready">Supported cleanup available</option>
+              <option value="evidence">Evidence only</option>
+            </select>
+          </label>
           {!visible.length ? (
             <div className="empty-state">
               <h3>
@@ -92,12 +119,9 @@ export function LeftoversPage({
           ) : (
             visible.slice(0, 50).map((entry) => {
               const e = entry.leftoverEvidence!;
-              const ids = [...new Set([entry.id, ...e.relatedIds])]
-                .filter((id) => {
-                  const item = byId.get(id);
-                  return !!item && canQuarantine(item);
-                })
-                .slice(0, 100);
+              const ids = actionIds(entry);
+              const selectionKey = `${report.id}:${entry.id}`;
+              const selected = ids.filter((id) => !excluded[selectionKey]?.includes(id));
               return (
                 <article className="leftover-group" key={entry.id}>
                   <div className="panel-heading">
@@ -111,6 +135,10 @@ export function LeftoversPage({
                     <span className="status-badge review">Review evidence</span>
                   </div>
                   <dl className="detail-fields">
+                    <div className="full-field">
+                      <dt>Registered search path</dt>
+                      <dd className="code-field">{entry.rawValue}</dd>
+                    </div>
                     <div className="full-field">
                       <dt>Matching installation directory</dt>
                       <dd className="code-field">{e.directory}</dd>
@@ -142,7 +170,33 @@ export function LeftoversPage({
                         const item = byId.get(id)!;
                         return (
                           <li key={id}>
-                            {categories[item.category].label}: {item.name}
+                            <label>
+                              <input
+                                type="checkbox"
+                                aria-label={`Select ${categories[item.category].label} cleanup for ${item.name}`}
+                                disabled={busy}
+                                checked={selected.includes(id)}
+                                onChange={(event) =>
+                                  setExcluded((current) => ({
+                                    ...current,
+                                    [selectionKey]: event.target.checked
+                                      ? (current[selectionKey] ?? []).filter(
+                                          (value) => value !== id,
+                                        )
+                                      : [...(current[selectionKey] ?? []), id],
+                                  }))
+                                }
+                              />{' '}
+                              {categories[item.category].label}: {item.name}
+                            </label>
+                            <button
+                              className="secondary-button"
+                              aria-label={`Review ${categories[item.category].label} action for ${item.name}`}
+                              disabled={busy}
+                              onClick={() => onReview(item)}
+                            >
+                              Review action
+                            </button>
                           </li>
                         );
                       })}
@@ -161,10 +215,10 @@ export function LeftoversPage({
                     <button
                       className="primary-button"
                       aria-label={`Review cleanup for ${e.applicationName}`}
-                      disabled={busy || !ids.length}
-                      onClick={() => onReviewGroup(ids)}
+                      disabled={busy || !selected.length}
+                      onClick={() => onReviewGroup(selected)}
                     >
-                      <ShieldCheck size={16} /> Review group cleanup ({ids.length})
+                      <ShieldCheck size={16} /> Review group cleanup ({selected.length})
                     </button>
                   </div>
                 </article>
@@ -198,6 +252,9 @@ export function LeftoverConfirmation({
   const [agreed, setAgreed] = useState(false);
   const [clock, setClock] = useState(Date.now());
   const expired = clock >= plan.expiresAt;
+  const cleanedList = plan.supportingEvidence?.find(
+    ([label]) => label === 'Search path after cleanup',
+  );
   const restore = plan.action === 'restore';
   useEffect(() => {
     const dialog = ref.current;
@@ -230,12 +287,18 @@ export function LeftoverConfirmation({
         </button>
       </div>
       <h2 id="leftover-title">
-        {restore ? 'Restore application search path?' : 'Remove unused application search path?'}
+        {restore
+          ? 'Restore application search path?'
+          : cleanedList
+            ? 'Clean application search-path list?'
+            : 'Remove unused application search path?'}
       </h2>
       <p className="change-intro">
         {restore
           ? 'Restore only the exact original search-path value while its key, missing-file evidence and correlated metadata still match.'
-          : 'Remove only the unused Path value from this current-user application registration after a verified backup. The uninstall registration remains intact.'}
+          : cleanedList
+            ? 'Remove only the confirmed missing installation-directory segments from this Path list after a verified backup. Retained segments keep their exact text and order. The complete original value is backed up.'
+            : 'Remove only the unused Path value from this current-user application registration after a verified backup. The uninstall registration remains intact.'}
       </p>
       <dl className="detail-fields">
         <div>
@@ -251,7 +314,7 @@ export function LeftoverConfirmation({
           <dd className="code-field">{plan.registryPath}</dd>
         </div>
         <div className="full-field">
-          <dt>Original search directory</dt>
+          <dt>{cleanedList ? 'Original search-path list' : 'Original search directory'}</dt>
           <dd className="code-field">{plan.originalValue}</dd>
         </div>
         {(plan.supportingEvidence ?? []).map(([label, value]) => (
@@ -280,8 +343,10 @@ export function LeftoverConfirmation({
         />
         <span>
           {restore
-            ? 'I reviewed the exact search-path value and matching evidence and want to restore it without overwriting a new value.'
-            : 'I reviewed the correlated evidence and want a verified backup before removing only this unused search-path value.'}
+            ? 'I reviewed the exact search-path value and matching evidence and want to restore it only while the current value matches the backed-up cleaned state.'
+            : cleanedList
+              ? 'I reviewed the original and cleaned lists and want a verified backup before removing only the confirmed missing directory segments.'
+              : 'I reviewed the correlated evidence and want a verified backup before removing only this unused search-path value.'}
         </span>
       </label>
       {expired && (
@@ -303,7 +368,9 @@ export function LeftoverConfirmation({
             ? 'Applying…'
             : restore
               ? 'Restore application search path'
-              : 'Back up & remove search path'}
+              : cleanedList
+                ? 'Back up & clean path list'
+                : 'Back up & remove search path'}
         </button>
       </div>
     </dialog>

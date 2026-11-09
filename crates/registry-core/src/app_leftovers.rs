@@ -15,6 +15,8 @@ pub struct LeftoverBackup {
     pub uninstall_key: String,
     pub anchor: UninstallSnapshot,
     pub application_values: Vec<NamedValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_list: Option<StoredValue>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +42,82 @@ pub fn literal_directory(value: &StoredValue) -> Result<String, String> {
     crate::shared_dlls::validate_shared_dll_path(&format!(r"{directory}\probe.dll"))
         .map_err(|_| "A bounded literal local ASCII directory outside Windows is required.")?;
     Ok(directory)
+}
+
+/// Inventory literal directories without interpreting retained expressions.
+pub fn search_directories(value: &StoredValue) -> Result<Vec<String>, String> {
+    if value.kind != 1 {
+        return Err("Only literal REG_SZ search paths support cleanup.".into());
+    }
+    let text = value.text()?;
+    let parts: Vec<_> = text.split(';').collect();
+    if text.len() > 4096
+        || parts.len() > 32
+        || parts.iter().any(|p| p.trim().is_empty())
+        || text.chars().any(|c| c == '"' || c.is_control())
+    {
+        return Err("Oversized lists and empty search-path segments remain read-only.".into());
+    }
+    let mut directories = vec![];
+    for part in parts {
+        let value = StoredValue {
+            kind: 1,
+            bytes: part
+                .encode_utf16()
+                .chain([0])
+                .flat_map(u16::to_le_bytes)
+                .collect(),
+        };
+        if let Ok(directory) = literal_directory(&value) {
+            if !directories
+                .iter()
+                .any(|d: &String| d.eq_ignore_ascii_case(&directory))
+            {
+                directories.push(directory);
+            }
+        }
+    }
+    Ok(directories)
+}
+
+pub fn prune_search_path(
+    original: &StoredValue,
+    directory: &str,
+) -> Result<Option<StoredValue>, String> {
+    search_directories(original)?;
+    let text = original.text()?;
+    let parts: Vec<_> = text.split(';').collect();
+    if parts.len() < 2 {
+        return Err("Path-list cleanup requires at least two segments.".into());
+    }
+    let mut kept = vec![];
+    for part in &parts {
+        let value = StoredValue {
+            kind: 1,
+            bytes: part
+                .encode_utf16()
+                .chain([0])
+                .flat_map(u16::to_le_bytes)
+                .collect(),
+        };
+        if !literal_directory(&value).is_ok_and(|d| d.eq_ignore_ascii_case(directory)) {
+            kept.push(*part);
+        }
+    }
+    if kept.len() == parts.len() {
+        return Err("The owned directory is absent from the original path list.".into());
+    }
+    if kept.is_empty() {
+        return Ok(None);
+    }
+    let mut bytes: Vec<_> = kept
+        .join(";")
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    // Preserve the original terminator convention as well as retained segment text.
+    bytes.extend_from_slice(&original.bytes[text.encode_utf16().count() * 2..]);
+    Ok(Some(StoredValue { kind: 1, bytes }))
 }
 pub fn normalized_anchor(snapshot: &UninstallSnapshot) -> Result<UninstallSnapshot, String> {
     snapshot.validate()?;
@@ -180,6 +258,9 @@ impl LeftoverBackup {
         if literal_directory(&value)? != self.directory {
             return Err("Leftover directory evidence is not canonical.".into());
         }
+        if let Some(original) = &self.path_list {
+            prune_search_path(original, &self.directory)?;
+        }
         if normalized_anchor(&self.anchor)? != self.anchor {
             return Err("Leftover anchor contains mutable visibility metadata.".into());
         }
@@ -216,16 +297,40 @@ impl LeftoverBackup {
         probe: &impl PathProbe,
     ) -> Result<LeftoverEvidence, String> {
         self.validate()?;
-        if !literal_directory(original)?.eq_ignore_ascii_case(&self.directory) {
+        let evidence_value = if let Some(list) = &self.path_list {
+            if list != original {
+                return Err(
+                    "The original search-path list does not match its backup evidence.".into(),
+                );
+            }
+            prune_search_path(original, &self.directory)?;
+            StoredValue {
+                kind: 1,
+                bytes: self
+                    .directory
+                    .encode_utf16()
+                    .chain([0])
+                    .flat_map(u16::to_le_bytes)
+                    .collect(),
+            }
+        } else {
+            original.clone()
+        };
+        if !literal_directory(&evidence_value)?.eq_ignore_ascii_case(&self.directory) {
             return Err("Leftover directory does not match its original value.".into());
         }
         correlate(
             &self.executable_name,
-            original,
+            &evidence_value,
             &self.uninstall_key,
             &self.anchor,
             probe,
         )
+    }
+    pub fn cleared_value(&self) -> Result<Option<StoredValue>, String> {
+        self.path_list
+            .as_ref()
+            .map_or(Ok(None), |v| prune_search_path(v, &self.directory))
     }
 }
 
