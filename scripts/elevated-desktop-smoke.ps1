@@ -12,9 +12,9 @@ $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 if ([Guid]::ParseExact($Token,'D').ToString('D') -cne $Token) { throw 'Invalid fixture identifier.' }
 $workspace=[IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent))
-if (-not $Executable) { $Executable=Join-Path $workspace 'target\release\rustregistry.exe' }
+if (-not $Executable) { $Executable=Join-Path $workspace 'target\release\rustregistry-webview.exe' }
 $Executable=[IO.Path]::GetFullPath($Executable)
-if (-not $Executable.StartsWith($workspace+'\',[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($Executable) -ine 'rustregistry.exe' -or -not [IO.File]::Exists($Executable)) { throw 'An existing RustRegistry executable inside this workspace is required.' }
+if (-not $Executable.StartsWith($workspace+'\',[StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($Executable) -inotIn @('rustregistry-webview.exe', 'rustregistry.exe') -or -not [IO.File]::Exists($Executable)) { throw 'An existing RustRegistry WebView test executable inside this workspace is required.' }
 $version=(Get-Content -LiteralPath (Join-Path $workspace 'package.json') -Raw | ConvertFrom-Json).version
 if ([Diagnostics.FileVersionInfo]::GetVersionInfo($Executable).ProductVersion -cne $version) { throw 'The executable version does not match the current source.' }
 $output=Join-Path $workspace '.temp_files'

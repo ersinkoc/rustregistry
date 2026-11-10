@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "RustRegistry",
-  "version": "0.2.0",
+  "mainBinaryName": "rustregistry-webview",
+  "version": "0.3.0",
   "identifier": "dev.rustregistry.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",

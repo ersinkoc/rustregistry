@@ -5,7 +5,11 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 description = "Windows registry health explorer with protected startup recovery"
-default-run = "rustregistry"
+default-run = "rustregistry-webview"
+
+[[bin]]
+name = "rustregistry-webview"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }

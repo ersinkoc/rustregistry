@@ -1,0 +1,83 @@
+name: Windows CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUSTUP_TOOLCHAIN: 1.93.0-x86_64-pc-windows-msvc
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check Windows workspace
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26.13.0
+          cache: npm
+      - name: Install Rust
+        run: rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal --component rustfmt --component clippy --no-self-update
+      - name: Check release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node scripts/check-version.mjs $env:GITHUB_REF_NAME
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Run workspace checks
+        run: npm run check
+
+  portable:
+    name: Build and attest Windows x64 ZIP
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-2025
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check release tag
+        run: node scripts/check-version.mjs $env:GITHUB_REF_NAME
+      - name: Install Rust
+        run: rustup toolchain install $env:RUSTUP_TOOLCHAIN --profile minimal --no-self-update
+      - name: Build native executable
+        run: cargo build --locked --release -p registry-desktop --target x86_64-pc-windows-msvc
+      - name: Package and verify the ZIP
+        run: |
+          $toolName = 'cargo-about-0.9.3-x86_64-pc-windows-msvc'
+          $download = Join-Path $env:RUNNER_TEMP "$toolName.tar.gz"
+          Invoke-WebRequest "https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.3/$toolName.tar.gz" -OutFile $download
+          if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash -ne '9e2942533ef1c592c4a70bdb384cae1550a3f5fc9ae40379b6662e3d2f16fe02') {
+            throw 'cargo-about archive checksum mismatch.'
+          }
+          tar -xzf $download -C $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $cargoAbout = Join-Path $env:RUNNER_TEMP "$toolName/cargo-about.exe"
+          ./scripts/package-windows.ps1 -CargoAbout $cargoAbout
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          ./scripts/verify-windows-release.ps1 -Version $version -Archive "target/portable/RustRegistry-$version-windows-x64.zip" -Checksums 'target/portable/SHA256SUMS.txt'
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            target/portable/RustRegistry-*-windows-x64.zip
+            target/portable/SHA256SUMS.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rustregistry-windows-x64
+          path: target/portable/
+          if-no-files-found: error
+          compression-level: 0

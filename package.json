@@ -1,7 +1,7 @@
 {
   "name": "rustregistry",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -18,8 +18,10 @@
     "test:desktop": "node scripts/desktop-smoke.mjs",
     "version:check": "node scripts/check-version.mjs",
     "check": "npm run version:check && npm run format:check && npm run typecheck && npm test && cargo fmt --all --check && npm run check:rust && npm run test:rust && npm run test:service-fixture && npm run test:shared-dll-fixture",
-    "desktop": "tauri dev",
-    "desktop:build": "tauri build --no-bundle",
+    "desktop": "cargo run --locked -p registry-desktop",
+    "desktop:build": "cargo build --locked -p registry-desktop --release",
+    "desktop:legacy": "tauri dev",
+    "desktop:legacy:build": "tauri build --no-bundle",
     "scan": "cargo run -p registry-core --bin registry-scan --quiet",
     "check:rust": "cargo clippy --workspace --all-targets -- -D warnings",
     "test:rust": "cargo test --workspace",

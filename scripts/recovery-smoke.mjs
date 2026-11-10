@@ -13,7 +13,10 @@ const shell = resolve(
   process.env.SystemRoot || 'C:\\Windows',
   'System32/WindowsPowerShell/v1.0/powershell.exe',
 );
-const executable = resolve(root, process.env.RUSTREGISTRY_EXE || 'target/release/rustregistry.exe');
+const executable = resolve(
+  root,
+  process.env.RUSTREGISTRY_EXE || 'target/release/rustregistry-webview.exe',
+);
 const policyToken = process.env.RUSTREGISTRY_ELEVATED_WEBVIEW_TOKEN;
 if (!policyToken || !executable.endsWith(`RustRegistry-E2E-WebView-${policyToken}.exe`))
   throw Error('An owned isolated executable alias is required.');

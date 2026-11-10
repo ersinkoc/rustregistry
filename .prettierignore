@@ -6,3 +6,5 @@ src-tauri/gen
 src-tauri/icons
 Cargo.lock
 package-lock.json
+# Preserve line breaks in the plain-text release notices.
+scripts/windows-licenses.hbs

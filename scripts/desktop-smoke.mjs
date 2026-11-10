@@ -100,7 +100,10 @@ await new Promise((resolve, reject) =>
   server.close((error) => (error ? reject(error) : resolve())),
 );
 
-const executable = resolve(root, process.env.RUSTREGISTRY_EXE || 'target/release/rustregistry.exe');
+const executable = resolve(
+  root,
+  process.env.RUSTREGISTRY_EXE || 'target/release/rustregistry-webview.exe',
+);
 const profile = resolve(output, `webview-smoke-profile-${process.pid}-${Date.now()}`);
 const policyToken = process.env.RUSTREGISTRY_ELEVATED_WEBVIEW_TOKEN;
 let policyAttempted = false;

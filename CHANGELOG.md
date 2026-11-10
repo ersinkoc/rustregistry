@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — 2026-11-11
+
+- Replace the default Windows frontend with GPUI. The portable x64 app renders through DirectX and runs without Node.js or WebView2.
+- Bring scan summaries, category and status filters, a virtualized registry table and a collapsible inspector together in Registry explorer. Preserve the search, selection and scroll position while switching pages within a scan.
+- Move application leftovers, Clean, Backups & restore, Recovery Center and saved scans into the native interface. Show exact registry locations, value data and live evidence in the review flows. Existing backup formats and local storage locations remain compatible.
+- Add system, light and dark appearance, adjustable text size, keyboard navigation and local filtered JSON export.
+- Verify the compact layout and the scan, review, cancel, apply, undo and saved-scan flows in a GPUI test window with disposable Windows registry keys. Add Windows CI, portable-package checksums and build provenance.
+
 ## 0.2.0 — 2026-11-09
 
 - Add a durable append-only operation journal for individual repair/restore, selected cleaning, Quick Clean, Full Clean and bulk Undo. Flush an intent before every registry mutation and a verified result afterward; validate ordered checksum chains on read. Interrupted operations are visible in Recovery Center and never replay automatically.

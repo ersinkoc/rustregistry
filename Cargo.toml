@@ -1,10 +1,10 @@
 [workspace]
-members = ["crates/registry-core", "src-tauri"]
+members = ["crates/registry-core", "crates/registry-desktop", "src-tauri"]
 default-members = ["crates/registry-core"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.93"
 license = "MIT"
