@@ -5,6 +5,7 @@
 - First published GPUI release, including the desktop migration documented in the 0.3.0 validation candidate below.
 - Report a cancelled scope as cancelled when the scan is stopped before opening its registry key.
 - Run Windows CI fixtures from a literal temporary path and check journal progress during crash-recovery tests. The forced termination still occurs after the 500th committed change.
+- Enable release-mode arithmetic overflow checks, including for generic layout dependency code.
 
 ## 0.3.0 — 2026-11-11
 
