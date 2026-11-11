@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     cell::{Cell, RefCell},
     fs,
-    io::Write,
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, Instant},
@@ -51,7 +51,15 @@ impl RegistryStore for ObservedStore {
             "{}.jsonl",
             self.operation.borrow().as_ref().unwrap()
         ));
-        let bytes = fs::read(path).unwrap();
+        // The Attempt frame is small. Read the tail so the assertion does not
+        // reread the growing journal, including the original 1,000-entry frame.
+        let mut journal = fs::File::open(path).unwrap();
+        let length = journal.metadata().unwrap().len();
+        let tail_length = length.min(1024);
+        journal.seek(SeekFrom::Start(length - tail_length)).unwrap();
+        let mut bytes = vec![0; tail_length as usize];
+        journal.read_exact(&mut bytes).unwrap();
+        drop(journal);
         assert_eq!(bytes.last(), Some(&b'\n'));
         let line = bytes[..bytes.len() - 1]
             .rsplit(|b| *b == b'\n')
@@ -189,17 +197,37 @@ impl Fixture {
             .spawn()
             .unwrap();
         let started = Instant::now();
+        let mut last_progress = started;
+        let mut journal_bytes = 0;
         while !self.config.directory.join("committed.marker").exists() {
             assert!(
                 child.try_wait().unwrap().is_none(),
                 "Worker exited before barrier: {}",
                 fs::read_to_string(self.config.directory.join("worker.log")).unwrap()
             );
-            if started.elapsed() > Duration::from_secs(60) {
-                let _ = child.kill();
-                panic!("Worker did not reach the bounded 500-commit barrier");
+            let current_bytes: u64 = fs::read_dir(self.config.directory.join("operations"))
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.metadata().ok())
+                .map(|metadata| metadata.len())
+                .sum();
+            if current_bytes > journal_bytes {
+                journal_bytes = current_bytes;
+                last_progress = Instant::now();
             }
-            std::thread::sleep(Duration::from_millis(20));
+            if last_progress.elapsed() > Duration::from_secs(60)
+                || started.elapsed() > Duration::from_secs(300)
+            {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "Worker did not reach the 500-commit barrier after {:?} ({journal_bytes} journal bytes): {}",
+                    started.elapsed(),
+                    fs::read_to_string(self.config.directory.join("worker.log")).unwrap()
+                );
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
         assert_eq!(
             fs::read_to_string(self.config.directory.join("committed.marker")).unwrap(),

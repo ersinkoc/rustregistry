@@ -543,6 +543,10 @@ fn scan_source(
         entries: 0,
         notes: Vec::new(),
     };
+    if cancel.load(Ordering::Relaxed) {
+        scope.status = "cancelled".into();
+        return scope;
+    }
     if source.category == Category::ApplicationLeftovers {
         leftovers_scan::scan_leftovers(source, cancel, environment, entries, &mut scope, probe);
         return scope;
@@ -1132,9 +1136,34 @@ mod tests {
         assert!(result.cancelled);
         assert!(result.entries.is_empty());
         assert_eq!(result.scopes.len(), 1);
-        assert!(matches!(
-            result.scopes[0].status.as_str(),
-            "cancelled" | "missing"
-        ));
+        assert_eq!(result.scopes[0].status, "cancelled");
+    }
+
+    #[test]
+    fn cancelled_scope_reports_cancellation_before_opening_a_missing_key() {
+        let source = Source {
+            category: Category::Startup,
+            hive: "HKCU",
+            path: r"Software\RustRegistryTests\CancellationProbe_7f64b7dd",
+            flag: 0,
+            view: "shared",
+        };
+        assert_eq!(
+            RegKey::predef(HKEY_CURRENT_USER)
+                .open_subkey(source.path)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound
+        );
+        let mut entries = Vec::new();
+        let scope = scan_source(
+            &source,
+            &AtomicBool::new(true),
+            &Environment::current(),
+            &mut entries,
+            &LocalPathProbe,
+        );
+        assert_eq!(scope.status, "cancelled");
+        assert!(entries.is_empty());
     }
 }
