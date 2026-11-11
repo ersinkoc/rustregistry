@@ -297,9 +297,10 @@ For machine-readable JSON without npm log output, run `cargo run -p registry-cor
 ## Project layout
 
 - `crates/registry-core`: fixed registry inventory, conservative path analysis, backup/change engine, transactional Windows adapter, and read-only JSON CLI.
-- `src-tauri`: desktop host, background scan coordination, cancellation, and restricted application configuration.
-- `src`: English desktop UI, design tokens, result filtering, and frontend unit tests.
-- `scripts/desktop-smoke.mjs`: verification against the packaged app and the real Windows registry.
+- `crates/registry-desktop`: GPUI desktop host, background operations, native screens, keyboard navigation, and isolated Windows integration tests.
+- `src-tauri` and `src`: the legacy WebView host and frontend used by the existing regression harness.
+- `scripts/desktop-smoke.mjs`: legacy WebView verification against the packaged regression executable and owned registry fixtures.
+- `scripts/verify-windows-release.ps1`: native portable ZIP checks, executable metadata, and optional background startup verification.
 
 The repository includes dependency lockfiles and checks version consistency before the main verification suite. Development proceeds through small patch releases; minor versions are reserved for larger milestones.
 
